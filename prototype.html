@@ -234,7 +234,7 @@
         <input type="text" id="gmapsInput" placeholder="Google MapsのURL、または「緯度, 経度」を貼り付け">
         <button id="gmapsApply">反映</button>
       </div>
-      <div class="gmaps-status" id="gmapsStatus">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。地図を直接クリックしても指定できます。</div>
+      <div class="gmaps-status" id="gmapsStatus">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。地図を直接クリックしても指定できます。別の場所に移動すると、その場でデータを取得し直します。</div>
       <div class="radius-row">
         <span>商圏半径</span>
         <input type="range" id="radiusSlider" min="300" max="5000" step="100" value="800">
@@ -732,7 +732,10 @@ async function loadRealData(appId, storeLat, storeLng) {
 
     if (!marker) {
       marker = L.marker(state.storeLatLng, { draggable: true }).addTo(map);
-      marker.on("dragend", () => { state.storeLatLng = marker.getLatLng(); rerenderAll(); });
+      marker.on("dragend", () => {
+        const p = marker.getLatLng();
+        setStoreLocation(p.lat, p.lng, gmapsStatus);
+      });
     } else {
       marker.setLatLng(state.storeLatLng);
     }
@@ -748,7 +751,7 @@ async function loadRealData(appId, storeLat, storeLng) {
       : `色は総人口（${yearLabel}の推計）。商圏円の外側は淡色表示。町丁目をクリックすると内訳を表示します。`;
   }
 
-  map.on("click", (e) => { setStoreLocation(e.latlng.lat, e.latlng.lng, null); });
+  map.on("click", (e) => { setStoreLocation(e.latlng.lat, e.latlng.lng, gmapsStatus); });
 
   function parseLatLngFromText(text) {
     text = text.trim();
@@ -766,20 +769,52 @@ async function loadRealData(appId, storeLat, storeLng) {
     return null;
   }
 
-  function setStoreLocation(lat, lng, statusEl) {
+  let locationFetchInFlight = false;
+
+  async function setStoreLocation(lat, lng, statusEl) {
     state.storeLatLng = L.latLng(lat, lng);
     if (marker) marker.setLatLng(state.storeLatLng);
     map.panTo(state.storeLatLng);
     rerenderAll();
-    if (statusEl) {
-      const feats = tradeAreaFeatures();
-      if (feats.length === 0) {
-        statusEl.textContent = `座標は反映しましたが (${lat.toFixed(5)}, ${lng.toFixed(5)}) 周辺に取得済みのメッシュが見つかりません。ゲーム開始時に入力した座標から離れすぎている可能性があります。`;
-        statusEl.className = "gmaps-status error";
-      } else {
-        statusEl.textContent = `座標を反映しました (${lat.toFixed(5)}, ${lng.toFixed(5)})。商圏内のメッシュ数: ${feats.length}`;
+
+    if (tradeAreaFeatures().length > 0) {
+      if (statusEl) {
+        statusEl.textContent = `座標を反映しました (${lat.toFixed(5)}, ${lng.toFixed(5)})。商圏内のメッシュ数: ${tradeAreaFeatures().length}`;
         statusEl.className = "gmaps-status ok";
       }
+      return;
+    }
+
+    if (locationFetchInFlight) {
+      if (statusEl) {
+        statusEl.textContent = "前回のデータ取得が完了するまでお待ちください。";
+        statusEl.className = "gmaps-status error";
+      }
+      return;
+    }
+
+    // 先読み済みの範囲外(ゲーム開始時の座標から離れた場所)に移動した場合は、
+    // その場でこの新しい場所のメッシュ統計を取り直す。
+    if (statusEl) {
+      statusEl.textContent = `この場所 (${lat.toFixed(5)}, ${lng.toFixed(5)}) のデータをe-Statから取得しています…`;
+      statusEl.className = "note";
+    }
+    locationFetchInFlight = true;
+    try {
+      await loadRealData(ESTAT_APP_ID, lat, lng);
+      rerenderAll();
+      if (statusEl) {
+        statusEl.textContent = `新しい場所のデータを取得しました (${lat.toFixed(5)}, ${lng.toFixed(5)})。商圏内のメッシュ数: ${tradeAreaFeatures().length}`;
+        statusEl.className = "gmaps-status ok";
+      }
+    } catch (err) {
+      console.error(err);
+      if (statusEl) {
+        statusEl.textContent = `この場所のデータ取得に失敗しました: ${err.message}`;
+        statusEl.className = "gmaps-status error";
+      }
+    } finally {
+      locationFetchInFlight = false;
     }
   }
 
