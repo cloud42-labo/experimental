@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>未来の店舗生存サバイバルゲーム</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6;
+    --series-2:       #eb6834;
+    --series-3:       #1baf7a;
+    --good:           #0ca30c;
+    --warning:        #fab219;
+    --critical:       #d03b3b;
+    --good-text:      #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-2:       #d95926;
+      --series-3:       #199e70;
+      --good:           #0ca30c;
+      --warning:        #fab219;
+      --critical:       #e66767;
+      --good-text:      #0ca30c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .app { max-width: 1220px; margin: 0 auto; padding: 20px 20px 40px; }
+  header h1 { font-size: 19px; margin: 0 0 4px; }
+  .app-version-tag { font-size: 11px; font-weight: 400; color: var(--text-muted); vertical-align: middle; }
+  header p.sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 12px; }
+  .data-badge {
+    display: inline-block; font-size: 12px; color: var(--good-text);
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 10px; margin-bottom: 8px;
+  }
+  .mock-badge {
+    display: inline-block; font-size: 12px; color: var(--text-secondary);
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 10px; margin-bottom: 16px; margin-left: 8px;
+  }
+  .layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .map-panel { flex: 1 1 600px; min-width: 320px; }
+  .control-panel { flex: 0 0 380px; min-width: 320px; display: flex; flex-direction: column; gap: 14px; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: var(--text-primary); }
+  h2 .unit { color: var(--text-muted); font-weight: 400; }
+
+  .radius-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12px; color: var(--text-secondary); }
+  .radius-row input[type=range] { flex: 1; accent-color: var(--series-2); }
+
+  .year-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .year-row .label { font-size: 12px; color: var(--text-secondary); }
+  .year-presets { display: flex; gap: 6px; }
+  .year-presets button {
+    font-size: 12px; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer;
+  }
+  .year-presets button.active { background: var(--series-1); color: #fff; border-color: var(--series-1); font-weight: 600; }
+
+  .gmaps-row { display: flex; gap: 8px; margin-bottom: 6px; }
+  .gmaps-row input[type=text] {
+    flex: 1; font: inherit; font-size: 12px;
+    padding: 6px 9px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--page); color: var(--text-primary);
+  }
+  .gmaps-row button {
+    font-size: 12px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--series-1); color: #fff; cursor: pointer; font-weight: 600;
+  }
+  .gmaps-status { font-size: 11px; margin-bottom: 10px; min-height: 14px; }
+  .gmaps-status.error { color: var(--critical); }
+  .gmaps-status.ok { color: var(--good-text); }
+
+  #map { width: 100%; height: 460px; border-radius: 8px; }
+  .leaflet-container { background: var(--page); font-family: inherit; }
+
+  .legend-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--text-muted); }
+  .legend-bar { flex: 1; height: 10px; border-radius: 5px; }
+  .note { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+  .town-tooltip .leaflet-popup-content-wrapper { background: var(--surface-1); color: var(--text-primary); font-size: 12px; }
+  .town-tooltip .row { display: flex; justify-content: space-between; gap: 12px; }
+  .town-tooltip .k { color: var(--text-secondary); }
+  .town-tooltip .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .params { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+  .params label { display: flex; flex-direction: column; gap: 3px; color: var(--text-secondary); }
+  .params input {
+    font: inherit; font-variant-numeric: tabular-nums;
+    padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--page); color: var(--text-primary);
+  }
+  .params .rate-value {
+    font-weight: 600; font-variant-numeric: tabular-nums; font-size: 14px;
+    padding: 5px 7px; color: var(--text-primary);
+  }
+
+  /* population forecast */
+  .pop-forecast-row {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    padding: 7px 0; border-bottom: 1px solid var(--gridline); font-size: 12px;
+  }
+  .pop-forecast-row:last-child { border-bottom: none; }
+  .pop-forecast-row .pf-label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); flex: none; }
+  .pop-forecast-row .pf-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .pop-forecast-row .pf-values { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .pop-forecast-row .pf-rate { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+  svg#popChart { width: 100%; height: auto; display: block; margin-top: 8px; }
+  .pop-chart-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text-secondary); margin-top: 8px; }
+  .pop-chart-legend .key { display: inline-flex; align-items: center; gap: 5px; }
+  .pop-chart-legend .key .pf-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* business picker */
+  .biz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .biz-card {
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px; cursor: pointer;
+    font-size: 12px; text-align: left; background: var(--page); color: var(--text-primary);
+  }
+  .biz-card .biz-name { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  .biz-card .biz-meta { color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+  .biz-card.selected { border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 10%, var(--page)); }
+
+  /* command toggles */
+  .command-group + .command-group { margin-top: 14px; }
+  .command-group-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+  .command-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+  }
+  .command-card .cmd-name { font-size: 13px; font-weight: 600; }
+  .command-card .cmd-hint { font-size: 11px; color: var(--text-muted); margin: 3px 0 4px; }
+  .command-card .cmd-cost { font-size: 11px; color: var(--text-secondary); }
+  .switch { position: relative; width: 40px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-pill { position: absolute; inset: 0; background: var(--baseline); border-radius: 999px; transition: background .15s; cursor: pointer; }
+  .slider-pill::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
+  .switch input:checked + .slider-pill { background: var(--series-1); }
+  .switch input:checked + .slider-pill::before { transform: translateX(18px); }
+
+  /* result / diagnosis */
+  .result-headline { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  .fit-row { display: flex; gap: 14px; align-items: center; padding: 10px 0; border-top: 1px solid var(--gridline); }
+  .fit-row:first-of-type { border-top: none; }
+  .fit-badge {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 64px; height: 36px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .fit-badge.good { background: var(--good); }
+  .fit-badge.warning { background: var(--warning); color: #3a2900; }
+  .fit-badge.critical { background: var(--critical); }
+  .fit-body { flex: 1; min-width: 0; }
+  .fit-title { font-size: 13px; font-weight: 600; }
+  .fit-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  .axis text { fill: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .axis line, .axis path { stroke: var(--baseline); }
+  .gridline { stroke: var(--gridline); stroke-width: 1px; }
+</style>
+</head>
+<body>
+<div class="app" id="setupScreen">
+  <header>
+    <h1>未来の店舗生存サバイバルゲーム <span class="app-version-tag"></span></h1>
+    <p class="sub">全国どこでも、e-Statの実際の国勢調査データ（地域メッシュ統計）を使い、出店戦略が10年後の人口動態と噛み合っているかを診断するシミュレーションゲームです。</p>
+  </header>
+  <div class="card" style="max-width:560px;">
+    <h2>あそぶ準備</h2>
+    <p class="note" style="margin-bottom:12px;font-size:12px;line-height:1.7;">
+      開始すると、指定した店舗周辺の地域メッシュ統計（1kmメッシュ、令和2年・平成27年国勢調査）を
+      あなた自身の e-Stat アプリケーションID（APIキー）でその場から取得します。
+      キーはこのページを開いている間、ブラウザのメモリ上でのみ保持され、e-Stat の公式APIへ
+      送信する以外の用途には使いません。リロードすると再入力が必要です。
+    </p>
+    <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">店舗の場所</label>
+    <div style="display:flex;gap:8px;margin-bottom:6px;">
+      <input type="text" id="storeLocationInput" placeholder="Google MapsのURL、または「緯度, 経度」を貼り付け"
+        style="flex:1;font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--page);color:var(--text-primary);">
+    </div>
+    <div class="note" id="storeLocationStatus" style="margin-bottom:14px;">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。全国どこでも指定できます。</div>
+    <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">e-Stat アプリケーションID（APIキー）</label>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input type="password" id="appIdInput" placeholder="e-Stat マイページで発行したアプリケーションID" autocomplete="off"
+        style="flex:1;font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--page);color:var(--text-primary);">
+      <button id="toggleAppIdVisible" type="button"
+        style="font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;">表示</button>
+    </div>
+    <div class="note" style="margin-bottom:14px;">未発行の場合は e-Stat マイページ（www.e-stat.go.jp）からアプリケーションIDを取得してください。</div>
+    <button id="startGameBtn" type="button"
+      style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">
+      データを取得して開始する
+    </button>
+    <div id="setupStatus" class="note" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<div class="app" id="gameRoot" style="display:none;">
+  <header>
+    <h1>未来の店舗生存サバイバルゲーム <span class="app-version-tag"></span></h1>
+    <p class="sub">e-Statの地域メッシュ統計（令和2年・平成27年国勢調査）を使用</p>
+  </header>
+  <div class="data-badge">✓ 商圏マップ・人口構成は e-Stat API（地域メッシュ統計、1kmメッシュ）の実データです</div>
+  <div class="mock-badge">⚠ 主婦・専門職の人口比率は未実装データのため仮定値です。また統計基準年(2020年)と現在の間は実測トレンドを直線的に延伸しています。お金の計算はしていません（人口データのみで定性評価）</div>
+
+  <div class="layout">
+    <section class="card map-panel">
+      <h2>商圏マップ</h2>
+      <div class="gmaps-row">
+        <input type="text" id="gmapsInput" placeholder="Google MapsのURL、または「緯度, 経度」を貼り付け">
+        <button id="gmapsApply">反映</button>
+      </div>
+      <div class="gmaps-status" id="gmapsStatus">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。地図を直接クリックしても指定できます。別の場所に移動すると、その場でデータを取得し直します。</div>
+      <div class="radius-row">
+        <span>商圏半径</span>
+        <input type="range" id="radiusSlider" min="300" max="5000" step="100" value="800">
+        <span id="radiusLabel">800m</span>
+      </div>
+      <div class="year-row">
+        <span class="label">表示する年</span>
+        <div class="year-presets" id="yearPresets">
+          <button data-year="0">現在</button>
+          <button data-year="5">5年後</button>
+          <button data-year="10" class="active">10年後</button>
+        </div>
+      </div>
+      <div id="map"></div>
+      <div class="legend-row">
+        <span id="legendMin">0</span>
+        <div class="legend-bar" id="legendBar"></div>
+        <span id="legendMax">0</span>
+      </div>
+      <div class="note" id="mapNote">色は総人口（実データ、令和2年国勢調査）。商圏円の外側は淡色表示。メッシュをクリックすると内訳を表示します。</div>
+    </section>
+
+    <aside class="control-panel">
+      <div class="card">
+        <h2>① この場所の10年後の人口予測</h2>
+        <div id="popForecastRows"></div>
+        <svg id="popChart" viewBox="0 0 480 140"></svg>
+        <div class="pop-chart-legend">
+          <span class="key"><span class="pf-dot" style="background:var(--series-1)"></span>年少(0-14)</span>
+          <span class="key"><span class="pf-dot" style="background:var(--series-2)"></span>生産年齢(15-64)</span>
+          <span class="key"><span class="pf-dot" style="background:var(--series-3)"></span>老年(65+)</span>
+        </div>
+        <div class="note" id="yearOffsetNote"></div>
+      </div>
+
+      <div class="card">
+        <h2>② この人口動態に対して、業種を選ぶ</h2>
+        <div class="biz-grid" id="bizGrid"></div>
+      </div>
+
+      <div class="card">
+        <h2>③ どう対策するか、戦略を立てる <span class="unit">— ヒト・モノ</span></h2>
+        <div id="commandGroups"></div>
+      </div>
+
+      <div class="card">
+        <h2>④ その戦略は、10年後の人口動態に合っているか</h2>
+        <div class="note" style="margin-bottom:10px;">お金の計算はしていません。実際の人口データ（若年・現役・シニア人口の実測トレンド）だけを使い、定性的に評価しています。</div>
+        <div class="result-headline" id="resultHeadline">業種と店舗位置を選ぶと診断されます</div>
+
+        <div class="fit-row">
+          <span class="fit-badge" id="customerFitBadge">—</span>
+          <div class="fit-body">
+            <div class="fit-title">客層とのマッチ度</div>
+            <div class="fit-detail" id="customerFitDetail"></div>
+          </div>
+        </div>
+        <div class="fit-row">
+          <span class="fit-badge" id="laborFitBadge">—</span>
+          <div class="fit-body">
+            <div class="fit-title">採用のしやすさ</div>
+            <div class="fit-detail" id="laborFitDetail"></div>
+          </div>
+        </div>
+        <div class="note" id="mismatchNote" style="display:none;"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
+<script>
+const APP_VERSION = "0.1.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
+let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
+let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
+
+/* ---------- live data loading (JIS地域メッシュ統計を e-Stat から取得、全国対応) ----------
+   町丁目境界ポリゴンはCORSでライブ取得できない(README/design-doc参照)ため、代わりに
+   「地域メッシュ統計」(1kmメッシュ、境界はp/u/q/v/r/wの数式で計算でき、実データも
+   getStatsData(searchKind=2)からライブ取得できることを実機確認済み)を採用する。
+   全国どの座標でも同じロジックで動く。 */
+const CENSUS_INTERVAL_YEARS = 5;
+const MESH_LAT_STEP = 30 / 3600;   // 1kmメッシュの緯度幅(度)。緯度0度起点の一様グリッド
+const MESH_LNG_STEP = 45 / 3600;   // 1kmメッシュの経度幅(度)。経度100度起点の一様グリッド
+const MAX_RADIUS_M = 5000;         // UIのスライダー上限。ゲーム開始時にこの半径分だけ先読みしておく
+
+function meshCodeAt(lat, lng) {
+  const p = Math.floor(lat * 1.5);
+  let rem = lat - p * (40 / 60);
+  const q = Math.floor(rem / (5 / 60));
+  rem -= q * (5 / 60);
+  const r = Math.floor(rem / (30 / 3600));
+
+  const u = Math.floor(lng - 100);
+  let remLng = lng - 100 - u;
+  const v = Math.floor(remLng / (7.5 / 60));
+  remLng -= v * (7.5 / 60);
+  const w = Math.floor(remLng / (45 / 3600));
+
+  return String(p).padStart(2, "0") + String(u).padStart(2, "0") + q + v + r + w;
+}
+
+function meshBBoxFromCode(code) {
+  code = String(code);
+  const p = parseInt(code.slice(0, 2), 10);
+  const u = parseInt(code.slice(2, 4), 10);
+  const q = parseInt(code[4], 10);
+  const v = parseInt(code[5], 10);
+  const r = parseInt(code[6], 10);
+  const w = parseInt(code[7], 10);
+  const latMin = (p * 40 / 60) + (q * 5 / 60) + (r * 30 / 3600);
+  const lngMin = (u + 100) + (v * 7.5 / 60) + (w * 45 / 3600);
+  return { latMin, lngMin, latMax: latMin + MESH_LAT_STEP, lngMax: lngMin + MESH_LNG_STEP };
+}
+
+function meshCellPolygonCoords(code) {
+  const b = meshBBoxFromCode(code);
+  return [[
+    [b.lngMin, b.latMin], [b.lngMax, b.latMin],
+    [b.lngMax, b.latMax], [b.lngMin, b.latMax], [b.lngMin, b.latMin]
+  ]];
+}
+
+function meshCodesInBBox(latMin, latMax, lngMin, lngMax) {
+  const codes = new Set();
+  const latStartIdx = Math.floor(latMin / MESH_LAT_STEP);
+  const latEndIdx = Math.floor(latMax / MESH_LAT_STEP);
+  const lngStartIdx = Math.floor((lngMin - 100) / MESH_LNG_STEP);
+  const lngEndIdx = Math.floor((lngMax - 100) / MESH_LNG_STEP);
+  for (let li = latStartIdx; li <= latEndIdx; li++) {
+    const lat = (li + 0.5) * MESH_LAT_STEP;
+    for (let ni = lngStartIdx; ni <= lngEndIdx; ni++) {
+      const lng = 100 + (ni + 0.5) * MESH_LNG_STEP;
+      codes.add(meshCodeAt(lat, lng));
+    }
+  }
+  return Array.from(codes);
+}
+
+function region1(meshCode) { return meshCode.slice(0, 4); } // 1次メッシュコード(約80km四方)
+
+async function estatFetch(url, statsDataId) {
+  let resp;
+  try {
+    resp = await fetch(url);
+  } catch (e) {
+    throw new Error("e-Stat API(" + statsDataId + ")への通信に失敗しました。CORSでブロックされているか、ネットワークに問題がある可能性があります。");
+  }
+  if (!resp.ok) throw new Error("e-Stat API(" + statsDataId + ")がHTTP " + resp.status + "を返しました。");
+  return resp.json();
+}
+
+// 1次メッシュ地域(例: "5339")・国勢調査年に対応する統計表IDを検索して見つける。
+// 地域メッシュ統計は町丁目統計と異なり、1次メッシュ地域ごとに別々の統計表として
+// 登録されているため、固定IDではなく毎回検索が必要(README/design-doc参照)。
+async function findMeshTableId(year, region1Code) {
+  const params = new URLSearchParams({
+    appId: ESTAT_APP_ID,
+    searchWord: year + "国勢調査 M" + region1Code,
+    statsCode: "00200521",
+    searchKind: "2",
+    limit: "10"
+  });
+  const json = await estatFetch("https://api.e-stat.go.jp/rest/3.0/app/json/getStatsList?" + params.toString(), "getStatsList");
+  const root = json.GET_STATS_LIST;
+  if (!root) throw new Error("統計表検索(M" + region1Code + ", " + year + ")で不正な応答が返されました。");
+  // STATUS=1は「該当データなし」であり認証エラーではない。この地域に統計表が
+  // 無いだけの正常な状態として扱い、下のtotalチェックのメッセージに任せる。
+  if (root.RESULT.STATUS !== 0 && root.RESULT.STATUS !== 1) {
+    const msg = root.RESULT.ERROR_MSG || root.RESULT.STATUS;
+    throw new Error("統計表検索(M" + region1Code + ", " + year + ")でエラー: " + msg);
+  }
+  const total = root.RESULT.STATUS === 1 ? 0 : root.DATALIST_INF.NUMBER;
+  if (!total) {
+    throw new Error("M" + region1Code + "(" + year + ")の地域メッシュ統計表が見つかりませんでした。この地点は地域メッシュ統計の対象外の可能性があります。");
+  }
+  let tableInf = root.DATALIST_INF.TABLE_INF;
+  if (!Array.isArray(tableInf)) tableInf = [tableInf];
+  const titleOf = t => (t.TITLE && t.TITLE["$"]) || "";
+  const tableNameOf = t => (t.TITLE_SPEC && t.TITLE_SPEC.TABLE_NAME) || "";
+  // まずタイトルにメッシュコードがちょうど一致するものに絞り込む(地域の取り違え防止)。
+  const regionMatches = tableInf.filter(t => titleOf(t).includes("M" + region1Code));
+  const candidates = regionMatches.length > 0 ? regionMatches : tableInf;
+  // 平成27年版は1次メッシュごとに「その1(人口等基本集計)/その2(人口移動・就業)/
+  // その3(従業地・世帯構造)」の3表に分かれており、年齢区分があるのはその1のみ。
+  // 令和2年版は単一表(「人口及び世帯」)なのでそのまま該当する。
+  const basicPop = candidates.find(t =>
+    tableNameOf(t).includes("人口等基本集計") || tableNameOf(t).includes("人口及び世帯")
+  );
+  return (basicPop || candidates[0])["@id"];
+}
+
+// cat01の分類は国勢調査の年度によって数値コードが変わる(例:「65歳以上」が
+// 2015年は0160、2020年は0190)ため、コードではなく分類名の部分一致で探す。
+// 「総数」(年齢区分なしの総人口)だけはコード0010が両年とも安定していたため、
+// 0010を優先しつつ先頭要素にフォールバックする。
+function findCat01Code(classInf, namePattern) {
+  let classObjs = classInf.CLASS_OBJ;
+  if (!Array.isArray(classObjs)) classObjs = [classObjs];
+  const cat01 = classObjs.find(o => o["@id"] === "cat01");
+  if (!cat01) throw new Error("cat01の分類情報が見つかりません");
+  let classes = cat01.CLASS;
+  if (!Array.isArray(classes)) classes = [classes];
+  if (namePattern === null) {
+    return (classes.find(c => c["@code"] === "0010") || classes[0])["@code"];
+  }
+  const hit = classes.find(c => c["@level"] === "1" && (c["@name"] || "").includes(namePattern));
+  if (!hit) throw new Error("cat01の中に「" + namePattern + "」を含む項目が見つかりません(e-Statの表構成が変わった可能性があります)");
+  return hit["@code"];
+}
+
+// meshCodes(8桁の1kmメッシュコード)の実データを、必要な分だけ(cdArea指定)取得する。
+// 1次メッシュ全体を取ると数万件になり得るため、trade area分だけに絞り込む。
+async function fetchMeshValues(statsDataId, meshCodes) {
+  const BATCH = 50;
+  const byArea = {};
+  let cat01Codes = null;
+  for (let i = 0; i < meshCodes.length; i += BATCH) {
+    const batch = meshCodes.slice(i, i + BATCH);
+    const params = new URLSearchParams({
+      appId: ESTAT_APP_ID, statsDataId, searchKind: "2", lang: "J",
+      cdArea: batch.join(",")
+    });
+    const json = await estatFetch("https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData?" + params.toString(), statsDataId);
+    const root = json.GET_STATS_DATA;
+    if (!root) throw new Error("e-Stat API(" + statsDataId + ")から不正な応答が返されました。");
+    if (root.RESULT.STATUS === 1) {
+      // STATUS=1は「検索条件に該当するデータなし」であり、認証エラーではない。
+      // 非居住・山間部等でこのバッチのメッシュに人口データが1件も無いだけの
+      // 正常な状態としてスキップする(このtry内で例外にしない)。
+      continue;
+    }
+    if (root.RESULT.STATUS !== 0) {
+      const msg = root.RESULT.ERROR_MSG || root.RESULT.STATUS;
+      throw new Error("e-Stat API(" + statsDataId + ")エラー: " + msg + "。アプリケーションIDが正しいか確認してください。");
+    }
+    if (!cat01Codes) {
+      cat01Codes = {
+        total: findCat01Code(root.STATISTICAL_DATA.CLASS_INF, null),
+        young: findCat01Code(root.STATISTICAL_DATA.CLASS_INF, "０～１４歳"),
+        active: findCat01Code(root.STATISTICAL_DATA.CLASS_INF, "１５～６４歳"),
+        senior: findCat01Code(root.STATISTICAL_DATA.CLASS_INF, "６５歳以上")
+      };
+    }
+    (root.STATISTICAL_DATA.DATA_INF.VALUE || []).forEach(v => {
+      if (v["@cat02"] !== "1") return; // 合算(2)・秘匿(3)は除外し、無し(1)のみ採用
+      const area = v["@area"];
+      const raw = v["$"];
+      const val = parseInt(raw, 10);
+      if (!Number.isFinite(val)) return;
+      byArea[area] = byArea[area] || {};
+      if (v["@cat01"] === cat01Codes.total) byArea[area].population = val;
+      else if (v["@cat01"] === cat01Codes.young) byArea[area].pop_young = val;
+      else if (v["@cat01"] === cat01Codes.active) byArea[area].pop_active = val;
+      else if (v["@cat01"] === cat01Codes.senior) byArea[area].pop_senior = val;
+    });
+  }
+  return byArea;
+}
+
+// 複数の1次メッシュ地域にまたがる場合(店舗が1次メッシュの境界付近にある場合)に
+// 対応するため、地域ごとにグループ化してから表IDを検索・取得する。
+async function fetchYearData(year, meshCodes) {
+  const byRegion = {};
+  meshCodes.forEach(code => {
+    const r = region1(code);
+    (byRegion[r] = byRegion[r] || []).push(code);
+  });
+  const result = {};
+  for (const r of Object.keys(byRegion)) {
+    const tableId = await findMeshTableId(year, r);
+    const values = await fetchMeshValues(tableId, byRegion[r]);
+    Object.assign(result, values);
+  }
+  return result;
+}
+
+async function loadRealData(appId, storeLat, storeLng) {
+  ESTAT_APP_ID = appId;
+
+  const dLat = MAX_RADIUS_M / 1000 / 111;
+  const dLng = MAX_RADIUS_M / 1000 / (111 * Math.cos(storeLat * Math.PI / 180));
+  const meshCodes = meshCodesInBBox(storeLat - dLat, storeLat + dLat, storeLng - dLng, storeLng + dLng);
+  if (meshCodes.length === 0) {
+    throw new Error("指定座標の周辺メッシュを計算できませんでした。緯度経度が正しいか確認してください。");
+  }
+
+  const data2020 = await fetchYearData("令和2年", meshCodes);
+  const data2015 = await fetchYearData("平成27年", meshCodes);
+
+  // メッシュごとの年率 = (2020年値/2015年値)^(1/5) - 1。2015年に対応データがない
+  // (非居住・秘匿等の)メッシュは、先読みした範囲内の人口加重平均(フォールバック)で補う。
+  const BRACKETS = ["young", "active", "senior"];
+  const rateNum = { young: 0, active: 0, senior: 0 };
+  const rateDen = { young: 0, active: 0, senior: 0 };
+  const rates = {};
+
+  meshCodes.forEach(code => {
+    const s2020 = data2020[code];
+    const s2015 = data2015[code];
+    if (!s2020) return;
+    rates[code] = {};
+    BRACKETS.forEach(b => {
+      const v2020 = s2020["pop_" + b] || 0;
+      const v2015 = s2015 ? (s2015["pop_" + b] || 0) : 0;
+      if (v2015 > 0 && v2020 > 0) {
+        const rate = Math.pow(v2020 / v2015, 1 / CENSUS_INTERVAL_YEARS) - 1;
+        rates[code][b] = rate;
+        rateNum[b] += rate * v2020;
+        rateDen[b] += v2020;
+      }
+    });
+  });
+
+  const fallbackRate = {};
+  BRACKETS.forEach(b => { fallbackRate[b] = rateDen[b] > 0 ? rateNum[b] / rateDen[b] : 0; });
+
+  const features = [];
+  meshCodes.forEach(code => {
+    const s2020 = data2020[code];
+    if (!s2020) return; // データなし(非居住メッシュ等)はスキップ
+    const props = {
+      key_code: code,
+      name: "メッシュ " + code,
+      population: s2020.population || 0,
+      pop_young: s2020.pop_young || 0,
+      pop_active: s2020.pop_active || 0,
+      pop_senior: s2020.pop_senior || 0
+    };
+    BRACKETS.forEach(b => {
+      props["rate_" + b] = (rates[code] && rates[code][b] !== undefined) ? rates[code][b] : fallbackRate[b];
+    });
+    features.push({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: meshCellPolygonCoords(code) },
+      properties: props
+    });
+  });
+  if (features.length === 0) {
+    throw new Error("指定座標の周辺に居住人口データのあるメッシュが見つかりませんでした。別の場所を試してください。");
+  }
+
+  INAGE_GEOJSON = { type: "FeatureCollection", name: "mesh_live", features };
+}
+</script>
+<script>
+(function () {
+  "use strict";
+
+  const HOUSEWIFE_FRACTION = 0.3;   // 現役人口のうち主婦・短時間就業ポテンシャルとみなす割合（仮定）
+  const SPECIALIST_FRACTION = 0.08; // 現役人口のうち専門職候補とみなす割合（仮定、経済センサス未連携のため）
+
+  /* ---------- 7 business types (GDD v6.1 §PRD-1) ----------
+     v6.1で円建てP&L（初期売上・原価率・人件費率）は評価に使わないことにした。
+     残すのは「ターゲット適性重み」「依存する労働力」「商品ミスマッチ感度」という、
+     実人口データと組み合わせて定性判定するための業種特性のみ。 */
+  const BUSINESS_TYPES = [
+    { id: "conveni", name: "① コンビニ", laborDependency: "young", wasteRiskCoef: 0.15, weights: { young: 0.50, active: 0.40, senior: 0.10 }, radiusDefault: 500 },
+    { id: "supermarket", name: "② 食品スーパー", laborDependency: "housewife_senior", wasteRiskCoef: 0.10, weights: { young: 0.15, active: 0.35, senior: 0.50 }, radiusDefault: 2000 },
+    { id: "izakaya", name: "③ 居酒屋", laborDependency: "young", wasteRiskCoef: 0.05, weights: { young: 0.60, active: 0.35, senior: 0.05 }, radiusDefault: 500 },
+    { id: "drugstore", name: "④ ドラッグストア", laborDependency: "housewife_senior", wasteRiskCoef: 0.01, weights: { young: 0.10, active: 0.40, senior: 0.50 }, radiusDefault: 3000 },
+    { id: "petsalon", name: "⑤ ペットショップ・サロン", laborDependency: "specialist", wasteRiskCoef: 0.01, weights: { young: 0.20, active: 0.60, senior: 0.20 }, radiusDefault: 1500 },
+    { id: "petretail", name: "⑥ ペット関連小売", laborDependency: "general", wasteRiskCoef: 0.05, weights: { young: 0.20, active: 0.50, senior: 0.30 }, radiusDefault: 1500 },
+    { id: "finance", name: "⑦ 金融事業・地域代理店", laborDependency: "specialist", wasteRiskCoef: 0.00, weights: { young: 0.05, active: 0.35, senior: 0.60 }, radiusDefault: 1500 },
+    { id: "homecenter", name: "⑧ ホームセンター", laborDependency: "general", wasteRiskCoef: 0.02, weights: { young: 0.10, active: 0.45, senior: 0.45 }, radiusDefault: 4000 }
+  ];
+  const LABOR_DEP_LABEL = { young: "生産年齢層(15-64)", housewife_senior: "主婦・シニア", specialist: "専門職候補", general: "一般スタッフ" };
+
+  /* ---------- commands (GDD v6.1 §PRD-2, カネは一旦削除) ---------- */
+  const COMMANDS = [
+    { id: "hito_shift", group: "ヒト", name: "主婦・シニア短時間シフト雇用", hint: "労働力の依存先を「現役層の一部＋シニア層」に切り替える" },
+    { id: "mono_mismatch", group: "モノ", name: "小分け・シニアプレミアム特化", hint: "商品ミスマッチを解消し、客層マッチ度を1段階改善", exclude: ["finance"] },
+    { id: "mono_finance", group: "モノ", name: "シニア資産コンサル特化", hint: "シニア層への適性重みを引き上げる（金融事業のみ）", only: ["finance"] },
+    { id: "mono_dx", group: "モノ", name: "自動発注・セルフレジDX", hint: "労働力への依存度を下げ、採用のしやすさを1段階改善", only: ["conveni", "supermarket", "finance"] }
+  ];
+
+  /* ---------- state ---------- */
+  const state = {
+    storeLatLng: null, // ゲーム開始時に起動画面で入力された座標をセットする
+    radiusM: 800,
+    selectedBusinessId: null,
+    commands: {},
+    viewYear: 10 // 地図・損益で「何年後」を表示するか。デフォルトは10年後（診断の対象年と一致させる）
+  };
+
+  function selectedBusiness() { return BUSINESS_TYPES.find(b => b.id === state.selectedBusinessId) || null; }
+
+  // 統計データの基準年（令和2年国勢調査 = 2020年）と「今年」のズレを補正する。
+  // 「10年後」は基準年の10年後ではなく、今日から10年後（＝基準年からは 6+10 年後）を指す。
+  const DATA_YEAR = 2020;
+  const CURRENT_YEAR = new Date().getFullYear();
+  const YEARS_SINCE_DATA = CURRENT_YEAR - DATA_YEAR;
+
+  // メッシュごとに実測（2015->2020国勢調査比較）の年率をそのまま使う。全域一律の仮定値は使わない。
+  // yearsFromNow=0 が「今年（現在)」、10 が「10年後」になるよう、2020年基準からの経過年数を加算する。
+  function projectFeature(props, yearsFromNow) {
+    const year = YEARS_SINCE_DATA + yearsFromNow;
+    return {
+      young: (props.pop_young || 0) * Math.pow(1 + (props.rate_young || 0), year),
+      active: (props.pop_active || 0) * Math.pow(1 + (props.rate_active || 0), year),
+      senior: (props.pop_senior || 0) * Math.pow(1 + (props.rate_senior || 0), year)
+    };
+  }
+
+  // 商圏内の人口加重平均年率（参考表示専用。シミュレーション自体は町丁目別の実測率で計算する）
+  function weightedAverageRates(feats) {
+    const sums = { young: 0, active: 0, senior: 0 };
+    const weighted = { young: 0, active: 0, senior: 0 };
+    feats.forEach(f => {
+      const p = f.properties;
+      ["young", "active", "senior"].forEach(b => {
+        const base = p[`pop_${b}`] || 0;
+        sums[b] += base;
+        weighted[b] += base * (p[`rate_${b}`] || 0);
+      });
+    });
+    return {
+      young: sums.young ? weighted.young / sums.young : 0,
+      active: sums.active ? weighted.active / sums.active : 0,
+      senior: sums.senior ? weighted.senior / sums.senior : 0
+    };
+  }
+
+  /* ---------- sequential blue ramp (palette.md, step 100->700) ---------- */
+  const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+  function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }; }
+  function seqColor(t) {
+    t = Math.min(Math.max(t, 0), 1);
+    const n = RAMP.length - 1;
+    const x = t * n;
+    let i = Math.floor(x);
+    if (i >= n) i = n - 1;
+    const f = x - i;
+    const a = hexToRgb(RAMP[i]), b = hexToRgb(RAMP[i + 1]);
+    return `rgb(${Math.round(a.r+(b.r-a.r)*f)},${Math.round(a.g+(b.g-a.g)*f)},${Math.round(a.b+(b.b-a.b)*f)})`;
+  }
+  const MUTED_FILL = "#c3c2b7";
+
+  function metricFor(props) {
+    const p = projectFeature(props, state.viewYear);
+    const biz = selectedBusiness();
+    if (!biz) return p.young + p.active + p.senior;
+    return (biz.weights.young * p.young) + (biz.weights.active * p.active) + (biz.weights.senior * p.senior);
+  }
+
+  /* ---------- map setup ---------- */
+  const map = L.map("map", { scrollWheelZoom: true }); // setViewはゲーム開始後、店舗座標が決まってから呼ぶ
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors",
+    maxZoom: 18
+  }).addTo(map);
+
+  let geoLayer, circleLayer, marker;
+
+  function currentMaxMetric() {
+    return Math.max(...INAGE_GEOJSON.features.map(f => metricFor(f.properties)));
+  }
+
+  function styleFeature(feature, inTradeArea, maxMetric) {
+    const val = metricFor(feature.properties);
+    return {
+      color: "#ffffff",
+      weight: 1,
+      fillOpacity: inTradeArea ? 0.78 : 0.22,
+      fillColor: inTradeArea ? seqColor(maxMetric === 0 ? 0 : val / maxMetric) : MUTED_FILL
+    };
+  }
+
+  function popupContent(p) {
+    return `
+      <div class="town-tooltip">
+        <div style="font-weight:600;margin-bottom:4px;">${p.name}</div>
+        <div class="row"><span class="k">人口</span><span class="v">${(p.population||0).toLocaleString()}</span></div>
+        <div class="row"><span class="k">年少(0-14)</span><span class="v">${(p.pop_young||0).toLocaleString()}</span></div>
+        <div class="row"><span class="k">生産年齢(15-64)</span><span class="v">${(p.pop_active||0).toLocaleString()}</span></div>
+        <div class="row"><span class="k">老年(65+)</span><span class="v">${(p.pop_senior||0).toLocaleString()}</span></div>
+      </div>`;
+  }
+
+  function tradeAreaFeatures() {
+    const center = turf.point([state.storeLatLng.lng, state.storeLatLng.lat]);
+    const circle = turf.circle(center, state.radiusM / 1000, { units: "kilometers", steps: 64 });
+    return INAGE_GEOJSON.features.filter(f => {
+      try { return turf.booleanIntersects(circle, f); } catch (e) { return false; }
+    });
+  }
+
+  function rebuildMapLayer() {
+    const inArea = new Set(tradeAreaFeatures());
+    const maxMetric = currentMaxMetric();
+    if (geoLayer) geoLayer.remove();
+    geoLayer = L.geoJSON(INAGE_GEOJSON, {
+      style: (f) => styleFeature(f, inArea.has(f), maxMetric),
+      onEachFeature: (f, layer) => {
+        layer.bindPopup(popupContent(f.properties));
+        layer.on("mouseover", () => layer.setStyle({ weight: 2 }));
+        layer.on("mouseout", () => layer.setStyle({ weight: 1 }));
+      }
+    }).addTo(map);
+
+    if (circleLayer) circleLayer.remove();
+    circleLayer = L.circle(state.storeLatLng, {
+      radius: state.radiusM, color: "#0b0b0b", weight: 1.5, dashArray: "4 4", fill: false
+    }).addTo(map);
+
+    if (!marker) {
+      marker = L.marker(state.storeLatLng, { draggable: true }).addTo(map);
+      marker.on("dragend", () => {
+        const p = marker.getLatLng();
+        setStoreLocation(p.lat, p.lng, gmapsStatus);
+      });
+    } else {
+      marker.setLatLng(state.storeLatLng);
+    }
+
+    const legendBar = document.getElementById("legendBar");
+    legendBar.style.background = `linear-gradient(to right, ${RAMP.join(",")})`;
+    document.getElementById("legendMin").textContent = "0";
+    document.getElementById("legendMax").textContent = Math.round(maxMetric).toLocaleString();
+    const biz = selectedBusiness();
+    const yearLabel = state.viewYear === 0 ? "現在" : state.viewYear + "年後";
+    document.getElementById("mapNote").textContent = biz
+      ? `色は「${biz.name}」のターゲット加重人口（${yearLabel}の推計）。商圏円の外側は淡色表示。`
+      : `色は総人口（${yearLabel}の推計）。商圏円の外側は淡色表示。町丁目をクリックすると内訳を表示します。`;
+  }
+
+  map.on("click", (e) => { setStoreLocation(e.latlng.lat, e.latlng.lng, gmapsStatus); });
+
+  function parseLatLngFromText(text) {
+    text = text.trim();
+    let m = text.match(/[?&#](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Google Mapsの「!3d{lat}!4d{lng}」は実際のピン(場所)の座標。
+    // 「@{lat},{lng}」は地図の表示中心でしかなく、ズームアウト後にコピーすると
+    // ピンから大きくズレるため、!3d/!4dがあればそちらを優先する。
+    m = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    m = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    m = text.match(/^(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    return null;
+  }
+
+  let locationFetchInFlight = false;
+
+  async function setStoreLocation(lat, lng, statusEl) {
+    state.storeLatLng = L.latLng(lat, lng);
+    if (marker) marker.setLatLng(state.storeLatLng);
+    map.panTo(state.storeLatLng);
+    rerenderAll();
+
+    if (tradeAreaFeatures().length > 0) {
+      if (statusEl) {
+        statusEl.textContent = `座標を反映しました (${lat.toFixed(5)}, ${lng.toFixed(5)})。商圏内のメッシュ数: ${tradeAreaFeatures().length}`;
+        statusEl.className = "gmaps-status ok";
+      }
+      return;
+    }
+
+    if (locationFetchInFlight) {
+      if (statusEl) {
+        statusEl.textContent = "前回のデータ取得が完了するまでお待ちください。";
+        statusEl.className = "gmaps-status error";
+      }
+      return;
+    }
+
+    // 先読み済みの範囲外(ゲーム開始時の座標から離れた場所)に移動した場合は、
+    // その場でこの新しい場所のメッシュ統計を取り直す。
+    if (statusEl) {
+      statusEl.textContent = `この場所 (${lat.toFixed(5)}, ${lng.toFixed(5)}) のデータをe-Statから取得しています…`;
+      statusEl.className = "note";
+    }
+    locationFetchInFlight = true;
+    try {
+      await loadRealData(ESTAT_APP_ID, lat, lng);
+      rerenderAll();
+      if (statusEl) {
+        statusEl.textContent = `新しい場所のデータを取得しました (${lat.toFixed(5)}, ${lng.toFixed(5)})。商圏内のメッシュ数: ${tradeAreaFeatures().length}`;
+        statusEl.className = "gmaps-status ok";
+      }
+    } catch (err) {
+      console.error(err);
+      if (statusEl) {
+        statusEl.textContent = `この場所のデータ取得に失敗しました: ${err.message}`;
+        statusEl.className = "gmaps-status error";
+      }
+    } finally {
+      locationFetchInFlight = false;
+    }
+  }
+
+  const gmapsInput = document.getElementById("gmapsInput");
+  const gmapsStatus = document.getElementById("gmapsStatus");
+  function applyGmapsInput() {
+    const raw = gmapsInput.value;
+    if (!raw.trim()) return;
+    const parsed = parseLatLngFromText(raw);
+    if (!parsed) {
+      const isShortLink = /goo\.gl|maps\.app/.test(raw);
+      gmapsStatus.textContent = isShortLink
+        ? "短縮URLからは座標を取得できません。Google Mapsで展開後のURL、または地点を右クリックして出る「緯度, 経度」をコピーして貼り付けてください。"
+        : "座標を読み取れませんでした。Google MapsのURL、または「緯度, 経度」の形式で貼り付けてください。";
+      gmapsStatus.className = "gmaps-status error";
+      return;
+    }
+    setStoreLocation(parsed.lat, parsed.lng, gmapsStatus);
+  }
+  document.getElementById("gmapsApply").addEventListener("click", applyGmapsInput);
+  gmapsInput.addEventListener("keydown", (e) => { if (e.key === "Enter") applyGmapsInput(); });
+
+  function fmtRadius(m) { return m >= 1000 ? (m / 1000) + "km" : m + "m"; }
+
+  const radiusSlider = document.getElementById("radiusSlider");
+  const radiusLabel = document.getElementById("radiusLabel");
+  radiusSlider.addEventListener("input", () => {
+    state.radiusM = Number(radiusSlider.value);
+    radiusLabel.textContent = fmtRadius(state.radiusM);
+    rerenderAll();
+  });
+
+  document.querySelectorAll("#yearPresets button").forEach(b => {
+    b.addEventListener("click", () => {
+      state.viewYear = Number(b.dataset.year);
+      document.querySelectorAll("#yearPresets button").forEach(x => x.classList.toggle("active", x === b));
+      rerenderAll();
+    });
+  });
+
+  // メッシュごとの実測年率で個別に投影してから合算する（商圏全体を一律の率で近似しない）
+  function popAtFeats(feats, t) {
+    let young = 0, active = 0, senior = 0;
+    feats.forEach(f => {
+      const p = projectFeature(f.properties, t);
+      young += p.young; active += p.active; senior += p.senior;
+    });
+    return { young, active, senior };
+  }
+
+  /* =====================================================================
+     ① POPULATION FORECAST (業種を選ぶ前に、まず人口動態を見せる)
+     ===================================================================== */
+  const POP_BRACKET_LABEL = { young: "年少人口(0-14)", active: "生産年齢人口(15-64)", senior: "老年人口(65+)" };
+  const POP_BRACKET_COLOR = { young: "var(--series-1)", active: "var(--series-2)", senior: "var(--series-3)" };
+
+  function renderPopulationForecast() {
+    const feats = tradeAreaFeatures();
+    const rows = document.getElementById("popForecastRows");
+    const chart = document.getElementById("popChart");
+    if (feats.length === 0) {
+      rows.innerHTML = `<div class="note">地図で店舗位置を指定すると、この場所の人口予測が表示されます</div>`;
+      chart.innerHTML = "";
+      return;
+    }
+    const pop0 = popAtFeats(feats, 0);
+    const pop10 = popAtFeats(feats, 10);
+    const rates = weightedAverageRates(feats);
+
+    rows.innerHTML = ["young", "active", "senior"].map(b => `
+      <div class="pop-forecast-row">
+        <span class="pf-label"><span class="pf-dot" style="background:${POP_BRACKET_COLOR[b]}"></span>${POP_BRACKET_LABEL[b]}</span>
+        <span class="pf-values">${Math.round(pop0[b]).toLocaleString()}人 → ${Math.round(pop10[b]).toLocaleString()}人
+          <span class="pf-rate">(${rates[b] >= 0 ? "+" : ""}${(rates[b] * 100).toFixed(1)}%/年)</span>
+        </span>
+      </div>
+    `).join("");
+
+    renderPopChart(feats);
+  }
+
+  /* ---------- shared SVG chart helpers ---------- */
+  const svgNS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs) { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function niceStep(range, count) {
+    const raw = range / count;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+    const norm = raw / mag;
+    return (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  }
+
+  function renderPopChart(feats) {
+    const svg = document.getElementById("popChart");
+    svg.innerHTML = "";
+    const CW = 480, CH = 140, MARGIN = { top: 10, right: 14, bottom: 20, left: 50 };
+    const plotW = CW - MARGIN.left - MARGIN.right;
+    const plotH = CH - MARGIN.top - MARGIN.bottom;
+
+    const years = Array.from({ length: 11 }, (_, i) => i);
+    const series = { young: [], active: [], senior: [] };
+    years.forEach(t => {
+      const p = popAtFeats(feats, t);
+      series.young.push(p.young); series.active.push(p.active); series.senior.push(p.senior);
+    });
+
+    const allVals = [...series.young, ...series.active, ...series.senior];
+    const rawMax = Math.max(...allVals, 1);
+    const step = niceStep(rawMax, 4);
+    const yMax = Math.ceil(rawMax / step) * step;
+
+    const x = (t) => MARGIN.left + (t / 10) * plotW;
+    const y = (v) => MARGIN.top + plotH - (v / (yMax || 1)) * plotH;
+
+    const gAxis = el("g", { class: "axis" });
+    for (let v = 0; v <= yMax + 1e-6; v += step) {
+      const yy = y(v);
+      gAxis.appendChild(el("line", { x1: MARGIN.left, x2: CW - MARGIN.right, y1: yy, y2: yy, class: "gridline" }));
+      const t = el("text", { x: MARGIN.left - 8, y: yy + 3, "text-anchor": "end" });
+      t.textContent = Math.round(v).toLocaleString();
+      gAxis.appendChild(t);
+    }
+    [0, 5, 10].forEach(t => {
+      const tx = el("text", { x: x(t), y: CH - 4, "text-anchor": "middle" });
+      tx.textContent = t === 0 ? "現在" : t + "年後";
+      gAxis.appendChild(tx);
+    });
+    svg.appendChild(gAxis);
+
+    ["young", "active", "senior"].forEach(b => {
+      const path = series[b].map((v, i) => `${i === 0 ? "M" : "L"}${x(years[i])},${y(v)}`).join(" ");
+      svg.appendChild(el("path", { d: path, fill: "none", stroke: POP_BRACKET_COLOR[b], "stroke-width": 2.5, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    });
+  }
+
+  /* =====================================================================
+     BUSINESS PICKER
+     ===================================================================== */
+  const bizGrid = document.getElementById("bizGrid");
+  BUSINESS_TYPES.forEach(biz => {
+    const card = document.createElement("button");
+    card.className = "biz-card";
+    card.dataset.id = biz.id;
+    card.innerHTML = `
+      <div class="biz-name">${biz.name}</div>
+      <div class="biz-meta">
+        依存労働力: ${LABOR_DEP_LABEL[biz.laborDependency]}<br>
+        一般的な商圏半径: ${fmtRadius(biz.radiusDefault)}
+      </div>`;
+    card.addEventListener("click", () => {
+      state.selectedBusinessId = biz.id;
+      document.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
+      state.radiusM = biz.radiusDefault;
+      radiusSlider.value = biz.radiusDefault;
+      radiusLabel.textContent = fmtRadius(biz.radiusDefault);
+      renderCommands();
+      rerenderAll();
+    });
+    bizGrid.appendChild(card);
+  });
+
+  /* ---------- commands UI ---------- */
+  function renderCommands() {
+    const container = document.getElementById("commandGroups");
+    const biz = selectedBusiness();
+    if (!biz) { container.innerHTML = `<div class="note">業種を選ぶとコマンドが表示されます</div>`; return; }
+    const groups = ["ヒト", "モノ"];
+    container.innerHTML = groups.map(g => {
+      const cmds = COMMANDS.filter(c => c.group === g)
+        .filter(c => !c.only || c.only.includes(biz.id))
+        .filter(c => !c.exclude || !c.exclude.includes(biz.id));
+      if (cmds.length === 0) return "";
+      return `<div class="command-group">
+        <div class="command-group-title">【${g}】</div>
+        ${cmds.map(c => `
+          <div class="command-card">
+            <div>
+              <div class="cmd-name">${c.name}</div>
+              <div class="cmd-hint">${c.hint}</div>
+            </div>
+            <label class="switch"><input type="checkbox" data-cmd="${c.id}" ${state.commands[c.id] ? "checked" : ""}><span class="slider-pill"></span></label>
+          </div>
+        `).join("")}
+      </div>`;
+    }).join("");
+
+    container.querySelectorAll("input[data-cmd]").forEach(cb => {
+      cb.addEventListener("change", (e) => {
+        state.commands[cb.dataset.cmd] = e.target.checked;
+        rerenderAll();
+      });
+    });
+  }
+
+  /* =====================================================================
+     STRATEGY FIT DIAGNOSIS (実人口データのみ・お金の計算はしない)
+     ===================================================================== */
+  // 地域メッシュ統計は「年少(0-14)/生産年齢(15-64)/老年(65+)」の3区分のみのため、
+  // 旧町丁目版にあった「15-24歳の若年労働力」という細区分は表現できない。
+  // laborDependency:"young" は生産年齢人口(pop.active)全体を労働力プールとみなす
+  // （0-14歳の年少人口を労働力として扱う誤りを避けるための調整）。
+  function laborPoolAt(biz, pop, commands) {
+    if (commands.hito_shift) return pop.active * HOUSEWIFE_FRACTION + pop.senior;
+    if (biz.laborDependency === "young") return pop.active;
+    if (biz.laborDependency === "housewife_senior") return pop.active * HOUSEWIFE_FRACTION + pop.senior;
+    if (biz.laborDependency === "specialist") return pop.active * SPECIALIST_FRACTION;
+    return pop.active; // general
+  }
+
+  // シニア資産コンサル特化（金融のみ）はターゲット重みをシニアへ寄せ直す、という定性的な効果として扱う
+  function effectiveWeights(biz, commands) {
+    if (commands.mono_finance) return { young: 0.02, active: 0.18, senior: 0.80 };
+    return biz.weights;
+  }
+
+  const TIERS = [
+    { level: 0, label: "深刻", css: "critical" },
+    { level: 1, label: "注意", css: "warning" },
+    { level: 2, label: "良好", css: "good" }
+  ];
+  function tierFor(ratio) {
+    if (ratio >= 1.0) return TIERS[2];
+    if (ratio >= 0.8) return TIERS[1];
+    return TIERS[0];
+  }
+  function bumpTier(tier) { return TIERS[Math.min(2, tier.level + 1)]; }
+
+  function evaluateStrategy() {
+    const biz = selectedBusiness();
+    const feats = tradeAreaFeatures();
+    if (!biz || feats.length === 0) return null;
+
+    const pop0 = popAtFeats(feats, 0);
+    const pop10 = popAtFeats(feats, 10);
+
+    // 客層とのマッチ度：業種のターゲット適性重み × 実人口が10年でどう変わるか
+    const w = effectiveWeights(biz, state.commands);
+    const pop0Target = w.young * pop0.young + w.active * pop0.active + w.senior * pop0.senior;
+    const pop10Target = w.young * pop10.young + w.active * pop10.active + w.senior * pop10.senior;
+    const customerRatio = pop0Target === 0 ? 1 : pop10Target / pop0Target;
+    let customerTier = tierFor(customerRatio);
+
+    const totalNow = pop0.young + pop0.active + pop0.senior;
+    const RseniorNow = totalNow === 0 ? 0 : pop0.senior / totalNow;
+    const isYoungFocused = biz.weights.young + biz.weights.active > biz.weights.senior;
+    const hasMismatchCondition = biz.wasteRiskCoef > 0 && isYoungFocused && RseniorNow > 0.3;
+    const mismatchRisk = hasMismatchCondition && !state.commands.mono_mismatch;
+    if (hasMismatchCondition && state.commands.mono_mismatch) customerTier = bumpTier(customerTier);
+
+    // 採用のしやすさ：依存する労働力人口が10年でどう変わるか
+    const pool0 = Math.max(1, laborPoolAt(biz, pop0, state.commands));
+    const pool10 = laborPoolAt(biz, pop10, state.commands);
+    const laborRatio = pool10 / pool0;
+    let laborTier = tierFor(laborRatio);
+    if (state.commands.mono_dx) laborTier = TIERS[2];
+
+    return { customerTier, laborTier, customerRatio, laborRatio, pop0Target, pop10Target, pool0, pool10, mismatchRisk, count: feats.length };
+  }
+
+  function fmtPctChange(ratio) {
+    const pct = (ratio - 1) * 100;
+    return (pct >= 0 ? "+" : "") + pct.toFixed(0) + "%";
+  }
+
+  const HEADLINE_BY_WORST_TIER = {
+    2: "この戦略は10年後の人口動態としっかり噛み合っています",
+    1: "一部リスクがあります。ヒト・モノの対策を検討してください",
+    0: "人口動態と噛み合っていません。深刻なリスクがあります"
+  };
+
+  function renderResult(strat) {
+    const headline = document.getElementById("resultHeadline");
+    const customerBadge = document.getElementById("customerFitBadge");
+    const customerDetail = document.getElementById("customerFitDetail");
+    const laborBadge = document.getElementById("laborFitBadge");
+    const laborDetail = document.getElementById("laborFitDetail");
+    const mismatchNote = document.getElementById("mismatchNote");
+
+    if (!strat) {
+      headline.textContent = "業種と店舗位置を選ぶと診断されます";
+      customerBadge.textContent = "—"; customerBadge.className = "fit-badge";
+      laborBadge.textContent = "—"; laborBadge.className = "fit-badge";
+      customerDetail.textContent = "";
+      laborDetail.textContent = "";
+      mismatchNote.style.display = "none";
+      return;
+    }
+
+    customerBadge.textContent = strat.customerTier.label;
+    customerBadge.className = "fit-badge " + strat.customerTier.css;
+    customerDetail.textContent =
+      `対象人口: ${Math.round(strat.pop0Target).toLocaleString()}人 → ${Math.round(strat.pop10Target).toLocaleString()}人（${fmtPctChange(strat.customerRatio)}、10年後）`;
+
+    laborBadge.textContent = strat.laborTier.label;
+    laborBadge.className = "fit-badge " + strat.laborTier.css;
+    laborDetail.textContent =
+      `労働力人口: ${Math.round(strat.pool0).toLocaleString()}人 → ${Math.round(strat.pool10).toLocaleString()}人（${fmtPctChange(strat.laborRatio)}、10年後）`;
+
+    const worst = Math.min(strat.customerTier.level, strat.laborTier.level);
+    headline.textContent = HEADLINE_BY_WORST_TIER[worst];
+
+    if (strat.mismatchRisk) {
+      mismatchNote.style.display = "block";
+      mismatchNote.textContent = "⚠ 商圏の高齢化率が30%を超えていますが、ファミリー・若者向けの商品構成のままです。商品ミスマッチのおそれがあります。";
+    } else {
+      mismatchNote.style.display = "none";
+    }
+  }
+
+  /* ---------- wiring ---------- */
+  function rerenderAll() {
+    if (!INAGE_GEOJSON) return; // データ取得完了前（セットアップ画面表示中）は何もしない
+    rebuildMapLayer();
+    renderPopulationForecast();
+    renderResult(evaluateStrategy());
+  }
+
+  document.getElementById("yearOffsetNote").textContent =
+    `2015年と2020年の国勢調査をメッシュ(1km四方)ごとに比べて、実際の増減率を計算しています（上の数値は商圏内の平均）。この増減率がこのまま続くと仮定して、${CURRENT_YEAR}年（現在）や${CURRENT_YEAR + 10}年（10年後）の人口を予測しています。`;
+
+  renderCommands();
+
+  /* ---------- setup screen: 店舗座標・e-Statキー入力 → ライブデータ取得 → ゲーム開始 ---------- */
+  const appIdInput = document.getElementById("appIdInput");
+  const toggleAppIdVisible = document.getElementById("toggleAppIdVisible");
+  const storeLocationInput = document.getElementById("storeLocationInput");
+  const storeLocationStatus = document.getElementById("storeLocationStatus");
+  const startGameBtn = document.getElementById("startGameBtn");
+  const setupStatus = document.getElementById("setupStatus");
+
+  toggleAppIdVisible.addEventListener("click", () => {
+    const showing = appIdInput.type === "text";
+    appIdInput.type = showing ? "password" : "text";
+    toggleAppIdVisible.textContent = showing ? "表示" : "隠す";
+  });
+
+  async function startGame() {
+    const appId = appIdInput.value.trim();
+    const locationRaw = storeLocationInput.value.trim();
+    if (!locationRaw) {
+      storeLocationStatus.className = "gmaps-status error";
+      storeLocationStatus.textContent = "店舗の場所を入力してください。";
+      return;
+    }
+    const parsed = parseLatLngFromText(locationRaw);
+    if (!parsed) {
+      const isShortLink = /goo\.gl|maps\.app/.test(locationRaw);
+      storeLocationStatus.className = "gmaps-status error";
+      storeLocationStatus.textContent = isShortLink
+        ? "短縮URLからは座標を取得できません。Google Mapsで展開後のURL、または地点を右クリックして出る「緯度, 経度」をコピーして貼り付けてください。"
+        : "座標を読み取れませんでした。Google MapsのURL、または「緯度, 経度」の形式で貼り付けてください。";
+      return;
+    }
+    storeLocationStatus.className = "note";
+    storeLocationStatus.textContent = "";
+    if (!appId) {
+      setupStatus.className = "note gmaps-status error";
+      setupStatus.textContent = "アプリケーションIDを入力してください。";
+      return;
+    }
+    startGameBtn.disabled = true;
+    startGameBtn.textContent = "取得中…（数十秒かかる場合があります）";
+    setupStatus.className = "note";
+    setupStatus.textContent = "e-Statから人口統計データを取得しています…";
+    try {
+      state.storeLatLng = L.latLng(parsed.lat, parsed.lng);
+      await loadRealData(appId, parsed.lat, parsed.lng);
+      document.getElementById("setupScreen").style.display = "none";
+      const gameRoot = document.getElementById("gameRoot");
+      gameRoot.style.display = "";
+      map.setView(state.storeLatLng, 14);
+      rerenderAll();
+      setTimeout(() => map.invalidateSize(), 0);
+    } catch (err) {
+      console.error(err);
+      setupStatus.className = "gmaps-status error";
+      setupStatus.textContent = "取得に失敗しました: " + err.message +
+        "（ブラウザのDevTools Console/Networkタブでエラー詳細を確認できます）";
+      startGameBtn.disabled = false;
+      startGameBtn.textContent = "もう一度試す";
+    }
+  }
+
+  startGameBtn.addEventListener("click", startGame);
+  storeLocationInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startGame(); });
+  appIdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startGame(); });
+})();
+</script>
+</body>
+</html>
