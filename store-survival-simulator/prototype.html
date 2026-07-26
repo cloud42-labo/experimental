@@ -400,11 +400,14 @@ async function findMeshTableId(year, region1Code) {
   });
   const json = await estatFetch("https://api.e-stat.go.jp/rest/3.0/app/json/getStatsList?" + params.toString(), "getStatsList");
   const root = json.GET_STATS_LIST;
-  if (!root || root.RESULT.STATUS !== 0) {
-    const msg = root && root.RESULT ? (root.RESULT.ERROR_MSG || root.RESULT.STATUS) : "不明なエラー";
+  if (!root) throw new Error("統計表検索(M" + region1Code + ", " + year + ")で不正な応答が返されました。");
+  // STATUS=1は「該当データなし」であり認証エラーではない。この地域に統計表が
+  // 無いだけの正常な状態として扱い、下のtotalチェックのメッセージに任せる。
+  if (root.RESULT.STATUS !== 0 && root.RESULT.STATUS !== 1) {
+    const msg = root.RESULT.ERROR_MSG || root.RESULT.STATUS;
     throw new Error("統計表検索(M" + region1Code + ", " + year + ")でエラー: " + msg);
   }
-  const total = root.DATALIST_INF.NUMBER;
+  const total = root.RESULT.STATUS === 1 ? 0 : root.DATALIST_INF.NUMBER;
   if (!total) {
     throw new Error("M" + region1Code + "(" + year + ")の地域メッシュ統計表が見つかりませんでした。この地点は地域メッシュ統計の対象外の可能性があります。");
   }
@@ -457,8 +460,15 @@ async function fetchMeshValues(statsDataId, meshCodes) {
     });
     const json = await estatFetch("https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData?" + params.toString(), statsDataId);
     const root = json.GET_STATS_DATA;
-    if (!root || root.RESULT.STATUS !== 0) {
-      const msg = root && root.RESULT ? (root.RESULT.ERROR_MSG || root.RESULT.STATUS) : "不明なエラー";
+    if (!root) throw new Error("e-Stat API(" + statsDataId + ")から不正な応答が返されました。");
+    if (root.RESULT.STATUS === 1) {
+      // STATUS=1は「検索条件に該当するデータなし」であり、認証エラーではない。
+      // 非居住・山間部等でこのバッチのメッシュに人口データが1件も無いだけの
+      // 正常な状態としてスキップする(このtry内で例外にしない)。
+      continue;
+    }
+    if (root.RESULT.STATUS !== 0) {
+      const msg = root.RESULT.ERROR_MSG || root.RESULT.STATUS;
       throw new Error("e-Stat API(" + statsDataId + ")エラー: " + msg + "。アプリケーションIDが正しいか確認してください。");
     }
     if (!cat01Codes) {
