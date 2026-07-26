@@ -236,7 +236,7 @@
           <input type="number" id="storeBuildingAgeInput" min="0" step="1" placeholder="例: 10">
         </label>
       </div>
-      <div class="note" style="margin-top:8px;">未入力の項目は0として扱われます。今はゲームの判定には使用せず、記録のみです。</div>
+      <div class="note" style="margin-top:8px;">未入力の項目は0として扱われます。売上高・粗利額・販管費・築年数は⑤の経営判断の評価に使用します。</div>
     </div>
     <button id="startGameBtn" type="button"
       style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">
@@ -288,7 +288,7 @@
       <div class="card">
         <h2>店舗プロファイル</h2>
         <div id="storeProfileGrid"></div>
-        <div class="note" style="margin-top:6px;">起動画面で入力した値です。今後の戦略評価機能で使用予定です。</div>
+        <div class="note" style="margin-top:6px;">起動画面で入力した値です。営業利益率と築年数を⑤の経営判断の評価に使用します。</div>
       </div>
 
       <div class="card">
@@ -334,6 +334,13 @@
         </div>
         <div class="note" id="mismatchNote" style="display:none;"></div>
       </div>
+
+      <div class="card">
+        <h2>⑤ 経営判断を下す</h2>
+        <div class="note" style="margin-bottom:10px;">診断結果(客層マッチ度・採用のしやすさ)と店舗プロファイル(財務・築年数)をもとに、選んだ経営判断が筋がいいかを評価します。</div>
+        <div class="biz-grid" id="mgmtDecisionGrid"></div>
+        <div id="mgmtDecisionResult"></div>
+      </div>
     </aside>
   </div>
 </div>
@@ -341,7 +348,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.2.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.3.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -653,6 +660,7 @@ async function loadRealData(appId, storeLat, storeLng) {
     radiusM: 800,
     selectedBusinessId: null,
     commands: {},
+    managementDecision: null, // ⑤ 経営判断を下す で選択したオプションID
     viewYear: 10 // 地図・損益で「何年後」を表示するか。デフォルトは10年後（診断の対象年と一致させる）
   };
 
@@ -1011,7 +1019,7 @@ async function loadRealData(appId, storeLat, storeLng) {
       </div>`;
     card.addEventListener("click", () => {
       state.selectedBusinessId = biz.id;
-      document.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
+      bizGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
       state.radiusM = biz.radiusDefault;
       radiusSlider.value = biz.radiusDefault;
       radiusLabel.textContent = fmtRadius(biz.radiusDefault);
@@ -1053,6 +1061,87 @@ async function loadRealData(appId, storeLat, storeLng) {
       });
     });
   }
+
+  /* =====================================================================
+     MANAGEMENT DECISIONS CONSTANTS
+     ===================================================================== */
+  const MGMT_DECISIONS = [
+    {
+      id: "maintain", name: "A. 保全・現状維持", desc: "今のやり方を維持する",
+      disqualify: (s) => s.worst === 0,
+      endorse:    (s) => s.worst >= 1 && s.finTier !== 0
+    },
+    {
+      id: "renovate", name: "B. 改装する", desc: "設備・商品構成を刷新する",
+      disqualify: (s) => s.finTier === 0,
+      endorse:    (s) => s.finTier !== 0 && (s.bldTier === 0 || s.worst <= 1)
+    },
+    {
+      id: "expand", name: "C. 商圏を拡げる", desc: "配達・チラシ等でエリアを広げる",
+      disqualify: (s) => s.finTier === 0,
+      endorse:    (s) => s.custTier <= 1 && s.finTier !== 0
+    },
+    {
+      id: "fight", name: "D. 競合を叩く", desc: "価格・販促で正面対決する",
+      disqualify: (s) => s.finTier !== 2,
+      endorse:    (s) => s.finTier === 2 && s.worst >= 1 && s.laborTier >= 1,
+      alwaysNote: "競合店舗の実データ(事業所密度等)は連携していないため、参考評価です。"
+    },
+    {
+      id: "withdraw", name: "E. 撤退する", desc: "この店舗を閉じる",
+      disqualify: (s) => s.worst === 2 && s.finTier !== 0,
+      endorse:    (s) => s.worst === 0 && s.finTier === 0
+    }
+  ];
+
+  const BUILDING_TIER_LABELS = ["老朽化", "経年", "新しい"]; // 添字は bldTier(0/1/2) と対応
+
+  const RATIONALE_TEXT = {
+    maintain: {
+      "妥当": "客層・労働力ともに大きな悪化はなく、財務も崩れていません。現状維持は理にかなっています。",
+      "要検討": "客層・労働力のいずれかにリスクがありますが致命的ではありません。現状維持のままでよいか、定期的な見直しが必要です。",
+      "筋が悪い": "客層・労働力のいずれかがすでに深刻な状態です。現状維持のままでは10年後に対応できません。"
+    },
+    renovate: {
+      "妥当": "財務に余力があり、築年数や人口動態の悪化に対して改装で立て直せる状況です。",
+      "要検討": "改装の効果は見込めますが、財務・人口動態のどちらかに不安が残ります。投資回収の見通しを慎重に検討してください。",
+      "筋が悪い": "財務が深刻な状態で、改装に投資する余力がありません。まず収益構造の立て直しが先です。"
+    },
+    expand: {
+      "妥当": "客層とのマッチ度が低下しており、財務にも余力があります。商圏を広げて客層を補う戦略は理にかなっています。",
+      "要検討": "商圏拡大で客層の補完は狙えますが、効果や財務負担を見極める必要があります。",
+      "筋が悪い": "財務が深刻な状態で、商圏拡大にかける投資余力がありません。"
+    },
+    fight: {
+      "妥当": "財務体力があり、人口動態にも一定の余力があります。価格・販促での正面対決に踏み切れる状況です。",
+      "要検討": "財務は健全ですが、人口動態面に不安が残ります。消耗戦にならないか見極めが必要です。",
+      "筋が悪い": "財務に十分な体力がなく、価格・販促での消耗戦に耐えられません。"
+    },
+    withdraw: {
+      "妥当": "客層・労働力・財務のいずれもすでに深刻です。早期の撤退が損失を抑える選択になります。",
+      "要検討": "深刻な問題は一部にとどまっています。撤退以外の立て直し策も比較検討する余地があります。",
+      "筋が悪い": "客層・労働力はともに良好で、財務も崩れていません。撤退を選ぶ根拠に乏しい状況です。"
+    }
+  };
+
+  /* =====================================================================
+     MANAGEMENT DECISION PICKER
+     ===================================================================== */
+  const mgmtDecisionGrid = document.getElementById("mgmtDecisionGrid");
+  MGMT_DECISIONS.forEach(d => {
+    const card = document.createElement("button");
+    card.className = "biz-card";
+    card.dataset.id = d.id;
+    card.innerHTML = `
+      <div class="biz-name">${d.name}</div>
+      <div class="biz-meta">${d.desc}</div>`;
+    card.addEventListener("click", () => {
+      state.managementDecision = d.id;
+      mgmtDecisionGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
+      rerenderAll();
+    });
+    mgmtDecisionGrid.appendChild(card);
+  });
 
   /* =====================================================================
      STRATEGY FIT DIAGNOSIS (実人口データのみ・お金の計算はしない)
@@ -1210,12 +1299,83 @@ async function loadRealData(appId, storeLat, storeLng) {
     `).join("");
   }
 
+  function computeManagementSignals(strat) {
+    const custTier = strat.customerTier.level;
+    const laborTier = strat.laborTier.level;
+    const worst = Math.min(custTier, laborTier);
+
+    const p = state.storeProfile;
+    let finTier = 1, finFallback = false, opMargin = null;
+    if (p && p.revenue > 0) {
+      opMargin = deriveOperatingMargin(p);
+      finTier = opMargin >= 8 ? 2 : (opMargin >= 3 ? 1 : 0);
+    } else {
+      finFallback = true;
+    }
+
+    let bldTier = 1;
+    if (p) {
+      bldTier = p.buildingAge < 10 ? 2 : (p.buildingAge >= 25 ? 0 : 1);
+    }
+
+    return { custTier, laborTier, worst, finTier, finFallback, opMargin, bldTier };
+  }
+
+  function renderManagementDecision(strat) {
+    const container = document.getElementById("mgmtDecisionResult");
+    if (!strat) {
+      container.innerHTML = `<div class="note">業種を選び、診断結果が出ると経営判断を評価できます</div>`;
+      return;
+    }
+    if (!state.managementDecision) {
+      container.innerHTML = `<div class="note">上のカードから経営判断を1つ選んでください</div>`;
+      return;
+    }
+
+    const sig = computeManagementSignals(strat);
+    const decision = MGMT_DECISIONS.find(d => d.id === state.managementDecision);
+
+    let verdict;
+    if (decision.disqualify(sig))      verdict = { label: "筋が悪い", css: "critical" };
+    else if (decision.endorse(sig))    verdict = { label: "妥当",     css: "good" };
+    else                                verdict = { label: "要検討",   css: "warning" };
+
+    const finText = sig.finFallback
+      ? "中立(未入力)"
+      : `${TIERS[sig.finTier].label}(営業利益率 ${fmtPctSigned(sig.opMargin)})`;
+    const bldAge = state.storeProfile ? state.storeProfile.buildingAge : 0;
+
+    let detail =
+      `客層マッチ度: ${TIERS[sig.custTier].label}、労働力: ${TIERS[sig.laborTier].label}、` +
+      `財務健全性: ${finText}、築年数: ${bldAge}年(${BUILDING_TIER_LABELS[sig.bldTier]})`;
+
+    if (sig.finFallback) {
+      detail += "<br>財務プロファイルが未入力のため、財務面は中立と仮定して判定しています。";
+    }
+    detail += "<br>" + RATIONALE_TEXT[decision.id][verdict.label];
+    if (decision.alwaysNote) {
+      detail += "<br>" + decision.alwaysNote;
+    }
+
+    container.innerHTML = `
+      <div class="fit-row">
+        <span class="fit-badge ${verdict.css}">${verdict.label}</span>
+        <div class="fit-body">
+          <div class="fit-title">${decision.name}</div>
+          <div class="fit-detail">${detail}</div>
+        </div>
+      </div>
+    `;
+  }
+
   /* ---------- wiring ---------- */
   function rerenderAll() {
     if (!INAGE_GEOJSON) return; // データ取得完了前（セットアップ画面表示中）は何もしない
     rebuildMapLayer();
     renderPopulationForecast();
-    renderResult(evaluateStrategy());
+    const strat = evaluateStrategy();
+    renderResult(strat);
+    renderManagementDecision(strat);
   }
 
   document.getElementById("yearOffsetNote").textContent =
