@@ -212,6 +212,32 @@
         style="font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;">表示</button>
     </div>
     <div class="note" style="margin-bottom:14px;">未発行の場合は e-Stat マイページ（www.e-stat.go.jp）からアプリケーションIDを取得してください。</div>
+    <div style="border-top:1px solid var(--gridline);margin:14px 0 12px;padding-top:14px;">
+      <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">店舗プロファイル（任意）</label>
+      <div class="params" id="storeProfileParams">
+        <label>
+          <span>年間売上高 <span style="color:var(--text-muted);font-weight:400;">(万円)</span></span>
+          <input type="number" id="storeRevenueInput" min="0" step="1" placeholder="例: 3000">
+        </label>
+        <label>
+          <span>年間粗利額 <span style="color:var(--text-muted);font-weight:400;">(万円)</span></span>
+          <input type="number" id="storeGrossProfitInput" min="0" step="1" placeholder="例: 1200">
+        </label>
+        <label>
+          <span>年間販管費 <span style="color:var(--text-muted);font-weight:400;">(万円)</span></span>
+          <input type="number" id="storeSgaInput" min="0" step="1" placeholder="例: 900">
+        </label>
+        <label>
+          <span>従業員数 <span style="color:var(--text-muted);font-weight:400;">(人)</span></span>
+          <input type="number" id="storeEmployeeCountInput" min="0" step="1" placeholder="例: 5">
+        </label>
+        <label>
+          <span>築年数 <span style="color:var(--text-muted);font-weight:400;">(年)</span></span>
+          <input type="number" id="storeBuildingAgeInput" min="0" step="1" placeholder="例: 10">
+        </label>
+      </div>
+      <div class="note" style="margin-top:8px;">未入力の項目は0として扱われます。今はゲームの判定には使用せず、記録のみです。</div>
+    </div>
     <button id="startGameBtn" type="button"
       style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">
       データを取得して開始する
@@ -259,6 +285,12 @@
     </section>
 
     <aside class="control-panel">
+      <div class="card">
+        <h2>店舗プロファイル</h2>
+        <div id="storeProfileGrid"></div>
+        <div class="note" style="margin-top:6px;">起動画面で入力した値です。今後の戦略評価機能で使用予定です。</div>
+      </div>
+
       <div class="card">
         <h2>① この場所の10年後の人口予測</h2>
         <div id="popForecastRows"></div>
@@ -309,7 +341,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.1.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.2.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -617,6 +649,7 @@ async function loadRealData(appId, storeLat, storeLng) {
   /* ---------- state ---------- */
   const state = {
     storeLatLng: null, // ゲーム開始時に起動画面で入力された座標をセットする
+    storeProfile: null, // { revenue, grossProfit, sga, employeeCount, buildingAge } — startGame()でセット
     radiusM: 800,
     selectedBusinessId: null,
     commands: {},
@@ -1136,6 +1169,47 @@ async function loadRealData(appId, storeLat, storeLng) {
     }
   }
 
+  /* ---------- store profile (起動画面の入力 → ゲーム画面の常時表示カード) ---------- */
+  function deriveOperatingProfit(profile) {
+    return profile.grossProfit - profile.sga;
+  }
+
+  function deriveOperatingMargin(profile) {
+    if (profile.revenue === 0) return null;
+    return (deriveOperatingProfit(profile) / profile.revenue) * 100;
+  }
+
+  function fmtManYenSigned(v) {
+    return (v >= 0 ? "+" : "") + Math.round(v).toLocaleString() + "万円";
+  }
+
+  function fmtPctSigned(v) {
+    return (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+  }
+
+  function renderStoreProfileSummary() {
+    const p = state.storeProfile;
+    const grid = document.getElementById("storeProfileGrid");
+    if (!p) { grid.innerHTML = ""; return; }
+    const opProfit = deriveOperatingProfit(p);
+    const opMargin = deriveOperatingMargin(p);
+    const rows = [
+      { label: "年間売上高", value: p.revenue.toLocaleString() + "万円" },
+      { label: "年間粗利額", value: p.grossProfit.toLocaleString() + "万円" },
+      { label: "年間販管費", value: p.sga.toLocaleString() + "万円" },
+      { label: "営業利益（自動計算）", value: fmtManYenSigned(opProfit) },
+      { label: "営業利益率（自動計算）", value: opMargin === null ? "—" : fmtPctSigned(opMargin) },
+      { label: "従業員数", value: p.employeeCount.toLocaleString() + "人" },
+      { label: "築年数", value: p.buildingAge.toLocaleString() + "年" }
+    ];
+    grid.innerHTML = rows.map(r => `
+      <div class="pop-forecast-row">
+        <span class="pf-label">${r.label}</span>
+        <span class="pf-values">${r.value}</span>
+      </div>
+    `).join("");
+  }
+
   /* ---------- wiring ---------- */
   function rerenderAll() {
     if (!INAGE_GEOJSON) return; // データ取得完了前（セットアップ画面表示中）は何もしない
@@ -1156,12 +1230,33 @@ async function loadRealData(appId, storeLat, storeLng) {
   const storeLocationStatus = document.getElementById("storeLocationStatus");
   const startGameBtn = document.getElementById("startGameBtn");
   const setupStatus = document.getElementById("setupStatus");
+  const storeRevenueInput = document.getElementById("storeRevenueInput");
+  const storeGrossProfitInput = document.getElementById("storeGrossProfitInput");
+  const storeSgaInput = document.getElementById("storeSgaInput");
+  const storeEmployeeCountInput = document.getElementById("storeEmployeeCountInput");
+  const storeBuildingAgeInput = document.getElementById("storeBuildingAgeInput");
 
   toggleAppIdVisible.addEventListener("click", () => {
     const showing = appIdInput.type === "text";
     appIdInput.type = showing ? "password" : "text";
     toggleAppIdVisible.textContent = showing ? "表示" : "隠す";
   });
+
+  function nonNegNumber(raw) {
+    const n = Number(raw);
+    if (raw === "" || !Number.isFinite(n) || n < 0) return 0;
+    return n;
+  }
+
+  function parseStoreProfileInputs() {
+    return {
+      revenue:       nonNegNumber(storeRevenueInput.value),
+      grossProfit:   nonNegNumber(storeGrossProfitInput.value),
+      sga:           nonNegNumber(storeSgaInput.value),
+      employeeCount: nonNegNumber(storeEmployeeCountInput.value),
+      buildingAge:   nonNegNumber(storeBuildingAgeInput.value)
+    };
+  }
 
   async function startGame() {
     const appId = appIdInput.value.trim();
@@ -1193,11 +1288,13 @@ async function loadRealData(appId, storeLat, storeLng) {
     setupStatus.textContent = "e-Statから人口統計データを取得しています…";
     try {
       state.storeLatLng = L.latLng(parsed.lat, parsed.lng);
+      state.storeProfile = parseStoreProfileInputs();
       await loadRealData(appId, parsed.lat, parsed.lng);
       document.getElementById("setupScreen").style.display = "none";
       const gameRoot = document.getElementById("gameRoot");
       gameRoot.style.display = "";
       map.setView(state.storeLatLng, 14);
+      renderStoreProfileSummary();
       rerenderAll();
       setTimeout(() => map.invalidateSize(), 0);
     } catch (err) {
