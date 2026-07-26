@@ -410,10 +410,18 @@ async function findMeshTableId(year, region1Code) {
   }
   let tableInf = root.DATALIST_INF.TABLE_INF;
   if (!Array.isArray(tableInf)) tableInf = [tableInf];
-  // 1次メッシュ全体の1つの表(「人口及び世帯」等)を採用。複数ヒットした場合は
-  // タイトルにメッシュコードがちょうど一致するものを優先する。
-  const exact = tableInf.find(t => (t.TITLE && t.TITLE["$"] || "").includes("M" + region1Code));
-  return (exact || tableInf[0])["@id"];
+  const titleOf = t => (t.TITLE && t.TITLE["$"]) || "";
+  const tableNameOf = t => (t.TITLE_SPEC && t.TITLE_SPEC.TABLE_NAME) || "";
+  // まずタイトルにメッシュコードがちょうど一致するものに絞り込む(地域の取り違え防止)。
+  const regionMatches = tableInf.filter(t => titleOf(t).includes("M" + region1Code));
+  const candidates = regionMatches.length > 0 ? regionMatches : tableInf;
+  // 平成27年版は1次メッシュごとに「その1(人口等基本集計)/その2(人口移動・就業)/
+  // その3(従業地・世帯構造)」の3表に分かれており、年齢区分があるのはその1のみ。
+  // 令和2年版は単一表(「人口及び世帯」)なのでそのまま該当する。
+  const basicPop = candidates.find(t =>
+    tableNameOf(t).includes("人口等基本集計") || tableNameOf(t).includes("人口及び世帯")
+  );
+  return (basicPop || candidates[0])["@id"];
 }
 
 // cat01の分類は国勢調査の年度によって数値コードが変わる(例:「65歳以上」が
