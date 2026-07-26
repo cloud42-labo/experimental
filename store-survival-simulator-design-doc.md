@@ -30,7 +30,7 @@ flowchart TD
     F --> G["Leaflet.js + Turf.jsで描画"]
 ```
 
-サーバー・データベースは存在しない。`prototype.html` はローカルファイルとして開くだけで
+サーバー・データベースは存在しない。`index.html` はローカルファイルとして開くだけで
 動作する。起動画面で**店舗座標**と**自分自身のe-Stat アプリケーションID（APIキー）**を
 入力すると、ブラウザがそのキーを使って直接 `api.e-stat.go.jp` にfetchし、地域メッシュ統計を
 その場で取得する。キーはJS変数として保持されるのみで、`localStorage`等への永続化や配布
@@ -53,7 +53,7 @@ flowchart TD
 ## 2. JIS地域メッシュ座標計算（境界データ不要の要）
 
 1kmメッシュ（3次メッシュ、8桁）の座標は、緯度・経度から以下の式で一意に決まる
-（`prototype.html` 内 `meshCodeAt()` / `meshBBoxFromCode()`）。東京駅の実際の
+（`index.html` 内 `meshCodeAt()` / `meshBBoxFromCode()`）。東京駅の実際の
 公開メッシュコード「53394611」と一致することを確認済み。
 
 ```
@@ -71,7 +71,7 @@ Leafletの矩形ポリゴンとして描画する。店舗座標から半径Dkm�
 
 ---
 
-## 3. データ取得ロジック（`prototype.html` 内、`loadRealData()`）
+## 3. データ取得ロジック（`index.html` 内、`loadRealData()`）
 
 ### 3.1 地域メッシュ統計特有の癖
 
@@ -120,7 +120,7 @@ Leafletの矩形ポリゴンとして描画する。店舗座標から半径Dkm�
 
 ---
 
-## 4. フロントエンドUI（`prototype.html`）
+## 4. フロントエンドUI（`index.html`）
 
 単一のHTMLファイルで、外部依存はCDN経由の **Leaflet.js 1.9.4** と **Turf.js 6** のみ
 （MapLibre/D3.js、Streamlit/PyDeck、shpjsのいずれも不使用）。
@@ -171,7 +171,7 @@ GDD文書上「参考値」として残っているだけで、コードには�
 **カネ（財務）コマンドは実装されていない**（GDD v6.1の「一旦削除」方針をそのまま反映）。
 
 ### 4.5 未実装のGDD要素
-以下はGDD v6が描いていたが、プロトタイプには実装されていない:
+以下はGDD v6が描いていたが、本アプリには実装されていない:
 * Streamlit + PyDeckによる3D描画
 * 10期（10年間）のP&L推移シミュレーション
 * SSS〜Eの生存ランク判定
