@@ -588,7 +588,8 @@ async function loadRealData(appId, storeLat, storeLng) {
     { id: "drugstore", name: "④ ドラッグストア", laborDependency: "housewife_senior", wasteRiskCoef: 0.01, weights: { young: 0.10, active: 0.40, senior: 0.50 }, radiusDefault: 3000 },
     { id: "petsalon", name: "⑤ ペットショップ・サロン", laborDependency: "specialist", wasteRiskCoef: 0.01, weights: { young: 0.20, active: 0.60, senior: 0.20 }, radiusDefault: 1500 },
     { id: "petretail", name: "⑥ ペット関連小売", laborDependency: "general", wasteRiskCoef: 0.05, weights: { young: 0.20, active: 0.50, senior: 0.30 }, radiusDefault: 1500 },
-    { id: "finance", name: "⑦ 金融事業・地域代理店", laborDependency: "specialist", wasteRiskCoef: 0.00, weights: { young: 0.05, active: 0.35, senior: 0.60 }, radiusDefault: 1500 }
+    { id: "finance", name: "⑦ 金融事業・地域代理店", laborDependency: "specialist", wasteRiskCoef: 0.00, weights: { young: 0.05, active: 0.35, senior: 0.60 }, radiusDefault: 1500 },
+    { id: "homecenter", name: "⑧ ホームセンター", laborDependency: "general", wasteRiskCoef: 0.02, weights: { young: 0.10, active: 0.45, senior: 0.45 }, radiusDefault: 4000 }
   ];
   const LABOR_DEP_LABEL = { young: "生産年齢層(15-64)", housewife_senior: "主婦・シニア", specialist: "専門職候補", general: "一般スタッフ" };
 
