@@ -231,15 +231,19 @@
           <input type="number" id="storeSgaInput" min="0" step="1" placeholder="例: 900">
         </label>
         <label>
-          <span>従業員数 <span style="color:var(--text-muted);font-weight:400;">(人)</span></span>
-          <input type="number" id="storeEmployeeCountInput" min="0" step="1" placeholder="例: 5">
+          <span>正社員数 <span style="color:var(--text-muted);font-weight:400;">(人)</span></span>
+          <input type="number" id="storeFullTimeCountInput" min="0" step="1" placeholder="例: 3">
+        </label>
+        <label>
+          <span>パート・アルバイト数 <span style="color:var(--text-muted);font-weight:400;">(人)</span></span>
+          <input type="number" id="storePartTimeCountInput" min="0" step="1" placeholder="例: 5">
         </label>
         <label>
           <span>築年数 <span style="color:var(--text-muted);font-weight:400;">(年)</span></span>
           <input type="number" id="storeBuildingAgeInput" min="0" step="1" placeholder="例: 10">
         </label>
       </div>
-      <div class="note" style="margin-top:8px;">未入力の項目は0として扱われます。売上高・粗利額・販管費・築年数は④の経営判断の評価に使用します。</div>
+      <div class="note" style="margin-top:8px;">未入力の項目は0として扱われます。売上高・粗利額・販管費・築年数は④の経営判断の評価に、パート・アルバイト数は③の労働力診断に使用します。</div>
     </div>
     <button id="startGameBtn" type="button"
       style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">
@@ -330,6 +334,14 @@
             <div class="fit-detail" id="laborFitDetail"></div>
           </div>
         </div>
+        <div class="fit-row" id="staffCoverageRow" style="display:none;">
+          <span class="fit-badge" id="staffCoverageBadge">—</span>
+          <div class="fit-body">
+            <div class="fit-title">パートスタッフの充足見込み</div>
+            <div class="fit-detail" id="staffCoverageDetail"></div>
+          </div>
+        </div>
+        <div class="note" id="staffCoverageEmptyNote" style="display:none;">パート・アルバイト数が未入力のため、必要人数に対する充足率は計算していません。</div>
         <div class="note" id="mismatchNote" style="display:none;"></div>
       </div>
 
@@ -346,7 +358,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.4.1"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.5.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -785,7 +797,7 @@ async function loadRealData(appId, storeLat, storeLng) {
   /* ---------- state ---------- */
   const state = {
     storeLatLng: null, // ゲーム開始時に起動画面で入力された座標をセットする
-    storeProfile: null, // { revenue, grossProfit, sga, employeeCount, buildingAge } — startGame()でセット
+    storeProfile: null, // { revenue, grossProfit, sga, fullTimeCount, partTimeCount, buildingAge } — startGame()でセット
     radiusM: 800,
     selectedBusinessId: null,
     commands: {},
@@ -1355,6 +1367,16 @@ async function loadRealData(appId, storeLat, storeLng) {
     0: "人口動態と噛み合っていません。深刻なリスクがあります"
   };
 
+  function computeStaffCoverage(strat) {
+    const n = state.storeProfile ? state.storeProfile.partTimeCount : 0;
+    if (!strat || n <= 0) return null;
+    const coverageNow = strat.pool0 / n;
+    const coverageFuture = strat.pool10 / n;
+    // 経済センサス競合密度と同様、公式な充足基準は存在しないため、常識的な仮しきい値として設定（要調整可）
+    const tier = coverageFuture >= 20 ? TIERS[2] : (coverageFuture >= 8 ? TIERS[1] : TIERS[0]);
+    return { n, coverageNow, coverageFuture, tier };
+  }
+
   function renderResult(strat) {
     const headline = document.getElementById("resultHeadline");
     const customerBadge = document.getElementById("customerFitBadge");
@@ -1362,6 +1384,10 @@ async function loadRealData(appId, storeLat, storeLng) {
     const laborBadge = document.getElementById("laborFitBadge");
     const laborDetail = document.getElementById("laborFitDetail");
     const mismatchNote = document.getElementById("mismatchNote");
+    const staffCoverageRow = document.getElementById("staffCoverageRow");
+    const staffCoverageBadge = document.getElementById("staffCoverageBadge");
+    const staffCoverageDetail = document.getElementById("staffCoverageDetail");
+    const staffCoverageEmptyNote = document.getElementById("staffCoverageEmptyNote");
 
     if (!strat) {
       headline.textContent = "業種と店舗位置を選ぶと診断されます";
@@ -1370,6 +1396,8 @@ async function loadRealData(appId, storeLat, storeLng) {
       customerDetail.textContent = "";
       laborDetail.textContent = "";
       mismatchNote.style.display = "none";
+      staffCoverageRow.style.display = "none";
+      staffCoverageEmptyNote.style.display = "none";
       return;
     }
 
@@ -1391,6 +1419,19 @@ async function loadRealData(appId, storeLat, storeLng) {
       mismatchNote.textContent = "⚠ 商圏の高齢化率が30%を超えていますが、ファミリー・若者向けの商品構成のままです。商品ミスマッチのおそれがあります。";
     } else {
       mismatchNote.style.display = "none";
+    }
+
+    const coverage = computeStaffCoverage(strat);
+    if (coverage) {
+      staffCoverageRow.style.display = "flex";
+      staffCoverageEmptyNote.style.display = "none";
+      staffCoverageBadge.textContent = coverage.tier.label;
+      staffCoverageBadge.className = "fit-badge " + coverage.tier.css;
+      staffCoverageDetail.textContent =
+        `パート・アルバイト${coverage.n}人に対する商圏労働力プールの充足倍率: 今 ${coverage.coverageNow.toFixed(1)}倍 → 10年後 ${coverage.coverageFuture.toFixed(1)}倍`;
+    } else {
+      staffCoverageRow.style.display = "none";
+      staffCoverageEmptyNote.style.display = "block";
     }
   }
 
@@ -1424,7 +1465,7 @@ async function loadRealData(appId, storeLat, storeLng) {
       { label: "年間販管費", value: p.sga.toLocaleString() + "万円" },
       { label: "営業利益（自動計算）", value: fmtManYenSigned(opProfit) },
       { label: "営業利益率（自動計算）", value: opMargin === null ? "—" : fmtPctSigned(opMargin) },
-      { label: "従業員数", value: p.employeeCount.toLocaleString() + "人" },
+      { label: "従業員数", value: `正社員 ${p.fullTimeCount.toLocaleString()}人 + パート ${p.partTimeCount.toLocaleString()}人（計 ${(p.fullTimeCount + p.partTimeCount).toLocaleString()}人）` },
       { label: "築年数", value: p.buildingAge.toLocaleString() + "年" }
     ];
     grid.innerHTML = rows.map(r => `
@@ -1557,7 +1598,8 @@ async function loadRealData(appId, storeLat, storeLng) {
   const storeRevenueInput = document.getElementById("storeRevenueInput");
   const storeGrossProfitInput = document.getElementById("storeGrossProfitInput");
   const storeSgaInput = document.getElementById("storeSgaInput");
-  const storeEmployeeCountInput = document.getElementById("storeEmployeeCountInput");
+  const storeFullTimeCountInput = document.getElementById("storeFullTimeCountInput");
+  const storePartTimeCountInput = document.getElementById("storePartTimeCountInput");
   const storeBuildingAgeInput = document.getElementById("storeBuildingAgeInput");
 
   toggleAppIdVisible.addEventListener("click", () => {
@@ -1577,7 +1619,8 @@ async function loadRealData(appId, storeLat, storeLng) {
       revenue:       nonNegNumber(storeRevenueInput.value),
       grossProfit:   nonNegNumber(storeGrossProfitInput.value),
       sga:           nonNegNumber(storeSgaInput.value),
-      employeeCount: nonNegNumber(storeEmployeeCountInput.value),
+      fullTimeCount: nonNegNumber(storeFullTimeCountInput.value),
+      partTimeCount: nonNegNumber(storePartTimeCountInput.value),
       buildingAge:   nonNegNumber(storeBuildingAgeInput.value)
     };
   }
