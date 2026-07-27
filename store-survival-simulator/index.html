@@ -348,7 +348,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.3.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.4.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -554,6 +554,117 @@ async function fetchYearData(year, meshCodes) {
   return result;
 }
 
+// 経済センサス‐活動調査(1kmメッシュ)の統計表IDを検索する。国勢調査(findMeshTableId)と異なり、
+// 検索ワードに年を含めるとヒット件数が0になる(実機確認済み)ため year は付与しない。
+// 経済センサスは国勢調査よりメッシュ単位のカバレッジが狭く、この地域に該当する表が
+// 無いことは珍しくない。競合密度はあくまで補助データなので、見つからない場合は
+// 例外を投げず null を返し、呼び出し側で「この地域は経済データなし」として扱う。
+async function findEconMeshTableId(region1Code) {
+  const params = new URLSearchParams({
+    appId: ESTAT_APP_ID,
+    searchWord: "経済センサス-活動調査 M" + region1Code,
+    statsCode: "00200553",
+    searchKind: "2",
+    limit: "10"
+  });
+  const json = await estatFetch("https://api.e-stat.go.jp/rest/3.0/app/json/getStatsList?" + params.toString(), "getStatsList");
+  const root = json.GET_STATS_LIST;
+  if (!root) throw new Error("経済センサス統計表検索(M" + region1Code + ")で不正な応答が返されました。");
+  // STATUS=1は「該当データなし」であり認証エラーではない。この地域に経済センサスの
+  // メッシュ表が無いだけの正常な状態として扱い、nullを返す(非致命的)。
+  if (root.RESULT.STATUS !== 0 && root.RESULT.STATUS !== 1) {
+    const msg = root.RESULT.ERROR_MSG || root.RESULT.STATUS;
+    throw new Error("経済センサス統計表検索(M" + region1Code + ")でエラー: " + msg);
+  }
+  if (root.RESULT.STATUS === 1) return null;
+  const total = root.DATALIST_INF.NUMBER;
+  if (!total) return null;
+
+  let tableInf = root.DATALIST_INF.TABLE_INF;
+  if (!Array.isArray(tableInf)) tableInf = [tableInf];
+  const titleOf = t => (t.TITLE && t.TITLE["$"]) || "";
+  const tableNameOf = t => (t.TITLE_SPEC && t.TITLE_SPEC.TABLE_NAME) || "";
+  // 検索結果には産業別内訳のない表(平成24年「事業所数及び従業者数」等)と、
+  // 産業(大分類)別の内訳がある表(平成28年「産業（大分類）別事業所数及び従業者数」等)が
+  // 混在して返ってくる(実機確認済み)。内訳が無い表では業種別の集計ができないため除外する。
+  const withIndustry = tableInf.filter(t =>
+    titleOf(t).includes("産業（大分類）別") || tableNameOf(t).includes("産業（大分類）別")
+  );
+  if (withIndustry.length === 0) return null;
+  // 複数年度の表が混在して返るため、SURVEY_DATE(YYYYMM形式、ゼロ埋めなので文字列比較可)が
+  // 最も新しいものを採用する(findMeshTableIdのbasicPop選定と同じ考え方)。
+  let best = withIndustry[0];
+  withIndustry.forEach(t => {
+    if (String(t.SURVEY_DATE || "") > String(best.SURVEY_DATE || "")) best = t;
+  });
+  return best["@id"];
+}
+
+// 経済センサスのメッシュ実データを取得する。この表にはcat02軸が存在しない
+// (fetchMeshValuesと異なりCLASS_OBJがcat01とareaのみ)ため、cat02のフィルタリングは不要。
+// cat01のうち必要な4業種の事業所数(@unit:"事業所")コードのみ拾う
+// (従業者数コード[各コード+190、例:0290]は使わないので無視する)。
+async function fetchEconMeshValues(statsDataId, meshCodes) {
+  const BATCH = 50;
+  const byArea = {};
+  for (let i = 0; i < meshCodes.length; i += BATCH) {
+    const batch = meshCodes.slice(i, i + BATCH);
+    const params = new URLSearchParams({
+      appId: ESTAT_APP_ID, statsDataId, searchKind: "2", lang: "J",
+      cdArea: batch.join(",")
+    });
+    const json = await estatFetch("https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData?" + params.toString(), statsDataId);
+    const root = json.GET_STATS_DATA;
+    if (!root) throw new Error("e-Stat API(" + statsDataId + ")から不正な応答が返されました。");
+    if (root.RESULT.STATUS === 1) {
+      // STATUS=1は「検索条件に該当するデータなし」であり、認証エラーではない。
+      // このバッチのメッシュに事業所データが1件も無いだけの正常な状態としてスキップする。
+      continue;
+    }
+    if (root.RESULT.STATUS !== 0) {
+      const msg = root.RESULT.ERROR_MSG || root.RESULT.STATUS;
+      throw new Error("e-Stat API(" + statsDataId + ")エラー: " + msg + "。アプリケーションIDが正しいか確認してください。");
+    }
+    (root.STATISTICAL_DATA.DATA_INF.VALUE || []).forEach(v => {
+      const area = v["@area"];
+      const val = parseInt(v["$"], 10);
+      if (!Number.isFinite(val)) return;
+      byArea[area] = byArea[area] || {};
+      if (v["@cat01"] === "0100") byArea[area].est_100 = val;
+      else if (v["@cat01"] === "0110") byArea[area].est_110 = val;
+      else if (v["@cat01"] === "0140") byArea[area].est_140 = val;
+      else if (v["@cat01"] === "0150") byArea[area].est_150 = val;
+    });
+  }
+  return byArea;
+}
+
+// population版のfetchYearDataと同じく1次メッシュ地域ごとにグループ化して取得するが、
+// 経済センサスは競合密度表示用の補助データであり、本編である人口データを
+// 経済センサス側の不調に巻き込んではいけないため、地域ごとの取得を個別にtry/catchで囲む。
+// 表が見つからない(findEconMeshTableIdがnullを返す)地域や取得エラーの地域は
+// console.warnしてスキップする。スキップされた地域のメッシュは、後段(loadRealData)で
+// est_*=0として扱われる(「集計0件」という正当な値として扱い、欠損扱いにはしない)。
+async function fetchEconRegionData(meshCodes) {
+  const byRegion = {};
+  meshCodes.forEach(code => {
+    const r = region1(code);
+    (byRegion[r] = byRegion[r] || []).push(code);
+  });
+  const result = {};
+  for (const r of Object.keys(byRegion)) {
+    try {
+      const tableId = await findEconMeshTableId(r);
+      if (!tableId) continue; // この地域には産業別内訳のある経済センサス表が無い
+      const values = await fetchEconMeshValues(tableId, byRegion[r]);
+      Object.assign(result, values);
+    } catch (e) {
+      console.warn("経済センサスデータの取得に失敗しました(M" + r + "): " + e.message);
+    }
+  }
+  return result;
+}
+
 async function loadRealData(appId, storeLat, storeLng) {
   ESTAT_APP_ID = appId;
 
@@ -566,6 +677,18 @@ async function loadRealData(appId, storeLat, storeLng) {
 
   const data2020 = await fetchYearData("令和2年", meshCodes);
   const data2015 = await fetchYearData("平成27年", meshCodes);
+
+  // 経済センサス(事業所統計)は競合密度の概算表示用の補助データであり、人口データ(本編)を
+  // 絶対に道連れにしてはいけないため、取得全体をtry/catchで囲む(fetchEconRegionData自体も
+  // 地域ごとに個別防御しているが、ここは万一の想定外エラーに備えた二重の防御)。
+  // 失敗時は空データ扱いにして続行し、各メッシュのest_*は下のprops組み立てで0にフォールバックする。
+  let econData = {};
+  try {
+    econData = await fetchEconRegionData(meshCodes);
+  } catch (e) {
+    console.warn("経済センサスデータの取得に失敗しました。競合密度は0として扱います: " + e.message);
+    econData = {};
+  }
 
   // メッシュごとの年率 = (2020年値/2015年値)^(1/5) - 1。2015年に対応データがない
   // (非居住・秘匿等の)メッシュは、先読みした範囲内の人口加重平均(フォールバック)で補う。
@@ -598,13 +721,18 @@ async function loadRealData(appId, storeLat, storeLng) {
   meshCodes.forEach(code => {
     const s2020 = data2020[code];
     if (!s2020) return; // データなし(非居住メッシュ等)はスキップ
+    const econ = econData[code] || {}; // この地域の経済センサスが無い/取得失敗ならest_*は全て0
     const props = {
       key_code: code,
       name: "メッシュ " + code,
       population: s2020.population || 0,
       pop_young: s2020.pop_young || 0,
       pop_active: s2020.pop_active || 0,
-      pop_senior: s2020.pop_senior || 0
+      pop_senior: s2020.pop_senior || 0,
+      est_100: econ.est_100 || 0,
+      est_110: econ.est_110 || 0,
+      est_140: econ.est_140 || 0,
+      est_150: econ.est_150 || 0
     };
     BRACKETS.forEach(b => {
       props["rate_" + b] = (rates[code] && rates[code][b] !== undefined) ? rates[code][b] : fallbackRate[b];
@@ -634,15 +762,18 @@ async function loadRealData(appId, storeLat, storeLng) {
      残すのは「ターゲット適性重み」「依存する労働力」「商品ミスマッチ感度」という、
      実人口データと組み合わせて定性判定するための業種特性のみ。 */
   const BUSINESS_TYPES = [
-    { id: "conveni", name: "① コンビニ", laborDependency: "young", wasteRiskCoef: 0.15, weights: { young: 0.50, active: 0.40, senior: 0.10 }, radiusDefault: 500 },
-    { id: "supermarket", name: "② 食品スーパー", laborDependency: "housewife_senior", wasteRiskCoef: 0.10, weights: { young: 0.15, active: 0.35, senior: 0.50 }, radiusDefault: 2000 },
-    { id: "izakaya", name: "③ 居酒屋", laborDependency: "young", wasteRiskCoef: 0.05, weights: { young: 0.60, active: 0.35, senior: 0.05 }, radiusDefault: 500 },
-    { id: "drugstore", name: "④ ドラッグストア", laborDependency: "housewife_senior", wasteRiskCoef: 0.01, weights: { young: 0.10, active: 0.40, senior: 0.50 }, radiusDefault: 3000 },
-    { id: "petsalon", name: "⑤ ペットショップ・サロン", laborDependency: "specialist", wasteRiskCoef: 0.01, weights: { young: 0.20, active: 0.60, senior: 0.20 }, radiusDefault: 1500 },
-    { id: "petretail", name: "⑥ ペット関連小売", laborDependency: "general", wasteRiskCoef: 0.05, weights: { young: 0.20, active: 0.50, senior: 0.30 }, radiusDefault: 1500 },
-    { id: "finance", name: "⑦ 金融事業・地域代理店", laborDependency: "specialist", wasteRiskCoef: 0.00, weights: { young: 0.05, active: 0.35, senior: 0.60 }, radiusDefault: 1500 },
-    { id: "homecenter", name: "⑧ ホームセンター", laborDependency: "general", wasteRiskCoef: 0.02, weights: { young: 0.10, active: 0.45, senior: 0.45 }, radiusDefault: 4000 }
+    { id: "conveni", name: "① コンビニ", econCode: 100, laborDependency: "young", wasteRiskCoef: 0.15, weights: { young: 0.50, active: 0.40, senior: 0.10 }, radiusDefault: 500 },
+    { id: "supermarket", name: "② 食品スーパー", econCode: 100, laborDependency: "housewife_senior", wasteRiskCoef: 0.10, weights: { young: 0.15, active: 0.35, senior: 0.50 }, radiusDefault: 2000 },
+    { id: "izakaya", name: "③ 居酒屋", econCode: 140, laborDependency: "young", wasteRiskCoef: 0.05, weights: { young: 0.60, active: 0.35, senior: 0.05 }, radiusDefault: 500 },
+    { id: "drugstore", name: "④ ドラッグストア", econCode: 100, laborDependency: "housewife_senior", wasteRiskCoef: 0.01, weights: { young: 0.10, active: 0.40, senior: 0.50 }, radiusDefault: 3000 },
+    { id: "petsalon", name: "⑤ ペットショップ・サロン", econCode: 150, laborDependency: "specialist", wasteRiskCoef: 0.01, weights: { young: 0.20, active: 0.60, senior: 0.20 }, radiusDefault: 1500 },
+    { id: "petretail", name: "⑥ ペット関連小売", econCode: 100, laborDependency: "general", wasteRiskCoef: 0.05, weights: { young: 0.20, active: 0.50, senior: 0.30 }, radiusDefault: 1500 },
+    { id: "finance", name: "⑦ 金融事業・地域代理店", econCode: 110, laborDependency: "specialist", wasteRiskCoef: 0.00, weights: { young: 0.05, active: 0.35, senior: 0.60 }, radiusDefault: 1500 },
+    { id: "homecenter", name: "⑧ ホームセンター", econCode: 100, laborDependency: "general", wasteRiskCoef: 0.02, weights: { young: 0.10, active: 0.45, senior: 0.45 }, radiusDefault: 4000 }
   ];
+  // 経済センサス cat01(大分類)コード → 表示ラベル。平成28年・産業(大分類)別事業所数表の値
+  // (@unit:"事業所")のみ対応。それ以外の業種コードはこのゲームでは使わないため未収載。
+  const ECON_CATEGORY_LABEL = { 100: "卸売業，小売業", 110: "金融業，保険業", 140: "宿泊業，飲食サービス業", 150: "生活関連サービス業，娯楽業" };
   const LABOR_DEP_LABEL = { young: "生産年齢層(15-64)", housewife_senior: "主婦・シニア", specialist: "専門職候補", general: "一般スタッフ" };
 
   /* ---------- commands (GDD v6.1 §PRD-2, カネは一旦削除) ---------- */
@@ -1083,9 +1214,14 @@ async function loadRealData(appId, storeLat, storeLng) {
     },
     {
       id: "fight", name: "D. 競合を叩く", desc: "価格・販促で正面対決する",
-      disqualify: (s) => s.finTier !== 2,
-      endorse:    (s) => s.finTier === 2 && s.worst >= 1 && s.laborTier >= 1,
-      alwaysNote: "競合店舗の実データ(事業所密度等)は連携していないため、参考評価です。"
+      disqualify: (s) => s.finTier !== 2 || s.compTier === 0,
+      endorse:    (s) => s.finTier === 2 && s.worst >= 1 && s.laborTier >= 1 && s.compTier >= 1,
+      // 業種にeconCodeが無い場合は旧来の定性的な注記にフォールバックする。現状は8業種すべてに
+      // econCodeがあるためここに入ることは無いが、業種追加時の安全策として残す。
+      alwaysNote: (sig) => sig.econCode
+        ? `商圏内の${ECON_CATEGORY_LABEL[sig.econCode]}事業所数: ${sig.compCount}件（人口1,000人あたり${sig.compPer1000.toFixed(1)}件）` +
+          "<br>競合の目安は経済センサス平成28年の産業(大分類)別事業所数です。業種は大分類ベースの概算、データは2016年時点のため、実際の競合状況とズレがある可能性があります。"
+        : "競合店舗の実データ(事業所密度等)は連携していないため、参考評価です。"
     },
     {
       id: "withdraw", name: "E. 撤退する", desc: "この店舗を閉じる",
@@ -1318,7 +1454,33 @@ async function loadRealData(appId, storeLat, storeLng) {
       bldTier = p.buildingAge < 10 ? 2 : (p.buildingAge >= 25 ? 0 : 1);
     }
 
-    return { custTier, laborTier, worst, finTier, finFallback, opMargin, bldTier };
+    // ---- 競合密度(経済センサス平成28年・産業(大分類)ベースの概算) ----
+    // evaluateStrategy()はpop0を内部で計算しているが返り値には含めていない。ここでは
+    // 既存のtradeAreaFeatures()/popAtFeats()を再利用して同じ値を再計算する
+    // (evaluateStrategyの返り値の形を変えるとrenderResult等の既存の呼び出し元に影響が
+    // 及ぶため、影響範囲を最小にするためにあえて再計算する側を選んだ)。対象は商圏内の
+    // メッシュ数十件程度なので再計算コストは無視できる。
+    const biz = selectedBusiness();
+    const econCode = biz ? biz.econCode : null;
+    const feats = tradeAreaFeatures();
+    let compCount = 0;
+    if (econCode) {
+      feats.forEach(f => { compCount += f.properties["est_" + econCode] || 0; });
+    }
+    const pop0 = popAtFeats(feats, 0);
+    const totalPop0 = pop0.young + pop0.active + pop0.senior;
+    const compPer1000 = totalPop0 > 0 ? compCount / (totalPop0 / 1000) : 0;
+    // しきい値(1,000人あたり15件以上=飽和、5件以上=普通)は業種別の裏付けのある産業
+    // ベンチマークではなく、「競合が多いか少ないか」を大まかに示すための簡易な目安。
+    // 経済センサスは大分類ベース・2016年時点のデータしか無いため、この粗さは意図的に
+    // 許容している(店舗数の多寡くらいの参考情報という位置づけ)。
+    const compTier = compPer1000 >= 15 ? 0 : (compPer1000 >= 5 ? 1 : 2);
+
+    return {
+      custTier, laborTier, worst, finTier, finFallback, opMargin, bldTier,
+      compTier, compCount, compPer1000, econCode,
+      econLabel: econCode ? ECON_CATEGORY_LABEL[econCode] : null
+    };
   }
 
   function renderManagementDecision(strat) {
@@ -1354,7 +1516,8 @@ async function loadRealData(appId, storeLat, storeLng) {
     }
     detail += "<br>" + RATIONALE_TEXT[decision.id][verdict.label];
     if (decision.alwaysNote) {
-      detail += "<br>" + decision.alwaysNote;
+      // alwaysNoteは文字列と関数のどちらもあり得る(fightのみ実データから動的に組み立てる)。
+      detail += "<br>" + (typeof decision.alwaysNote === "function" ? decision.alwaysNote(sig) : decision.alwaysNote);
     }
 
     container.innerHTML = `
