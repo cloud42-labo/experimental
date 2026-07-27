@@ -39,7 +39,9 @@ PRを作ったら、そこで止めずマージまで行う（承認待ちで放
 ## バージョニング
 
 試作が育って継続的に使われるようになったアプリには、セマンティックバージョニング
-（`MAJOR.MINOR.PATCH`、桁数制限なし）を適用する。
+（`MAJOR.MINOR.PATCH`、桁数制限なし）を適用する。これも`cloud42-labo/brain`に
+限らず、Claude Codeが関わる全リポジトリ・全アプリに適用する基本ルール
+（詳細: [brain/notes/semver-and-release-deliverables](https://github.com/cloud42-labo/brain/blob/main/notes/semver-and-release-deliverables.md)）。
 
 | 桁 | 上げるタイミング | 例 |
 | :--- | :--- | :--- |
