@@ -213,6 +213,9 @@
     </div>
     <div class="note" style="margin-bottom:14px;">未発行の場合は e-Stat マイページ（www.e-stat.go.jp）からアプリケーションIDを取得してください。</div>
     <div style="border-top:1px solid var(--gridline);margin:14px 0 12px;padding-top:14px;">
+      <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">業種</label>
+      <div class="biz-grid" id="setupBizGrid" style="margin-bottom:6px;"></div>
+      <div class="note" id="setupBizStatus" style="margin-bottom:14px;">この店舗の業種を1つ選んでください（必須）。客層マッチ度・採用のしやすさの診断に使用します。</div>
       <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">店舗プロファイル（任意）</label>
       <div class="params" id="storeProfileParams">
         <label>
@@ -236,7 +239,7 @@
           <input type="number" id="storeBuildingAgeInput" min="0" step="1" placeholder="例: 10">
         </label>
       </div>
-      <div class="note" style="margin-top:8px;">未入力の項目は0として扱われます。売上高・粗利額・販管費・築年数は⑤の経営判断の評価に使用します。</div>
+      <div class="note" style="margin-top:8px;">未入力の項目は0として扱われます。売上高・粗利額・販管費・築年数は④の経営判断の評価に使用します。</div>
     </div>
     <button id="startGameBtn" type="button"
       style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">
@@ -270,9 +273,9 @@
       <div class="year-row">
         <span class="label">表示する年</span>
         <div class="year-presets" id="yearPresets">
-          <button data-year="0">現在</button>
+          <button data-year="0" class="active">現在</button>
           <button data-year="5">5年後</button>
-          <button data-year="10" class="active">10年後</button>
+          <button data-year="10">10年後</button>
         </div>
       </div>
       <div id="map"></div>
@@ -288,7 +291,7 @@
       <div class="card">
         <h2>店舗プロファイル</h2>
         <div id="storeProfileGrid"></div>
-        <div class="note" style="margin-top:6px;">起動画面で入力した値です。営業利益率と築年数を⑤の経営判断の評価に使用します。</div>
+        <div class="note" style="margin-top:6px;">起動画面で入力した値です。営業利益率と築年数を④の経営判断の評価に使用します。</div>
       </div>
 
       <div class="card">
@@ -304,17 +307,12 @@
       </div>
 
       <div class="card">
-        <h2>② この人口動態に対して、業種を選ぶ</h2>
-        <div class="biz-grid" id="bizGrid"></div>
-      </div>
-
-      <div class="card">
-        <h2>③ どう対策するか、戦略を立てる <span class="unit">— ヒト・モノ</span></h2>
+        <h2>② どう対策するか、戦略を立てる <span class="unit">— ヒト・モノ</span></h2>
         <div id="commandGroups"></div>
       </div>
 
       <div class="card">
-        <h2>④ その戦略は、10年後の人口動態に合っているか</h2>
+        <h2>③ その戦略は、10年後の人口動態に合っているか</h2>
         <div class="note" style="margin-bottom:10px;">お金の計算はしていません。実際の人口データ（若年・現役・シニア人口の実測トレンド）だけを使い、定性的に評価しています。</div>
         <div class="result-headline" id="resultHeadline">業種と店舗位置を選ぶと診断されます</div>
 
@@ -336,7 +334,7 @@
       </div>
 
       <div class="card">
-        <h2>⑤ 経営判断を下す</h2>
+        <h2>④ 経営判断を下す</h2>
         <div class="note" style="margin-bottom:10px;">診断結果(客層マッチ度・採用のしやすさ)と店舗プロファイル(財務・築年数)をもとに、選んだ経営判断が筋がいいかを評価します。</div>
         <div class="biz-grid" id="mgmtDecisionGrid"></div>
         <div id="mgmtDecisionResult"></div>
@@ -348,7 +346,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.4.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.4.1"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -791,8 +789,9 @@ async function loadRealData(appId, storeLat, storeLng) {
     radiusM: 800,
     selectedBusinessId: null,
     commands: {},
-    managementDecision: null, // ⑤ 経営判断を下す で選択したオプションID
-    viewYear: 10 // 地図・損益で「何年後」を表示するか。デフォルトは10年後（診断の対象年と一致させる）
+    managementDecision: null, // ④ 経営判断を下す で選択したオプションID
+    viewYear: 0 // 地図・損益で「何年後」を表示するかの初期値。0=現在。診断(evaluateStrategy)は
+                // 表示年に関わらず常に0年後→10年後の変化で評価するため、この値は表示専用
   };
 
   function selectedBusiness() { return BUSINESS_TYPES.find(b => b.id === state.selectedBusinessId) || null; }
@@ -1051,7 +1050,8 @@ async function loadRealData(appId, storeLat, storeLng) {
   }
 
   /* =====================================================================
-     ① POPULATION FORECAST (業種を選ぶ前に、まず人口動態を見せる)
+     ① POPULATION FORECAST (業種は起動画面で選択済み。ここではその業種に対する
+     商圏の人口動態を確認する)
      ===================================================================== */
   const POP_BRACKET_LABEL = { young: "年少人口(0-14)", active: "生産年齢人口(15-64)", senior: "老年人口(65+)" };
   const POP_BRACKET_COLOR = { young: "var(--series-1)", active: "var(--series-2)", senior: "var(--series-3)" };
@@ -1135,9 +1135,10 @@ async function loadRealData(appId, storeLat, storeLng) {
   }
 
   /* =====================================================================
-     BUSINESS PICKER
+     BUSINESS PICKER (起動画面(#setupScreen)で選択する。既に営業中の店舗という
+     設定のため、業種はゲーム開始前に確定している事実として扱う)
      ===================================================================== */
-  const bizGrid = document.getElementById("bizGrid");
+  const setupBizGrid = document.getElementById("setupBizGrid");
   BUSINESS_TYPES.forEach(biz => {
     const card = document.createElement("button");
     card.className = "biz-card";
@@ -1150,14 +1151,13 @@ async function loadRealData(appId, storeLat, storeLng) {
       </div>`;
     card.addEventListener("click", () => {
       state.selectedBusinessId = biz.id;
-      bizGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
+      setupBizGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
       state.radiusM = biz.radiusDefault;
-      radiusSlider.value = biz.radiusDefault;
-      radiusLabel.textContent = fmtRadius(biz.radiusDefault);
-      renderCommands();
-      rerenderAll();
+      // この時点では#gameRootはまだ非表示で、INAGE_GEOJSONも未取得のため、ここでは
+      // stateの更新のみ行う。radiusSlider/renderCommands/rerenderAllへの反映は
+      // startGame()の成功時にまとめて行う。
     });
-    bizGrid.appendChild(card);
+    setupBizGrid.appendChild(card);
   });
 
   /* ---------- commands UI ---------- */
@@ -1551,6 +1551,7 @@ async function loadRealData(appId, storeLat, storeLng) {
   const toggleAppIdVisible = document.getElementById("toggleAppIdVisible");
   const storeLocationInput = document.getElementById("storeLocationInput");
   const storeLocationStatus = document.getElementById("storeLocationStatus");
+  const setupBizStatus = document.getElementById("setupBizStatus");
   const startGameBtn = document.getElementById("startGameBtn");
   const setupStatus = document.getElementById("setupStatus");
   const storeRevenueInput = document.getElementById("storeRevenueInput");
@@ -1605,6 +1606,13 @@ async function loadRealData(appId, storeLat, storeLng) {
       setupStatus.textContent = "アプリケーションIDを入力してください。";
       return;
     }
+    if (!state.selectedBusinessId) {
+      setupBizStatus.className = "gmaps-status error";
+      setupBizStatus.textContent = "業種を選んでください。";
+      return;
+    }
+    setupBizStatus.className = "note";
+    setupBizStatus.textContent = "";
     startGameBtn.disabled = true;
     startGameBtn.textContent = "取得中…（数十秒かかる場合があります）";
     setupStatus.className = "note";
@@ -1617,7 +1625,10 @@ async function loadRealData(appId, storeLat, storeLng) {
       const gameRoot = document.getElementById("gameRoot");
       gameRoot.style.display = "";
       map.setView(state.storeLatLng, 14);
+      radiusSlider.value = state.radiusM;
+      radiusLabel.textContent = fmtRadius(state.radiusM);
       renderStoreProfileSummary();
+      renderCommands();
       rerenderAll();
       setTimeout(() => map.invalidateSize(), 0);
     } catch (err) {
