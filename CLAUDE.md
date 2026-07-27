@@ -5,6 +5,14 @@
 > このファイルは `GEMINI.md`(`@CLAUDE.md` で本体を読み込む)としても共有している。
 > Claude Code と Gemini CLI の両方がここを読む前提で、特定のツールに固有の指示は書かない。
 
+## セッション開始時
+
+作業を始める前に、`cloud42-labo/brain` がまだセッションに無ければ`add_repo`で
+追加する。過去の決定・教訓（`decisions/`・`notes/`）が入っており、参照せずに
+作業すると同じ失敗を繰り返しやすい。これも`cloud42-labo/brain`に限らず、Claude Code
+が関わる全リポジトリに適用する基本ルール（詳細:
+[brain/notes/attach-brain-every-session](https://github.com/cloud42-labo/brain/blob/main/notes/attach-brain-every-session.md)）。
+
 ## 構成
 
 **1ディレクトリ1プログラム。** ルート直下に、試したもの単位でディレクトリを切る。
