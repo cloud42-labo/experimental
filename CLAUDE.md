@@ -31,6 +31,11 @@ experimental/
 [cloud42-labo/brain](https://github.com/cloud42-labo/brain) の `notes/` に書く。
 ここはコードだけを置く場所。
 
+## GitHub操作
+
+PRを作ったら、そこで止めずマージまで行う（承認待ちで放置しない）。これは
+`cloud42-labo/brain` に限らず、Claude Codeが操作する全リポジトリに適用する。
+
 ## バージョニング
 
 試作が育って継続的に使われるようになったアプリには、セマンティックバージョニング
