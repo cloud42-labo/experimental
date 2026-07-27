@@ -401,7 +401,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.6.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.7.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -829,12 +829,14 @@ async function loadRealData(appId, storeLat, storeLng) {
   const ECON_CATEGORY_LABEL = { 100: "卸売業，小売業", 110: "金融業，保険業", 140: "宿泊業，飲食サービス業", 150: "生活関連サービス業，娯楽業" };
   const LABOR_DEP_LABEL = { young: "生産年齢層(15-64)", housewife_senior: "主婦・シニア", specialist: "専門職候補", general: "一般スタッフ" };
 
-  /* ---------- commands (GDD v6.1 §PRD-2, カネは一旦削除) ---------- */
+  /* ---------- commands (GDD v6.1 §PRD-2, カネはv0.7.0で再導入) ---------- */
   const COMMANDS = [
     { id: "hito_shift", group: "ヒト", name: "主婦・シニア短時間シフト雇用", hint: "労働力の依存先を「現役層の一部＋シニア層」に切り替える" },
     { id: "mono_mismatch", group: "モノ", name: "小分け・シニアプレミアム特化", hint: "商品ミスマッチを解消し、客層マッチ度を1段階改善", exclude: ["finance"] },
     { id: "mono_finance", group: "モノ", name: "シニア資産コンサル特化", hint: "シニア層への適性重みを引き上げる（金融事業のみ）", only: ["finance"] },
-    { id: "mono_dx", group: "モノ", name: "自動発注・セルフレジDX", hint: "労働力への依存度を下げ、採用のしやすさを1段階改善", only: ["conveni", "supermarket", "finance"] }
+    { id: "mono_dx", group: "モノ", name: "自動発注・セルフレジDX", hint: "労働力への依存度を下げ、採用のしやすさを1段階改善", only: ["conveni", "supermarket", "finance"] },
+    { id: "kane_genka", group: "カネ", name: "原価見直し・PB強化", hint: "仕入れ・PB（自社ブランド）強化で粗利率を改善し、財務健全性を1段階改善（実際の粗利額の数字は変更しません）" },
+    { id: "kane_honbu", group: "カネ", name: "本部支援交渉", hint: "本部・仕入れ先との交渉で販管費を圧縮し、財務健全性を1段階改善（実際の販管費の数字は変更しません）" }
   ];
 
   /* ---------- state ---------- */
@@ -1242,7 +1244,7 @@ async function loadRealData(appId, storeLat, storeLng) {
     const container = document.getElementById("commandGroups");
     const biz = selectedBusiness();
     if (!biz) { container.innerHTML = `<div class="note">業種を選ぶとコマンドが表示されます</div>`; return; }
-    const groups = ["ヒト", "モノ"];
+    const groups = ["ヒト", "モノ", "カネ"];
     container.innerHTML = groups.map(g => {
       const cmds = COMMANDS.filter(c => c.group === g)
         .filter(c => !c.only || c.only.includes(biz.id))
@@ -1614,6 +1616,14 @@ async function loadRealData(appId, storeLat, storeLng) {
       finFallback = true;
     }
 
+    // カネ施策(②)による財務健全性の定性的な改善。実際の粗利額・販管費の数字(opMargin)は
+    // 変更せず、財務健全性の判定(finTier)のみを1段階ずつ引き上げる。mono_dxが労働力判定を
+    // 直接底上げする(TIERS[2]に固定)のと同じ「コマンドは定性的にtierを動かす」という
+    // 既存の考え方を財務側にも適用したもの。
+    const finBoosted = !!(state.commands.kane_genka || state.commands.kane_honbu);
+    if (state.commands.kane_genka) finTier = Math.min(2, finTier + 1);
+    if (state.commands.kane_honbu) finTier = Math.min(2, finTier + 1);
+
     let bldTier = 1;
     if (p) {
       bldTier = p.buildingAge < 10 ? 2 : (p.buildingAge >= 25 ? 0 : 1);
@@ -1642,7 +1652,7 @@ async function loadRealData(appId, storeLat, storeLng) {
     const compTier = compPer1000 >= 15 ? 0 : (compPer1000 >= 5 ? 1 : 2);
 
     return {
-      custTier, laborTier, worst, finTier, finFallback, opMargin, bldTier,
+      custTier, laborTier, worst, finTier, finFallback, opMargin, finBoosted, bldTier,
       compTier, compCount, compPer1000, econCode,
       econLabel: econCode ? ECON_CATEGORY_LABEL[econCode] : null
     };
@@ -1669,7 +1679,7 @@ async function loadRealData(appId, storeLat, storeLng) {
 
     const finText = sig.finFallback
       ? "中立(未入力)"
-      : `${TIERS[sig.finTier].label}(営業利益率 ${fmtPctSigned(sig.opMargin)})`;
+      : `${TIERS[sig.finTier].label}(営業利益率 ${fmtPctSigned(sig.opMargin)}${sig.finBoosted ? "、②のカネ施策により改善" : ""})`;
     const bldAge = state.storeProfile ? state.storeProfile.buildingAge : 0;
 
     let detail =
@@ -1678,6 +1688,9 @@ async function loadRealData(appId, storeLat, storeLng) {
 
     if (sig.finFallback) {
       detail += "<br>財務プロファイルが未入力のため、財務面は中立と仮定して判定しています。";
+      if (sig.finBoosted) {
+        detail += "<br>②のカネ施策により、財務健全性の判定はさらに1段階引き上げられています。";
+      }
     }
     detail += "<br>" + RATIONALE_TEXT[decision.id][verdict.label];
     if (decision.alwaysNote) {
