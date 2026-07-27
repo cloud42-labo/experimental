@@ -147,6 +147,25 @@
   .biz-card .biz-meta { color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
   .biz-card.selected { border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 10%, var(--page)); }
 
+  /* ④の経営判断は「5択を見比べる」ための面なので、業種ピッカー(.biz-grid)の2列ではなく
+     1列の縦リストにする。2列だとカード幅が足りず、判定バッジに押されて選択肢名が
+     2行に折り返してカードの高さがガタつく（実測: 「A. 保全・現状維持」が2行になった）。 */
+  .mgmt-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .mgmt-verdict-badge {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    min-width: 52px; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; color: #fff; background: var(--baseline);
+    line-height: 1.6; white-space: nowrap;
+  }
+  /* 診断前(strat=null)はバッジが空文字になる。空のまま幅を占有すると選択肢名を
+     圧迫して折り返しの原因になるため、中身が無いときは畳む。 */
+  .mgmt-verdict-badge:empty { display: none; }
+  .mgmt-verdict-badge.good { background: var(--good); }
+  /* 黄色に白文字はコントラスト不足のため、.fit-badge.warning と同じ濃茶文字にする */
+  .mgmt-verdict-badge.warning { background: var(--warning); color: #3a2900; }
+  .mgmt-verdict-badge.critical { background: var(--critical); }
+  .mgmt-decision-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
   /* command toggles */
   .command-group + .command-group { margin-top: 14px; }
   .command-group-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
@@ -354,13 +373,14 @@
       </div>
 
       <div class="card">
-        <h2>② どう対策するか、戦略を立てる <span class="unit">— ヒト・モノ</span></h2>
+        <h2>② どう対策するか、戦略を立てる <span class="unit">— ヒト・モノ・カネ</span></h2>
         <div id="commandGroups"></div>
       </div>
 
       <div class="card">
         <h2>③ その戦略は、10年後の人口動態に合っているか</h2>
         <div class="note" style="margin-bottom:10px;">お金の計算はしていません。実際の人口データ（若年・現役・シニア人口の実測トレンド）だけを使い、定性的に評価しています。</div>
+        <div class="note" style="margin-bottom:10px;">診断しているのは商圏全体の人口ではなく、この業種が対象とする客層・労働力の増減です。①で総人口が減っていても、対象とする層が増えていれば「良好」になります。</div>
         <div class="result-headline" id="resultHeadline">業種と店舗位置を選ぶと診断されます</div>
 
         <div class="fit-row">
@@ -384,6 +404,7 @@
             <div class="fit-detail" id="staffCoverageDetail"></div>
           </div>
         </div>
+        <div class="note" id="staffCoverageAssumptionNote" style="display:none;">採用できる見込み人数は「商圏の労働力人口 × 0.5%」という仮定値です（1つの店舗が商圏の労働力すべてを採用できるわけではないため）。公式な基準値は存在しないため、目安として扱ってください。</div>
         <div class="note" id="staffCoverageEmptyNote" style="display:none;">パート・アルバイト数が未入力のため、必要人数に対する充足率は計算していません。</div>
         <div class="note" id="mismatchNote" style="display:none;"></div>
       </div>
@@ -391,7 +412,7 @@
       <div class="card">
         <h2>④ 経営判断を下す</h2>
         <div class="note" style="margin-bottom:10px;">診断結果(客層マッチ度・採用のしやすさ)と店舗プロファイル(財務・築年数)をもとに、選んだ経営判断が筋がいいかを評価します。</div>
-        <div class="biz-grid" id="mgmtDecisionGrid"></div>
+        <div class="mgmt-grid" id="mgmtDecisionGrid"></div>
         <div id="mgmtDecisionResult"></div>
       </div>
     </aside>
@@ -401,7 +422,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.7.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.8.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -810,6 +831,12 @@ async function loadRealData(appId, storeLat, storeLng) {
   const HOUSEWIFE_FRACTION = 0.3;   // 現役人口のうち主婦・短時間就業ポテンシャルとみなす割合（仮定）
   const SPECIALIST_FRACTION = 0.08; // 現役人口のうち専門職候補とみなす割合（仮定、経済センサス未連携のため）
 
+  // 商圏の労働力プールのうち、この1店舗が現実に採用できる見込みの割合（仮定値）。
+  // 商圏の労働力は同じエリア内の他の事業者とも奪い合いになるため、プール全体をそのまま
+  // 採用可能人数として扱うと「パート5人に対して労働力1,000倍」のような無意味な数字になる。
+  // 公式な基準値は存在しないため、HOUSEWIFE_FRACTION等と同じ位置づけの目安として設定した。
+  const HIRE_CAPTURE_RATE = 0.005;
+
   /* ---------- 7 business types (GDD v6.1 §PRD-1) ----------
      v6.1で円建てP&L（初期売上・原価率・人件費率）は評価に使わないことにした。
      残すのは「ターゲット適性重み」「依存する労働力」「商品ミスマッチ感度」という、
@@ -1001,8 +1028,8 @@ async function loadRealData(appId, storeLat, storeLng) {
     const biz = selectedBusiness();
     const yearLabel = state.viewYear === 0 ? "現在" : state.viewYear + "年後";
     document.getElementById("mapNote").textContent = biz
-      ? `色は「${biz.name}」のターゲット加重人口（${yearLabel}の推計）。商圏円の外側は淡色表示。`
-      : `色は総人口（${yearLabel}の推計）。商圏円の外側は淡色表示。町丁目をクリックすると内訳を表示します。`;
+      ? `色は「${biz.name}」のターゲット加重人口（${yearLabel}の推計）。商圏円の外側は淡色表示。メッシュをクリックすると内訳を表示します。`
+      : `色は総人口（${yearLabel}の推計）。商圏円の外側は淡色表示。メッシュをクリックすると内訳を表示します。`;
   }
 
   map.on("click", (e) => { setStoreLocation(e.latlng.lat, e.latlng.lng, gmapsStatus); });
@@ -1340,15 +1367,129 @@ async function loadRealData(appId, storeLat, storeLng) {
   };
 
   /* =====================================================================
+     MANAGEMENT VERDICT — 判定ロジックはここ1箇所だけに置く。
+     ④の5枚のカードのバッジ(renderDecisionBadges)と、選択中カードの詳細
+     (renderManagementDecision)の両方がここを呼ぶ。MGMT_DECISIONSのdisqualify/endorseを
+     そのまま評価するだけなので、判定の優先順位をコード内で二重に持たずに済む。
+     ===================================================================== */
+  function verdictForDecision(decision, sig) {
+    if (decision.disqualify(sig)) return { label: "筋が悪い", css: "critical" };
+    if (decision.endorse(sig))    return { label: "妥当",     css: "good" };
+    return                               { label: "要検討",   css: "warning" };
+  }
+
+  // ②のコマンド一覧は業種のonly/exclude(renderCommands参照)でフィルタされているため、
+  // アドバイスで名前を挙げる際も同じフィルタ＋「まだオンでないもの」で絞り込み、
+  // プレイヤーが実際には押せない/画面に無いトグルを勧めてしまわないようにする。
+  function availableOffCommandNames(groups, biz) {
+    if (!biz) return [];
+    return COMMANDS
+      .filter(c => groups.includes(c.group))
+      .filter(c => !c.only || c.only.includes(biz.id))
+      .filter(c => !c.exclude || !c.exclude.includes(biz.id))
+      .filter(c => !state.commands[c.id])
+      .map(c => c.name);
+  }
+  function commandNameList(names) {
+    return names.map(n => `「${n}」`).join("");
+  }
+
+  const SIGNAL_KEYS = ["custTier", "laborTier", "finTier", "bldTier", "compTier"];
+  // 施策(②のコマンド)で動かせる信号は安く、動かせない信号は高く重みづけして、
+  // 「プレイヤーが現実に手を出せる道」を優先して選ぶ。
+  const SIGNAL_COST = { custTier: 1, laborTier: 1, finTier: 1, bldTier: 3, compTier: 3 };
+
+  // 現在のsigから「妥当」に到達できる、最小コストの信号変更セットを総当たりで求める。
+  // 5信号 × 3段階 = 243通りしかないので総当たりで十分安く、MGMT_DECISIONSの述語を
+  // そのまま評価するためルール表と絶対にズレない（判定ロジックを二重に持たない）。
+  function findPathToEndorsement(decision, sig) {
+    let best = null, bestCost = Infinity, bestDist = Infinity;
+    const probe = Object.assign({}, sig);
+    const rec = (i) => {
+      if (i === SIGNAL_KEYS.length) {
+        probe.worst = Math.min(probe.custTier, probe.laborTier);
+        if (verdictForDecision(decision, probe).label !== "妥当") return;
+        let cost = 0, dist = 0;
+        const changes = [];
+        SIGNAL_KEYS.forEach(k => {
+          if (probe[k] === sig[k]) return;
+          cost += SIGNAL_COST[k];
+          dist += Math.abs(probe[k] - sig[k]);
+          changes.push({ key: k, from: sig[k], to: probe[k] });
+        });
+        if (cost < bestCost || (cost === bestCost && dist < bestDist)) {
+          best = changes; bestCost = cost; bestDist = dist;
+        }
+        return;
+      }
+      const k = SIGNAL_KEYS[i];
+      const orig = probe[k];
+      for (const v of [0, 1, 2]) { probe[k] = v; rec(i + 1); }
+      probe[k] = orig;
+    };
+    rec(0);
+    return best; // null = どう変えても妥当にならない / [] = すでに妥当
+  }
+
+  // findPathToEndorsement()が返す信号変更を、プレイヤー向けの日本語1行に変換する。
+  // to > from なら「その信号を上げる」という施策の話になるが、to < from の場合は
+  // 「むしろ悪化していることが条件」という話になる(例: 撤退(E)はworst===0が条件なので、
+  // 良好な状態からは"下がっていることが条件"という向きのアドバイスになる)。
+  // そのため見出しは命令形にせず「この判断が「妥当」になる条件:」という中立の文言にしてある。
+  function adviceLineForChange(change, biz) {
+    const up = change.to > change.from;
+    switch (change.key) {
+      case "finTier": {
+        if (!up) return "財務が深刻な水準（営業利益率3%未満）であることが、この判断が「妥当」になる条件です。";
+        const names = availableOffCommandNames(["カネ"], biz);
+        return names.length > 0
+          ? `財務健全性を上げる — ②【カネ】の${commandNameList(names)}をオンにすると1段階ずつ改善します。`
+          : "財務健全性を上げる — ②【カネ】の施策はすべてオン済みです。営業利益率そのもの（粗利を増やす／販管費を減らす）を見直してください。";
+      }
+      case "custTier": {
+        if (!up) return "客層とのマッチ度が下がっていることが、この判断が「妥当」になる条件です。";
+        const names = availableOffCommandNames(["モノ"], biz);
+        return names.length > 0
+          ? `客層とのマッチ度を上げる — ②【モノ】の${commandNameList(names)}を検討するか、商圏の位置・半径を見直してください。`
+          : "客層とのマッチ度を上げる — 商圏の位置・半径、または業種そのものを見直してください。";
+      }
+      case "laborTier": {
+        if (!up) return "採用のしやすさが下がっていることが、この判断が「妥当」になる条件です。";
+        const names = availableOffCommandNames(["ヒト", "モノ"], biz);
+        return names.length > 0
+          ? `採用のしやすさを上げる — ②【ヒト】【モノ】の${commandNameList(names)}を検討してください。`
+          : "採用のしやすさを上げる — 商圏の位置・半径を見直してください。";
+      }
+      case "bldTier":
+        return up
+          ? "築年数 — 施策では変えられません（改装そのものがBの判断です）。"
+          : "建物が老朽化していることが、この判断が「妥当」になる条件です。";
+      case "compTier":
+        return up
+          ? "競合密度 — 競合の少ない立地であることが条件です。施策では変えられないため、商圏の位置を見直してください。"
+          : "競合が多い立地であることが、この判断が「妥当」になる条件です。";
+      default:
+        return "";
+    }
+  }
+
+  /* =====================================================================
      MANAGEMENT DECISION PICKER
      ===================================================================== */
   const mgmtDecisionGrid = document.getElementById("mgmtDecisionGrid");
+  // decision.id -> .mgmt-verdict-badge 要素。カードは初回に1度だけ生成し、
+  // renderDecisionBadges()ではバッジの中身だけを更新する(カードごと作り直すと
+  // .selectedクラスとクリックリスナーが失われるため)。
+  const decisionBadgeEls = {};
   MGMT_DECISIONS.forEach(d => {
     const card = document.createElement("button");
     card.className = "biz-card";
     card.dataset.id = d.id;
     card.innerHTML = `
-      <div class="biz-name">${d.name}</div>
+      <div class="biz-name mgmt-decision-name">
+        <span>${d.name}</span>
+        <span class="mgmt-verdict-badge"></span>
+      </div>
       <div class="biz-meta">${d.desc}</div>`;
     card.addEventListener("click", () => {
       state.managementDecision = d.id;
@@ -1356,7 +1497,25 @@ async function loadRealData(appId, storeLat, storeLng) {
       rerenderAll();
     });
     mgmtDecisionGrid.appendChild(card);
+    decisionBadgeEls[d.id] = card.querySelector(".mgmt-verdict-badge");
   });
+
+  // sigはrerenderAll()側で1回だけ計算して渡してもらう(カード5枚ぶんここで
+  // computeManagementSignals()を呼ぶと、tradeAreaFeatures()/popAtFeats()の
+  // 重い再計算が5回重複するため)。sigがnullのときは全バッジをクリアする。
+  function renderDecisionBadges(sig) {
+    MGMT_DECISIONS.forEach(d => {
+      const badge = decisionBadgeEls[d.id];
+      if (!sig) {
+        badge.textContent = "";
+        badge.className = "mgmt-verdict-badge";
+        return;
+      }
+      const v = verdictForDecision(d, sig);
+      badge.textContent = v.label;
+      badge.className = "mgmt-verdict-badge " + v.css;
+    });
+  }
 
   /* =====================================================================
      STRATEGY FIT DIAGNOSIS (実人口データのみ・お金の計算はしない)
@@ -1437,11 +1596,16 @@ async function loadRealData(appId, storeLat, storeLng) {
   function computeStaffCoverage(strat) {
     const n = state.storeProfile ? state.storeProfile.partTimeCount : 0;
     if (!strat || n <= 0) return null;
-    const coverageNow = strat.pool0 / n;
-    const coverageFuture = strat.pool10 / n;
-    // 経済センサス競合密度と同様、公式な充足基準は存在しないため、常識的な仮しきい値として設定（要調整可）
-    const tier = coverageFuture >= 20 ? TIERS[2] : (coverageFuture >= 8 ? TIERS[1] : TIERS[0]);
-    return { n, coverageNow, coverageFuture, tier };
+    // 商圏の労働力プールは、この店舗だけでなく周辺の他の事業者とも奪い合いになる。
+    // プール全体をそのまま「採用できる人数」として扱うと現実離れした倍率になるため、
+    // HIRE_CAPTURE_RATEを掛けて、この店舗が実際に採用できそうな人数まで絞り込む。
+    const hireableNow = strat.pool0 * HIRE_CAPTURE_RATE;
+    const hireableFuture = strat.pool10 * HIRE_CAPTURE_RATE;
+    const coverageNow = hireableNow / n;
+    const coverageFuture = hireableFuture / n;
+    // 公式な充足基準は存在しないため、常識的な仮しきい値（必要人数の2倍/1倍）として設定（要調整可）
+    const tier = coverageFuture >= 2.0 ? TIERS[2] : (coverageFuture >= 1.0 ? TIERS[1] : TIERS[0]);
+    return { n, hireableNow, hireableFuture, coverageNow, coverageFuture, tier };
   }
 
   function renderResult(strat) {
@@ -1455,6 +1619,7 @@ async function loadRealData(appId, storeLat, storeLng) {
     const staffCoverageBadge = document.getElementById("staffCoverageBadge");
     const staffCoverageDetail = document.getElementById("staffCoverageDetail");
     const staffCoverageEmptyNote = document.getElementById("staffCoverageEmptyNote");
+    const staffCoverageAssumptionNote = document.getElementById("staffCoverageAssumptionNote");
 
     if (!strat) {
       headline.textContent = "業種と店舗位置を選ぶと診断されます";
@@ -1465,6 +1630,7 @@ async function loadRealData(appId, storeLat, storeLng) {
       mismatchNote.style.display = "none";
       staffCoverageRow.style.display = "none";
       staffCoverageEmptyNote.style.display = "none";
+      staffCoverageAssumptionNote.style.display = "none";
       return;
     }
 
@@ -1492,13 +1658,15 @@ async function loadRealData(appId, storeLat, storeLng) {
     if (coverage) {
       staffCoverageRow.style.display = "flex";
       staffCoverageEmptyNote.style.display = "none";
+      staffCoverageAssumptionNote.style.display = "block";
       staffCoverageBadge.textContent = coverage.tier.label;
       staffCoverageBadge.className = "fit-badge " + coverage.tier.css;
       staffCoverageDetail.textContent =
-        `パート・アルバイト${coverage.n}人に対する商圏労働力プールの充足倍率: 今 ${coverage.coverageNow.toFixed(1)}倍 → 10年後 ${coverage.coverageFuture.toFixed(1)}倍`;
+        `パート・アルバイト${coverage.n}人が必要。商圏から採用できる見込みは 今 約${Math.round(coverage.hireableNow)}人 → 10年後 約${Math.round(coverage.hireableFuture)}人（必要人数の${coverage.coverageFuture.toFixed(1)}倍）`;
     } else {
       staffCoverageRow.style.display = "none";
       staffCoverageEmptyNote.style.display = "block";
+      staffCoverageAssumptionNote.style.display = "none";
     }
   }
 
@@ -1658,7 +1826,7 @@ async function loadRealData(appId, storeLat, storeLng) {
     };
   }
 
-  function renderManagementDecision(strat) {
+  function renderManagementDecision(strat, sig) {
     const container = document.getElementById("mgmtDecisionResult");
     if (!strat) {
       container.innerHTML = `<div class="note">業種を選び、診断結果が出ると経営判断を評価できます</div>`;
@@ -1669,13 +1837,8 @@ async function loadRealData(appId, storeLat, storeLng) {
       return;
     }
 
-    const sig = computeManagementSignals(strat);
     const decision = MGMT_DECISIONS.find(d => d.id === state.managementDecision);
-
-    let verdict;
-    if (decision.disqualify(sig))      verdict = { label: "筋が悪い", css: "critical" };
-    else if (decision.endorse(sig))    verdict = { label: "妥当",     css: "good" };
-    else                                verdict = { label: "要検討",   css: "warning" };
+    const verdict = verdictForDecision(decision, sig);
 
     const finText = sig.finFallback
       ? "中立(未入力)"
@@ -1693,6 +1856,23 @@ async function loadRealData(appId, storeLat, storeLng) {
       }
     }
     detail += "<br>" + RATIONALE_TEXT[decision.id][verdict.label];
+
+    // 「妥当」でないときは、どの信号がどう変われば「妥当」になるかをMGMT_DECISIONSの
+    // 述語から逆算して示す。財務が薄いだけで5択すべてが「妥当」にならない状況でも、
+    // ②のカネ施策で抜け出せることがプレイヤーに伝わるようにするための表示。
+    // 見出しを命令形にしないのは、最小コストの経路に「下がっていることが条件」という
+    // 向きの変更が含まれ得るため(例: 撤退(E)、改装(B))。
+    if (verdict.label !== "妥当") {
+      const path = findPathToEndorsement(decision, sig);
+      const biz = selectedBusiness();
+      if (path === null) {
+        detail += "<br>この判断は、どの条件でも「妥当」にはなりません。他の選択肢と見比べてください。";
+      } else {
+        detail += "<br><strong>この判断が「妥当」になる条件:</strong>";
+        path.forEach(change => { detail += "<br>・" + adviceLineForChange(change, biz); });
+      }
+    }
+
     if (decision.alwaysNote) {
       // alwaysNoteは文字列と関数のどちらもあり得る(fightのみ実データから動的に組み立てる)。
       detail += "<br>" + (typeof decision.alwaysNote === "function" ? decision.alwaysNote(sig) : decision.alwaysNote);
@@ -1716,7 +1896,11 @@ async function loadRealData(appId, storeLat, storeLng) {
     renderPopulationForecast();
     const strat = evaluateStrategy();
     renderResult(strat);
-    renderManagementDecision(strat);
+    // computeManagementSignals()は内部でtradeAreaFeatures()/popAtFeats()を呼ぶため軽くない。
+    // ④の5枚のバッジと選択中カードの詳細の両方で使うsigは、ここで1回だけ計算して渡す。
+    const sig = strat ? computeManagementSignals(strat) : null;
+    renderDecisionBadges(sig);
+    renderManagementDecision(strat, sig);
   }
 
   document.getElementById("yearOffsetNote").textContent =
