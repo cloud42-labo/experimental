@@ -293,9 +293,52 @@
 
     <aside class="control-panel">
       <div class="card">
-        <h2>店舗プロファイル</h2>
-        <div id="storeProfileGrid"></div>
-        <div class="note" style="margin-top:6px;">起動画面で入力した値です。営業利益率と築年数を④の経営判断の評価に使用します。</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <h2 style="margin:0;">店舗プロファイル</h2>
+          <button id="editProfileBtn" type="button"
+            style="font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;">編集</button>
+        </div>
+        <div id="storeProfileView">
+          <div id="storeProfileGrid"></div>
+          <div class="note" style="margin-top:6px;">起動画面で入力した値、またはここで編集した値です。業種は②③④の診断に使用し、営業利益率・築年数は④の経営判断の評価に、パート・アルバイト数は③の労働力診断に使用します。「編集」からここで業種・数値を変更できます。</div>
+        </div>
+        <div id="storeProfileEdit" style="display:none;">
+          <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">業種</label>
+          <div class="biz-grid" id="gameBizGrid" style="margin-bottom:10px;"></div>
+          <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">店舗プロファイル</label>
+          <div class="params" id="editProfileParams">
+            <label>
+              <span>年間売上高 <span style="color:var(--text-muted);font-weight:400;">(万円)</span></span>
+              <input type="number" id="editRevenueInput" min="0" step="1" placeholder="例: 3000">
+            </label>
+            <label>
+              <span>年間粗利額 <span style="color:var(--text-muted);font-weight:400;">(万円)</span></span>
+              <input type="number" id="editGrossProfitInput" min="0" step="1" placeholder="例: 1200">
+            </label>
+            <label>
+              <span>年間販管費 <span style="color:var(--text-muted);font-weight:400;">(万円)</span></span>
+              <input type="number" id="editSgaInput" min="0" step="1" placeholder="例: 900">
+            </label>
+            <label>
+              <span>正社員数 <span style="color:var(--text-muted);font-weight:400;">(人)</span></span>
+              <input type="number" id="editFullTimeCountInput" min="0" step="1" placeholder="例: 3">
+            </label>
+            <label>
+              <span>パート・アルバイト数 <span style="color:var(--text-muted);font-weight:400;">(人)</span></span>
+              <input type="number" id="editPartTimeCountInput" min="0" step="1" placeholder="例: 5">
+            </label>
+            <label>
+              <span>築年数 <span style="color:var(--text-muted);font-weight:400;">(年)</span></span>
+              <input type="number" id="editBuildingAgeInput" min="0" step="1" placeholder="例: 10">
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button id="editProfileSaveBtn" type="button"
+              style="flex:1;font-size:12px;font-weight:600;padding:8px;border-radius:6px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">保存</button>
+            <button id="editProfileCancelBtn" type="button"
+              style="flex:1;font-size:12px;padding:8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;">キャンセル</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -358,7 +401,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.5.1"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.6.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -1160,29 +1203,38 @@ async function loadRealData(appId, storeLat, storeLng) {
   }
 
   /* =====================================================================
-     BUSINESS PICKER (起動画面(#setupScreen)で選択する。既に営業中の店舗という
-     設定のため、業種はゲーム開始前に確定している事実として扱う)
+     BUSINESS PICKER (起動画面(#setupScreen)の#setupBizGridで最初に選ぶ。地図で
+     店舗を移動して条件を試すときのために、ゲーム画面の店舗プロファイルカード
+     (#gameBizGrid、編集モード)からも変更できる。どちらもrenderBusinessGrid()を
+     共有する)
      ===================================================================== */
-  const setupBizGrid = document.getElementById("setupBizGrid");
-  BUSINESS_TYPES.forEach(biz => {
-    const card = document.createElement("button");
-    card.className = "biz-card";
-    card.dataset.id = biz.id;
-    card.innerHTML = `
-      <div class="biz-name">${biz.name}</div>
-      <div class="biz-meta">
-        依存労働力: ${LABOR_DEP_LABEL[biz.laborDependency]}<br>
-        一般的な商圏半径: ${fmtRadius(biz.radiusDefault)}
-      </div>`;
-    card.addEventListener("click", () => {
-      state.selectedBusinessId = biz.id;
-      setupBizGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
-      state.radiusM = biz.radiusDefault;
-      // この時点では#gameRootはまだ非表示で、INAGE_GEOJSONも未取得のため、ここでは
-      // stateの更新のみ行う。radiusSlider/renderCommands/rerenderAllへの反映は
-      // startGame()の成功時にまとめて行う。
+  function renderBusinessGrid(container, selectedId, onSelect) {
+    container.innerHTML = "";
+    BUSINESS_TYPES.forEach(biz => {
+      const card = document.createElement("button");
+      card.className = "biz-card" + (biz.id === selectedId ? " selected" : "");
+      card.dataset.id = biz.id;
+      card.innerHTML = `
+        <div class="biz-name">${biz.name}</div>
+        <div class="biz-meta">
+          依存労働力: ${LABOR_DEP_LABEL[biz.laborDependency]}<br>
+          一般的な商圏半径: ${fmtRadius(biz.radiusDefault)}
+        </div>`;
+      card.addEventListener("click", () => {
+        container.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
+        onSelect(biz);
+      });
+      container.appendChild(card);
     });
-    setupBizGrid.appendChild(card);
+  }
+
+  const setupBizGrid = document.getElementById("setupBizGrid");
+  renderBusinessGrid(setupBizGrid, state.selectedBusinessId, (biz) => {
+    state.selectedBusinessId = biz.id;
+    state.radiusM = biz.radiusDefault;
+    // この時点では#gameRootはまだ非表示で、INAGE_GEOJSONも未取得のため、ここでは
+    // stateの更新のみ行う。radiusSlider/renderCommands/rerenderAllへの反映は
+    // startGame()の成功時にまとめて行う。
   });
 
   /* ---------- commands UI ---------- */
@@ -1470,9 +1522,11 @@ async function loadRealData(appId, storeLat, storeLng) {
     const p = state.storeProfile;
     const grid = document.getElementById("storeProfileGrid");
     if (!p) { grid.innerHTML = ""; return; }
+    const biz = selectedBusiness();
     const opProfit = deriveOperatingProfit(p);
     const opMargin = deriveOperatingMargin(p);
     const rows = [
+      { label: "業種", value: biz ? biz.name : "—" },
       { label: "年間売上高", value: p.revenue.toLocaleString() + "万円" },
       { label: "年間粗利額", value: p.grossProfit.toLocaleString() + "万円" },
       { label: "年間販管費", value: p.sga.toLocaleString() + "万円" },
@@ -1488,6 +1542,63 @@ async function loadRealData(appId, storeLat, storeLng) {
       </div>
     `).join("");
   }
+
+  /* ---------- store profile edit (ゲーム画面から業種・プロファイルを編集する) ---------- */
+  const editProfileBtn = document.getElementById("editProfileBtn");
+  const storeProfileView = document.getElementById("storeProfileView");
+  const storeProfileEdit = document.getElementById("storeProfileEdit");
+  const gameBizGrid = document.getElementById("gameBizGrid");
+  const editRevenueInput = document.getElementById("editRevenueInput");
+  const editGrossProfitInput = document.getElementById("editGrossProfitInput");
+  const editSgaInput = document.getElementById("editSgaInput");
+  const editFullTimeCountInput = document.getElementById("editFullTimeCountInput");
+  const editPartTimeCountInput = document.getElementById("editPartTimeCountInput");
+  const editBuildingAgeInput = document.getElementById("editBuildingAgeInput");
+  const editProfileSaveBtn = document.getElementById("editProfileSaveBtn");
+  const editProfileCancelBtn = document.getElementById("editProfileCancelBtn");
+
+  let editBusinessId = null; // 編集モード中だけ使う一時選択。保存時にのみstate.selectedBusinessIdへ反映する
+
+  function openProfileEdit() {
+    const p = state.storeProfile || { revenue: 0, grossProfit: 0, sga: 0, fullTimeCount: 0, partTimeCount: 0, buildingAge: 0 };
+    editRevenueInput.value = p.revenue;
+    editGrossProfitInput.value = p.grossProfit;
+    editSgaInput.value = p.sga;
+    editFullTimeCountInput.value = p.fullTimeCount;
+    editPartTimeCountInput.value = p.partTimeCount;
+    editBuildingAgeInput.value = p.buildingAge;
+    editBusinessId = state.selectedBusinessId;
+    renderBusinessGrid(gameBizGrid, editBusinessId, (biz) => { editBusinessId = biz.id; });
+    storeProfileView.style.display = "none";
+    storeProfileEdit.style.display = "block";
+  }
+
+  function closeProfileEdit() {
+    storeProfileEdit.style.display = "none";
+    storeProfileView.style.display = "block";
+  }
+
+  editProfileBtn.addEventListener("click", openProfileEdit);
+  editProfileCancelBtn.addEventListener("click", closeProfileEdit);
+
+  editProfileSaveBtn.addEventListener("click", () => {
+    state.storeProfile = parseProfileInputs({
+      revenue: editRevenueInput,
+      grossProfit: editGrossProfitInput,
+      sga: editSgaInput,
+      fullTimeCount: editFullTimeCountInput,
+      partTimeCount: editPartTimeCountInput,
+      buildingAge: editBuildingAgeInput
+    });
+    if (editBusinessId !== state.selectedBusinessId) {
+      state.selectedBusinessId = editBusinessId;
+      state.commands = {}; // 業種が変わると③のヒト・モノ切り替えが新しい業種のonly/excludeに合わない可能性があるためリセット
+    }
+    renderCommands();
+    renderStoreProfileSummary();
+    rerenderAll();
+    closeProfileEdit();
+  });
 
   function computeManagementSignals(strat) {
     const custTier = strat.customerTier.level;
@@ -1627,14 +1738,14 @@ async function loadRealData(appId, storeLat, storeLng) {
     return n;
   }
 
-  function parseStoreProfileInputs() {
+  function parseProfileInputs(inputs) {
     return {
-      revenue:       nonNegNumber(storeRevenueInput.value),
-      grossProfit:   nonNegNumber(storeGrossProfitInput.value),
-      sga:           nonNegNumber(storeSgaInput.value),
-      fullTimeCount: nonNegNumber(storeFullTimeCountInput.value),
-      partTimeCount: nonNegNumber(storePartTimeCountInput.value),
-      buildingAge:   nonNegNumber(storeBuildingAgeInput.value)
+      revenue:       nonNegNumber(inputs.revenue.value),
+      grossProfit:   nonNegNumber(inputs.grossProfit.value),
+      sga:           nonNegNumber(inputs.sga.value),
+      fullTimeCount: nonNegNumber(inputs.fullTimeCount.value),
+      partTimeCount: nonNegNumber(inputs.partTimeCount.value),
+      buildingAge:   nonNegNumber(inputs.buildingAge.value)
     };
   }
 
@@ -1675,7 +1786,14 @@ async function loadRealData(appId, storeLat, storeLng) {
     setupStatus.textContent = "e-Statから人口統計データを取得しています…";
     try {
       state.storeLatLng = L.latLng(parsed.lat, parsed.lng);
-      state.storeProfile = parseStoreProfileInputs();
+      state.storeProfile = parseProfileInputs({
+        revenue: storeRevenueInput,
+        grossProfit: storeGrossProfitInput,
+        sga: storeSgaInput,
+        fullTimeCount: storeFullTimeCountInput,
+        partTimeCount: storePartTimeCountInput,
+        buildingAge: storeBuildingAgeInput
+      });
       await loadRealData(appId, parsed.lat, parsed.lng);
       document.getElementById("setupScreen").style.display = "none";
       const gameRoot = document.getElementById("gameRoot");
