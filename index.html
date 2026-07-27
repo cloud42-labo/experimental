@@ -67,8 +67,19 @@
   }
   .layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-  .map-panel { flex: 1 1 600px; min-width: 320px; }
-  .control-panel { flex: 0 0 380px; min-width: 320px; display: flex; flex-direction: column; gap: 14px; }
+  /* 左右どちらの列もflex-grow:1にして画面幅に応じて伸縮させる。旧.control-panelは
+     flex-grow:0の380px固定だったため、600〜1024px幅でも右列だけ380pxに張り付き、
+     ④のカードが画面下2,000px超まで押し出されていた(実測)。
+     min-width:0は既定のmin-width:auto(コンテンツの最小幅)による横スクロールを防ぐために必須。
+     390px幅でscrollWidth(400px) > innerWidth(390px)になる不具合の対策(実測)。 */
+  .map-panel { flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .control-panel { flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  /* flex-wrapは「2列のflex-basisの合計(520+400+gap16=936px)が入らなくなった時点」で
+     折り返すため、放っておくと切り替わる幅がbasisの算術に依存して分かりにくい。
+     1000px以下は明示的に1列に落として、切り替わり位置を決め打ちにする。 */
+  @media (max-width: 1000px) {
+    .map-panel, .control-panel { flex-basis: 100%; }
+  }
   h2 { font-size: 14px; margin: 0 0 10px; color: var(--text-primary); }
   h2 .unit { color: var(--text-muted); font-weight: 400; }
 
@@ -281,36 +292,52 @@
   <div class="mock-badge">⚠ 主婦・専門職の人口比率は未実装データのため仮定値です。また統計基準年(2020年)と現在の間は実測トレンドを直線的に延伸しています。お金の計算はしていません（人口データのみで定性評価）</div>
 
   <div class="layout">
-    <section class="card map-panel">
-      <h2>商圏マップ</h2>
-      <div class="gmaps-row">
-        <input type="text" id="gmapsInput" placeholder="Google MapsのURL、または「緯度, 経度」を貼り付け">
-        <button id="gmapsApply">反映</button>
-      </div>
-      <div class="gmaps-status" id="gmapsStatus">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。地図を直接クリックしても指定できます。別の場所に移動すると、その場でデータを取得し直します。</div>
-      <div class="radius-row">
-        <span>商圏半径</span>
-        <input type="range" id="radiusSlider" min="300" max="5000" step="100" value="800">
-        <span id="radiusLabel">800m</span>
-      </div>
-      <div class="year-row">
-        <span class="label">表示する年</span>
-        <div class="year-presets" id="yearPresets">
-          <button data-year="0" class="active">現在</button>
-          <button data-year="5">5年後</button>
-          <button data-year="10">10年後</button>
+    <!-- 左列=「いまの状況」(店舗・商圏・人口の事実)、右列=「どうするか」(戦略・診断・判断)。
+         v0.8.0までは左が地図カード1枚だけで、1280px幅では左列に1,688pxの空白ができ、
+         ゲーム本体である②③④が幅380pxの右列に押し込まれて④が画面下2,084pxまで
+         沈んでいた(実測)。①と店舗プロファイルを左へ移し、2列の高さを釣り合わせる。 -->
+    <div class="map-panel">
+      <section class="card">
+        <h2>商圏マップ</h2>
+        <div class="gmaps-row">
+          <input type="text" id="gmapsInput" placeholder="Google MapsのURL、または「緯度, 経度」を貼り付け">
+          <button id="gmapsApply">反映</button>
         </div>
-      </div>
-      <div id="map"></div>
-      <div class="legend-row">
-        <span id="legendMin">0</span>
-        <div class="legend-bar" id="legendBar"></div>
-        <span id="legendMax">0</span>
-      </div>
-      <div class="note" id="mapNote">色は総人口（実データ、令和2年国勢調査）。商圏円の外側は淡色表示。メッシュをクリックすると内訳を表示します。</div>
-    </section>
+        <div class="gmaps-status" id="gmapsStatus">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。地図を直接クリックしても指定できます。別の場所に移動すると、その場でデータを取得し直します。</div>
+        <div class="radius-row">
+          <span>商圏半径</span>
+          <input type="range" id="radiusSlider" min="300" max="5000" step="100" value="800">
+          <span id="radiusLabel">800m</span>
+        </div>
+        <div class="year-row">
+          <span class="label">表示する年</span>
+          <div class="year-presets" id="yearPresets">
+            <button data-year="0" class="active">現在</button>
+            <button data-year="5">5年後</button>
+            <button data-year="10">10年後</button>
+          </div>
+        </div>
+        <div id="map"></div>
+        <div class="legend-row">
+          <span id="legendMin">0</span>
+          <div class="legend-bar" id="legendBar"></div>
+          <span id="legendMax">0</span>
+        </div>
+        <div class="note" id="mapNote">色は総人口（実データ、令和2年国勢調査）。商圏円の外側は淡色表示。メッシュをクリックすると内訳を表示します。</div>
+      </section>
 
-    <aside class="control-panel">
+      <div class="card">
+        <h2>① この場所の10年後の人口予測</h2>
+        <div id="popForecastRows"></div>
+        <svg id="popChart" viewBox="0 0 480 140"></svg>
+        <div class="pop-chart-legend">
+          <span class="key"><span class="pf-dot" style="background:var(--series-1)"></span>年少(0-14)</span>
+          <span class="key"><span class="pf-dot" style="background:var(--series-2)"></span>生産年齢(15-64)</span>
+          <span class="key"><span class="pf-dot" style="background:var(--series-3)"></span>老年(65+)</span>
+        </div>
+        <div class="note" id="yearOffsetNote"></div>
+      </div>
+
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
           <h2 style="margin:0;">店舗プロファイル</h2>
@@ -359,19 +386,9 @@
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="card">
-        <h2>① この場所の10年後の人口予測</h2>
-        <div id="popForecastRows"></div>
-        <svg id="popChart" viewBox="0 0 480 140"></svg>
-        <div class="pop-chart-legend">
-          <span class="key"><span class="pf-dot" style="background:var(--series-1)"></span>年少(0-14)</span>
-          <span class="key"><span class="pf-dot" style="background:var(--series-2)"></span>生産年齢(15-64)</span>
-          <span class="key"><span class="pf-dot" style="background:var(--series-3)"></span>老年(65+)</span>
-        </div>
-        <div class="note" id="yearOffsetNote"></div>
-      </div>
-
+    <aside class="control-panel">
       <div class="card">
         <h2>② どう対策するか、戦略を立てる <span class="unit">— ヒト・モノ・カネ</span></h2>
         <div id="commandGroups"></div>
@@ -422,7 +439,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.8.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.9.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -1792,8 +1809,14 @@ async function loadRealData(appId, storeLat, storeLng) {
     if (state.commands.kane_genka) finTier = Math.min(2, finTier + 1);
     if (state.commands.kane_honbu) finTier = Math.min(2, finTier + 1);
 
-    let bldTier = 1;
-    if (p) {
+    // 築年数は任意入力で、未入力だと0になる(起動画面の「未入力の項目は0として扱われます」)。
+    // 0をそのまま「築10年未満」に当てはめるとbldTier=2(新しい)になり、未入力なのに
+    // 最良の建物シグナルが付いてしまう。直前の財務(finFallback)と同じ考え方で、
+    // 未入力は「中立」にフォールバックさせる。
+    let bldTier = 1, bldFallback = false;
+    if (!p || p.buildingAge === 0) {
+      bldFallback = true;
+    } else {
       bldTier = p.buildingAge < 10 ? 2 : (p.buildingAge >= 25 ? 0 : 1);
     }
 
@@ -1820,7 +1843,7 @@ async function loadRealData(appId, storeLat, storeLng) {
     const compTier = compPer1000 >= 15 ? 0 : (compPer1000 >= 5 ? 1 : 2);
 
     return {
-      custTier, laborTier, worst, finTier, finFallback, opMargin, finBoosted, bldTier,
+      custTier, laborTier, worst, finTier, finFallback, opMargin, finBoosted, bldTier, bldFallback,
       compTier, compCount, compPer1000, econCode,
       econLabel: econCode ? ECON_CATEGORY_LABEL[econCode] : null
     };
@@ -1844,16 +1867,24 @@ async function loadRealData(appId, storeLat, storeLng) {
       ? "中立(未入力)"
       : `${TIERS[sig.finTier].label}(営業利益率 ${fmtPctSigned(sig.opMargin)}${sig.finBoosted ? "、②のカネ施策により改善" : ""})`;
     const bldAge = state.storeProfile ? state.storeProfile.buildingAge : 0;
+    // 未入力(0)を「築0年＝新築」として表示すると誤解を招くため、bldFallback時は
+    // 財務の「中立(未入力)」と対になる専用の文言に差し替える。
+    const bldText = sig.bldFallback
+      ? "未入力(中立と仮定)"
+      : `${bldAge}年(${BUILDING_TIER_LABELS[sig.bldTier]})`;
 
     let detail =
       `客層マッチ度: ${TIERS[sig.custTier].label}、労働力: ${TIERS[sig.laborTier].label}、` +
-      `財務健全性: ${finText}、築年数: ${bldAge}年(${BUILDING_TIER_LABELS[sig.bldTier]})`;
+      `財務健全性: ${finText}、築年数: ${bldText}`;
 
     if (sig.finFallback) {
       detail += "<br>財務プロファイルが未入力のため、財務面は中立と仮定して判定しています。";
       if (sig.finBoosted) {
         detail += "<br>②のカネ施策により、財務健全性の判定はさらに1段階引き上げられています。";
       }
+    }
+    if (sig.bldFallback) {
+      detail += "<br>築年数が未入力のため、建物の状態は中立と仮定して判定しています。（新築の場合は1年と入力してください）";
     }
     detail += "<br>" + RATIONALE_TEXT[decision.id][verdict.label];
 
@@ -1949,34 +1980,57 @@ async function loadRealData(appId, storeLat, storeLng) {
   async function startGame() {
     const appId = appIdInput.value.trim();
     const locationRaw = storeLocationInput.value.trim();
+
+    // 3項目を1つずつ早期returnで検証すると、空フォーム送信時に「直しては再送信」を
+    // 3往復させてしまう。さらに業種のエラーは送信ボタンより上に描画されるため、
+    // 画面が低いと「ボタンを押しても何も起きない」ように見える(実測)。
+    // まとめて検証・表示し、最初のエラー箇所までスクロールして両方を解消する。
+    let firstInvalidEl = null;
+    let parsed = null;
+
     if (!locationRaw) {
       storeLocationStatus.className = "gmaps-status error";
       storeLocationStatus.textContent = "店舗の場所を入力してください。";
-      return;
+      firstInvalidEl = firstInvalidEl || storeLocationInput;
+    } else {
+      parsed = parseLatLngFromText(locationRaw);
+      if (!parsed) {
+        const isShortLink = /goo\.gl|maps\.app/.test(locationRaw);
+        storeLocationStatus.className = "gmaps-status error";
+        storeLocationStatus.textContent = isShortLink
+          ? "短縮URLからは座標を取得できません。Google Mapsで展開後のURL、または地点を右クリックして出る「緯度, 経度」をコピーして貼り付けてください。"
+          : "座標を読み取れませんでした。Google MapsのURL、または「緯度, 経度」の形式で貼り付けてください。";
+        firstInvalidEl = firstInvalidEl || storeLocationInput;
+      } else {
+        storeLocationStatus.className = "note";
+        storeLocationStatus.textContent = "";
+      }
     }
-    const parsed = parseLatLngFromText(locationRaw);
-    if (!parsed) {
-      const isShortLink = /goo\.gl|maps\.app/.test(locationRaw);
-      storeLocationStatus.className = "gmaps-status error";
-      storeLocationStatus.textContent = isShortLink
-        ? "短縮URLからは座標を取得できません。Google Mapsで展開後のURL、または地点を右クリックして出る「緯度, 経度」をコピーして貼り付けてください。"
-        : "座標を読み取れませんでした。Google MapsのURL、または「緯度, 経度」の形式で貼り付けてください。";
-      return;
-    }
-    storeLocationStatus.className = "note";
-    storeLocationStatus.textContent = "";
+
     if (!appId) {
       setupStatus.className = "note gmaps-status error";
       setupStatus.textContent = "アプリケーションIDを入力してください。";
-      return;
+      firstInvalidEl = firstInvalidEl || appIdInput;
+    } else {
+      setupStatus.className = "note";
+      setupStatus.textContent = "";
     }
+
     if (!state.selectedBusinessId) {
       setupBizStatus.className = "gmaps-status error";
       setupBizStatus.textContent = "業種を選んでください。";
+      firstInvalidEl = firstInvalidEl || setupBizGrid;
+    } else {
+      setupBizStatus.className = "note";
+      setupBizStatus.textContent = "";
+    }
+
+    // 直った項目は上のelse側でクリアされるので、再送信時に古いエラーが残らない。
+    if (firstInvalidEl) {
+      firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    setupBizStatus.className = "note";
-    setupBizStatus.textContent = "";
+
     startGameBtn.disabled = true;
     startGameBtn.textContent = "取得中…（数十秒かかる場合があります）";
     setupStatus.className = "note";
