@@ -358,7 +358,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.5.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.5.1"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -859,12 +859,13 @@ async function loadRealData(appId, storeLat, storeLng) {
   }
   const MUTED_FILL = "#c3c2b7";
 
-  function metricFor(props) {
-    const p = projectFeature(props, state.viewYear);
+  function metricForYear(props, year) {
+    const p = projectFeature(props, year);
     const biz = selectedBusiness();
     if (!biz) return p.young + p.active + p.senior;
     return (biz.weights.young * p.young) + (biz.weights.active * p.active) + (biz.weights.senior * p.senior);
   }
+  function metricFor(props) { return metricForYear(props, state.viewYear); }
 
   /* ---------- map setup ---------- */
   const map = L.map("map", { scrollWheelZoom: true }); // setViewはゲーム開始後、店舗座標が決まってから呼ぶ
@@ -875,8 +876,20 @@ async function loadRealData(appId, storeLat, storeLng) {
 
   let geoLayer, circleLayer, marker;
 
+  // #yearPresetsのdata-year値と一致させる。年をまたいで色の濃淡を比較しても意味が
+  // 通るよう、色のものさし(最大値)は表示中の年だけでなく全プリセット年の最大値で
+  // 固定する(年を切り替えるたびにものさし自体が動くと、値が増えても色が薄くなる
+  // ような逆転が起こり得るため)。
+  const DISPLAY_YEARS = [0, 5, 10];
   function currentMaxMetric() {
-    return Math.max(...INAGE_GEOJSON.features.map(f => metricFor(f.properties)));
+    let max = 0;
+    INAGE_GEOJSON.features.forEach(f => {
+      DISPLAY_YEARS.forEach(y => {
+        const v = metricForYear(f.properties, y);
+        if (v > max) max = v;
+      });
+    });
+    return max;
   }
 
   function styleFeature(feature, inTradeArea, maxMetric) {
