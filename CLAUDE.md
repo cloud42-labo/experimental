@@ -52,6 +52,10 @@ PRを作ったら、そこで止めずマージまで行う（承認待ちで放
 - 変更後は各アプリの `index.html` 冒頭の `APP_VERSION` 定数を必ず更新する
 - **正式リリースへの昇格**: プロダクトオーナー（駒場さん）が正式リリースを宣言した
   タイミングで `v1.0.0` に上げる。それまでの `0.x.x` はすべてプレリリース扱い
+- **v1.0.0になったら`experimental`から卒業する**: `v1.0.0`昇格は、そのアプリ専用の
+  新規リポジトリ（公開/public）を立てて切り出すトリガーとする。`experimental`は
+  試作・プレリリースまでの場所という前提を維持する（詳細:
+  [brain/notes/semver-and-release-deliverables](https://github.com/cloud42-labo/brain/blob/main/notes/semver-and-release-deliverables.md)）
 
 ## リリース時のDeliverables
 
