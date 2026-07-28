@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Serendipity Spot</string>
+    <string name="notification_channel_name">近接通知</string>
+    <string name="notification_channel_desc">登録したスポットに近づいたときの通知</string>
+</resources>

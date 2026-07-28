@@ -1,0 +1,9 @@
+# このファイルを local.properties にコピーして値を埋める。
+# local.properties は .gitignore 対象なのでコミットされない。
+
+# Android SDK の場所（Android Studio が自動生成する場合は不要）
+# sdk.dir=/path/to/Android/sdk
+
+# Google Cloud Console > APIs & Services > Credentials で発行した
+# Maps SDK for Android 用の API キー
+MAPS_API_KEY=YOUR_MAPS_API_KEY_HERE
