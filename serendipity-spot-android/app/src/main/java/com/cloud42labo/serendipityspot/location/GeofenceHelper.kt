@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import com.cloud42labo.serendipityspot.data.Spot
+import com.cloud42labo.serendipityspot.data.SpotLocalCache
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.GeofencingRequest
@@ -32,6 +33,11 @@ class GeofenceHelper(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     suspend fun resync(spots: List<Spot>) {
+        // 受信側（GeofenceBroadcastReceiver / BootReceiver）はこのキャッシュだけを見て
+        // 通知内容を組み立てる。ジオフェンスの登録と同じ場所で必ず保存すること。
+        // 別々に更新すると「ジオフェンスは張られているのに通知が出ない」状態になる。
+        SpotLocalCache.save(context, spots)
+
         geofencingClient.removeGeofences(pendingIntent).await()
         if (spots.isEmpty()) return
 
