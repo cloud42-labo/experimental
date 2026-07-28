@@ -58,6 +58,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/DEPENDENCIES"
+            // google-auth-library の複数 jar が同名で持ち込むメタデータ。実行時に不要。
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/NOTICE.md"
+            excludes += "META-INF/LICENSE.md"
         }
     }
 }
@@ -91,10 +95,10 @@ dependencies {
     implementation("com.google.api-client:google-api-client:2.7.0") {
         exclude(group = "org.apache.httpcomponents")
     }
-    implementation("com.google.apis:google-api-services-sheets:v4-rev20240814-2.0.0") {
+    implementation("com.google.apis:google-api-services-sheets:v4-rev20260610-2.0.0") {
         exclude(group = "org.apache.httpcomponents")
     }
-    implementation("com.google.apis:google-api-services-drive:v3-rev20240914-2.0.0") {
+    implementation("com.google.apis:google-api-services-drive:v3-rev20260712-2.0.0") {
         exclude(group = "org.apache.httpcomponents")
     }
     implementation("com.google.http-client:google-http-client-gson:1.45.0") {
