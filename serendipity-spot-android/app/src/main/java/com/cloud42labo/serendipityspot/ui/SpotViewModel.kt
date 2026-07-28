@@ -1,20 +1,28 @@
 package com.cloud42labo.serendipityspot.ui
 
+import android.app.Activity
 import android.app.Application
+import android.content.Intent
+import android.content.IntentSender
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.cloud42labo.serendipityspot.auth.AuthorizationOutcome
 import com.cloud42labo.serendipityspot.auth.GoogleAuthManager
-import com.cloud42labo.serendipityspot.data.Spot
+import com.cloud42labo.serendipityspot.auth.SignedInUser
 import com.cloud42labo.serendipityspot.data.SheetsRepository
+import com.cloud42labo.serendipityspot.data.Spot
 import com.cloud42labo.serendipityspot.location.GeofenceHelper
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class SpotUiState(
-    val account: GoogleSignInAccount? = null,
+    val user: SignedInUser? = null,
     val spots: List<Spot> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -32,80 +40,129 @@ class SpotViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(SpotUiState())
     val uiState: StateFlow<SpotUiState> = _uiState.asStateFlow()
 
-    val signInIntent get() = authManager.signInIntent()
+    /** Sheets/Driveの許可画面をActivityに出してもらうための依頼。 */
+    private val _consentRequests = Channel<IntentSender>(Channel.BUFFERED)
+    val consentRequests = _consentRequests.receiveAsFlow()
 
     init {
-        authManager.lastSignedInAccount()?.let { account ->
-            _uiState.value = _uiState.value.copy(account = account)
+        authManager.cachedUser()?.let { user ->
+            _uiState.update { it.copy(user = user) }
             refresh()
         }
     }
 
-    fun onSignInResult(account: GoogleSignInAccount?) {
-        if (account == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = "サインインに失敗しました")
-            return
+    fun signIn(activity: Activity) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            runCatching { authManager.signIn(activity) }
+                .onSuccess { user ->
+                    _uiState.update { it.copy(user = user, isLoading = false) }
+                    loadSpots()
+                }
+                .onFailure { error ->
+                    // ユーザーが自分でダイアログを閉じた場合はエラー表示しない
+                    val message = if (error is GetCredentialCancellationException) null
+                    else error.message ?: "サインインに失敗しました"
+                    _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+                }
         }
-        _uiState.value = _uiState.value.copy(account = account, errorMessage = null)
-        refresh()
     }
 
     fun signOut() {
-        authManager.signOut()
-        _uiState.value = SpotUiState()
-    }
-
-    fun consumeFocusRequest() {
-        _uiState.value = _uiState.value.copy(focusSpotId = null)
-    }
-
-    fun focusSpot(spotId: String) {
-        _uiState.value = _uiState.value.copy(focusSpotId = spotId)
-    }
-
-    fun refresh() {
-        val account = _uiState.value.account ?: return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            runCatching {
-                val sheets = authManager.sheetsService(account)
-                val drive = authManager.driveService(account)
-                val id = spreadsheetId ?: repository.ensureSpreadsheet(sheets, drive).also { spreadsheetId = it }
-                val spots = repository.loadSpots(sheets, id)
-                geofenceHelper.resync(spots)
-                spots
-            }.onSuccess { spots ->
-                _uiState.value = _uiState.value.copy(spots = spots, isLoading = false)
-            }.onFailure { error ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = error.message ?: "読み込みに失敗しました",
-                )
+            runCatching { authManager.signOut() }
+            spreadsheetId = null
+            _uiState.value = SpotUiState()
+        }
+    }
+
+    fun onAuthorizationResult(data: Intent?) {
+        viewModelScope.launch {
+            val outcome = runCatching { authManager.authorizationResultFrom(data) }.getOrElse { error ->
+                fail(error, "アクセス許可を確認できませんでした")
+                return@launch
+            }
+            when (outcome) {
+                is AuthorizationOutcome.Granted -> loadSpots()
+                is AuthorizationOutcome.ConsentRequired -> _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "スプレッドシートへのアクセスを許可すると利用できます",
+                    )
+                }
             }
         }
     }
 
-    fun addSpot(lat: Double, lng: Double, title: String, memo: String) {
-        val account = _uiState.value.account ?: return
-        val id = spreadsheetId ?: return
-        if (title.isBlank()) return
+    fun consumeFocusRequest() {
+        _uiState.update { it.copy(focusSpotId = null) }
+    }
 
+    fun focusSpot(spotId: String) {
+        _uiState.update { it.copy(focusSpotId = spotId) }
+    }
+
+    fun refresh() {
+        if (_uiState.value.user == null) return
+        viewModelScope.launch { loadSpots() }
+    }
+
+    fun addSpot(lat: Double, lng: Double, title: String, memo: String) {
+        if (_uiState.value.user == null || title.isBlank()) return
+        val id = spreadsheetId ?: return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            val token = requireAccessToken() ?: return@launch
+
             runCatching {
-                val sheets = authManager.sheetsService(account)
+                val sheets = authManager.sheetsService(token)
                 val spot = repository.appendSpot(sheets, id, lat, lng, title, memo)
                 val newSpots = _uiState.value.spots + spot
                 geofenceHelper.resync(newSpots)
                 newSpots
             }.onSuccess { spots ->
-                _uiState.value = _uiState.value.copy(spots = spots, isLoading = false)
-            }.onFailure { error ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = error.message ?: "保存に失敗しました",
-                )
+                _uiState.update { it.copy(spots = spots, isLoading = false) }
+            }.onFailure { error -> fail(error, "保存に失敗しました") }
+        }
+    }
+
+    private suspend fun loadSpots() {
+        val token = requireAccessToken() ?: return
+        runCatching {
+            val sheets = authManager.sheetsService(token)
+            val drive = authManager.driveService(token)
+            val id = spreadsheetId
+                ?: repository.ensureSpreadsheet(sheets, drive).also { spreadsheetId = it }
+            val spots = repository.loadSpots(sheets, id)
+            geofenceHelper.resync(spots)
+            spots
+        }.onSuccess { spots ->
+            _uiState.update { it.copy(spots = spots, isLoading = false) }
+        }.onFailure { error -> fail(error, "読み込みに失敗しました") }
+    }
+
+    /**
+     * アクセストークンを取る。まだ許可されていなければ許可画面をActivityに依頼し、
+     * nullを返す（結果は[onAuthorizationResult]に戻ってくる）。
+     */
+    private suspend fun requireAccessToken(): String? {
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+
+        val outcome = runCatching { authManager.authorize() }.getOrElse { error ->
+            fail(error, "アクセス許可の取得に失敗しました")
+            return null
+        }
+
+        return when (outcome) {
+            is AuthorizationOutcome.Granted -> outcome.accessToken
+            is AuthorizationOutcome.ConsentRequired -> {
+                _consentRequests.send(outcome.intentSender)
+                _uiState.update { it.copy(isLoading = false) }
+                null
             }
         }
+    }
+
+    private fun fail(error: Throwable, fallback: String) {
+        _uiState.update { it.copy(isLoading = false, errorMessage = error.message ?: fallback) }
     }
 }

@@ -7,3 +7,8 @@
 # Google Cloud Console > APIs & Services > Credentials で発行した
 # Maps SDK for Android 用の API キー
 MAPS_API_KEY=YOUR_MAPS_API_KEY_HERE
+
+# 同じく Credentials で発行した「ウェブ アプリケーション」型の OAuth クライアント ID。
+# Credential Manager のサインインに渡す server client ID で、Android 型のものとは別物。
+# 末尾は .apps.googleusercontent.com になる。
+GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_OAUTH_CLIENT_ID.apps.googleusercontent.com

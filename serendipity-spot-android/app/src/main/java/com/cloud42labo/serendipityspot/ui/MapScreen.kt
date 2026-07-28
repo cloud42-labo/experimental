@@ -54,6 +54,7 @@ fun MapScreen(
     uiState: SpotUiState,
     hasLocationPermission: Boolean,
     onSignInClick: () -> Unit,
+    onSignOutClick: () -> Unit,
     onSaveSpot: (lat: Double, lng: Double, title: String, memo: String) -> Unit,
     onFocusConsumed: () -> Unit,
 ) {
@@ -81,10 +82,10 @@ fun MapScreen(
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
-                properties = MapProperties(isMyLocationEnabled = hasLocationPermission && uiState.account != null),
+                properties = MapProperties(isMyLocationEnabled = hasLocationPermission && uiState.user != null),
                 uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false),
                 onMapClick = { latLng ->
-                    if (uiState.account != null) pendingLatLng = latLng
+                    if (uiState.user != null) pendingLatLng = latLng
                 },
             ) {
                 uiState.spots.forEach { spot ->
@@ -96,7 +97,7 @@ fun MapScreen(
                 }
             }
 
-            if (uiState.account == null) {
+            if (uiState.user == null) {
                 SignInOverlay(onSignInClick = onSignInClick)
             } else {
                 Text(
@@ -108,6 +109,12 @@ fun MapScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelLarge,
                 )
+                TextButton(
+                    onClick = onSignOutClick,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                ) {
+                    Text("ログアウト")
+                }
             }
 
             if (uiState.isLoading) {
