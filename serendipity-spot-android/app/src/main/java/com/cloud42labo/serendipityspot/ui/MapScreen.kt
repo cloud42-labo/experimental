@@ -100,20 +100,30 @@ fun MapScreen(
             if (uiState.user == null) {
                 SignInOverlay(onSignInClick = onSignInClick)
             } else {
-                Text(
-                    text = "地図をタップしてスポットを登録",
+                // ヒントとログアウトを同じ Row に入れて場所を取り合わせる。
+                // 別々に TopCenter / TopEnd へ置くと、画面が狭いとき文字が重なる。
+                Row(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 16.dp)
-                        .background(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                TextButton(
-                    onClick = onSignOutClick,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("ログアウト")
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "地図をタップしてスポットを登録",
+                            modifier = Modifier
+                                .background(
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shape = MaterialTheme.shapes.large,
+                                )
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    TextButton(onClick = onSignOutClick) {
+                        Text("ログアウト")
+                    }
                 }
             }
 
