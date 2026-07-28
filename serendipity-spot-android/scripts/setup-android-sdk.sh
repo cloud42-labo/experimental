@@ -13,7 +13,9 @@ SDK_ROOT=/opt/android-sdk
 # cmdline-tools のリビジョン。新しい番号は https://developer.android.com/studio#command-line-tools-only
 CMDLINE_TOOLS_ZIP=commandlinetools-linux-13114758_latest.zip
 
-command -v unzip >/dev/null 2>&1 || apt-get update -qq && apt-get install -y -qq unzip
+if ! command -v unzip >/dev/null 2>&1; then
+  apt-get update -qq && apt-get install -y -qq unzip
+fi
 
 if [ ! -d "$SDK_ROOT/cmdline-tools/latest" ]; then
   mkdir -p "$SDK_ROOT/cmdline-tools"
