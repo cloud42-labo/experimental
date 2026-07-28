@@ -24,6 +24,14 @@ android {
 
         manifestPlaceholders["mapsApiKey"] =
             (localProperties.getProperty("MAPS_API_KEY") ?: "").ifBlank { "MISSING_MAPS_API_KEY" }
+
+        // Credential Manager の Sign in with Google に渡す「ウェブアプリケーション」型の
+        // OAuth クライアント ID。Android 型のクライアント ID ではない点に注意。
+        buildConfigField(
+            "String",
+            "GOOGLE_SERVER_CLIENT_ID",
+            "\"${localProperties.getProperty("GOOGLE_SERVER_CLIENT_ID") ?: ""}\"",
+        )
     }
 
     buildTypes {
@@ -43,6 +51,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -72,15 +81,22 @@ dependencies {
     // Location / Geofencing
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
-    // Google Sign-In
+    // サインイン (Credential Manager) と、Sheets/Driveスコープの認可 (AuthorizationClient)
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     // Google Sheets / Drive API (Sheetsを個人スプレッドシートとしてDBに使う)
-    implementation("com.google.api-client:google-api-client-android:2.7.0") {
+    implementation("com.google.api-client:google-api-client:2.7.0") {
         exclude(group = "org.apache.httpcomponents")
     }
-    implementation("com.google.apis:google-api-services-sheets:v4-rev20240814-2.0.0")
-    implementation("com.google.apis:google-api-services-drive:v3-rev20240914-2.0.0")
+    implementation("com.google.apis:google-api-services-sheets:v4-rev20240814-2.0.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.apis:google-api-services-drive:v3-rev20240914-2.0.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
     implementation("com.google.http-client:google-http-client-gson:1.45.0") {
         exclude(group = "org.apache.httpcomponents")
     }

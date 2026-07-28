@@ -5,7 +5,9 @@
 
 ## この版でやっていること
 
-- **Googleアカウントでサインイン**（Google Sign-In）
+- **Googleアカウントでサインイン**。認証は Credential Manager（Sign in with Google）、
+  スプレッドシートを読み書きするためのスコープ取得は AuthorizationClient と、役割を分けている
+  （旧 `GoogleSignIn` API はGoogleがサポート終了を明示しているため使っていない）
 - スポットは**自分のGoogleドライブ上のスプレッドシート**（`Serendipity Spot`）に保存・管理する。
   初回サインイン時にアプリが自動でスプレッドシートを作成する
 - 地図（Google Maps SDK）をタップしてスポットを登録
@@ -49,8 +51,18 @@
   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
   ```
 
-Android用OAuthクライアントはパッケージ名+SHA-1で識別されるため、コード側にクライアントID
-文字列を埋め込む必要はない。
+Android用OAuthクライアントはパッケージ名+SHA-1で識別されるため、このクライアントIDを
+コード側に書く必要はない。
+
+### 3-2. OAuthクライアントID（ウェブアプリケーション用）も発行する
+
+Credential Manager のサインインには、Android用とは**別に**「ウェブ アプリケーション」型の
+クライアントID（server client ID）が要る。同じ「認証情報を作成」→「OAuthクライアントID」から、
+アプリケーションの種類に **ウェブ アプリケーション** を選んで作る。
+リダイレクトURIやオリジンの設定は不要で、発行されたクライアントID文字列だけを使う。
+
+これは5.で `local.properties` の `GOOGLE_SERVER_CLIENT_ID` に設定する。
+**Android型のクライアントIDを入れても動かない**ので注意。
 
 ### 4. Maps SDK用のAPIキーを発行
 
@@ -64,8 +76,10 @@ Android用OAuthクライアントはパッケージ名+SHA-1で識別される�
 cp local.properties.example local.properties
 ```
 
-`local.properties` の `MAPS_API_KEY` に4.で発行したAPIキーを設定する
-（`local.properties` は `.gitignore` 対象なのでコミットされない）。
+`local.properties` に以下2つを設定する（`.gitignore` 対象なのでコミットされない）。
+
+- `MAPS_API_KEY` — 4.で発行したAPIキー
+- `GOOGLE_SERVER_CLIENT_ID` — 3-2.で発行したウェブアプリケーション型のクライアントID
 
 ## ビルド・実行
 
@@ -76,9 +90,31 @@ CLIの場合:
 ./gradlew assembleDebug
 ```
 
-**この開発コンテナではAndroid SDKと `dl.google.com`（Android/Play Servicesの依存関係の取得元）
-へのネットワークアクセスがどちらも塞がれているため、ここではビルド確認ができていない。**
-Android StudioがインストールされたPC/Macで最初のビルド確認をしてほしい。
+**Claude Code のクラウドセッションでは、既定のままだとビルドできない。** 原因は
+`dl.google.com` が環境の通信許可リストに入っていないことの一点で、下記の設定で解消できる。
+
+### Claude Code のクラウドセッションでビルドできるようにする
+
+`dl.google.com` は Google Maven（Android Gradle Plugin・AndroidX・Play Services）と
+Android SDK 本体の**両方**の配布元。既定の Trusted 許可リストには `developer.android.com` は
+あるが `dl.google.com` は無いため、プロキシが CONNECT に 403 を返して依存解決が全部失敗する。
+`maven.google.com` は許可されているが中身は `dl.google.com` への301リダイレクトなので迂回にならない。
+
+1. [claude.ai/code](https://claude.ai/code) のメッセージ入力欄の上にある雲アイコン（環境セレクタ）を開く
+2. 環境の歯車アイコン →「Network access」を **Custom** に変更
+3. Allowed domains に `dl.google.com` を追加
+4. **「Also include default list of common package managers」にチェックを入れる**
+   （外すと Maven Central・npm 等も一緒に塞がる）
+5. 同じダイアログの「Setup script」に [`scripts/setup-android-sdk.sh`](scripts/setup-android-sdk.sh)
+   の中身を貼る（Android SDK はプリインストールされていないため）
+
+Gradle 本体・Maven Central・plugins.gradle.org は既定で許可済みなので、追加は `dl.google.com` だけでよい。
+
+設定を変えると環境キャッシュが再構築され、次に始めたセッションから `./gradlew assembleDebug`
+が通るようになる（実行中のセッションには反映されない）。
+
+**現時点でこのビルドは未検証。** 上記の設定を入れたセッション、または Android Studio が動く
+PC/Mac で最初のビルド確認をしてほしい。
 
 ## 実機で使うときの注意
 

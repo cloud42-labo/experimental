@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
@@ -38,23 +39,16 @@ import androidx.core.content.ContextCompat
 import com.cloud42labo.serendipityspot.ui.MapScreen
 import com.cloud42labo.serendipityspot.ui.SpotViewModel
 import com.cloud42labo.serendipityspot.ui.theme.SerendipitySpotTheme
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.common.api.ApiException
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: SpotViewModel by viewModels()
 
-    private val signInLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
+    /** Sheets/Driveスコープの同意画面。ViewModelからの依頼で起動する。 */
+    private val consentLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        val account = try {
-            task.getResult(ApiException::class.java)
-        } catch (e: ApiException) {
-            null
-        }
-        viewModel.onSignInResult(account)
+        viewModel.onAuthorizationResult(result.data)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,6 +78,12 @@ class MainActivity : ComponentActivity() {
                     }
 
                     LaunchedEffect(Unit) {
+                        viewModel.consentRequests.collect { intentSender ->
+                            consentLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
                         val permissions = mutableListOf(
                             Manifest.permission.ACCESS_FINE_LOCATION,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -102,12 +102,13 @@ class MainActivity : ComponentActivity() {
                         MapScreen(
                             uiState = uiState,
                             hasLocationPermission = hasForegroundLocation,
-                            onSignInClick = { signInLauncher.launch(viewModel.signInIntent) },
+                            onSignInClick = { viewModel.signIn(this@MainActivity) },
+                            onSignOutClick = viewModel::signOut,
                             onSaveSpot = viewModel::addSpot,
                             onFocusConsumed = viewModel::consumeFocusRequest,
                         )
 
-                        if (uiState.account != null && hasForegroundLocation && !hasBackgroundLocation) {
+                        if (uiState.user != null && hasForegroundLocation && !hasBackgroundLocation) {
                             BackgroundLocationHint()
                         }
                     }
