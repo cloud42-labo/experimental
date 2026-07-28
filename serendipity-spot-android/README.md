@@ -45,14 +45,34 @@
 → アプリケーションの種類は **Android** を選び、以下を設定する。
 
 - パッケージ名: `com.cloud42labo.serendipityspot`
-- SHA-1証明書フィンガープリント: デバッグ用は次のコマンドで取得できる
+- SHA-1証明書フィンガープリント: 下記の方法で取得する
 
-  ```sh
-  keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
-  ```
+**Android Studio から取るのが確実**（OS問わず、`keytool` のパスを気にしなくてよい）。
+このディレクトリをAndroid Studioで開き、下部の Terminal タブで:
+
+```sh
+./gradlew signingReport      # Windows は .\gradlew signingReport
+```
+
+出力の `Variant: debug` の項にある `SHA1:` の行（`A1:B2:...` 形式）を使う。
+
+`keytool` を直接叩く場合は次の通り。デバッグ用キーストアは初回ビルド時に作られるため、
+一度もビルドしていないとファイルが無い。
+
+```sh
+# macOS / Linux
+keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+
+# Windows (PowerShell)
+keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
+```
 
 Android用OAuthクライアントはパッケージ名+SHA-1で識別されるため、このクライアントIDを
 コード側に書く必要はない。
+
+**デバッグ用キーストアは開発マシンごとに異なる。** 別のPCでビルドしたり、
+クラウドセッションでビルドしたAPKを実機に入れたりする場合は、そのマシンのSHA-1も
+同じOAuthクライアントに追加登録しないとサインインが失敗する。
 
 ### 3-2. OAuthクライアントID（ウェブアプリケーション用）も発行する
 
