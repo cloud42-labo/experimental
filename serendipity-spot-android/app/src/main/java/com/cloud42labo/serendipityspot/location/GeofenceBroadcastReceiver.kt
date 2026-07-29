@@ -17,11 +17,29 @@ import com.google.android.gms.location.GeofencingEvent
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION_GEOFENCE_EVENT) return
+        // 何を受け取ったかは、握りつぶす場合も含めて必ず残す。
+        // 「イベント自体が来ていない」のか「来ているが弾いている」のかを
+        // 端末だけで切り分けられるようにするため。
+        if (intent.action != ACTION_GEOFENCE_EVENT) {
+            SpotLocalCache.saveLastGeofenceEvent(context, "別のaction: ${intent.action}")
+            return
+        }
 
-        val geofencingEvent = GeofencingEvent.fromIntent(intent) ?: return
-        if (geofencingEvent.hasError()) return
-        if (geofencingEvent.geofenceTransition != Geofence.GEOFENCE_TRANSITION_ENTER) return
+        val geofencingEvent = GeofencingEvent.fromIntent(intent)
+        if (geofencingEvent == null) {
+            SpotLocalCache.saveLastGeofenceEvent(context, "中身を取り出せず")
+            return
+        }
+        if (geofencingEvent.hasError()) {
+            SpotLocalCache.saveLastGeofenceEvent(context, "エラー code=${geofencingEvent.errorCode}")
+            return
+        }
+
+        val transition = geofencingEvent.geofenceTransition
+        val ids = geofencingEvent.triggeringGeofences?.size ?: 0
+        SpotLocalCache.saveLastGeofenceEvent(context, "transition=$transition 対象=${ids}件")
+
+        if (transition != Geofence.GEOFENCE_TRANSITION_ENTER) return
 
         NotificationHelper.ensureChannel(context)
         val cachedSpots = SpotLocalCache.load(context).associateBy { it.id }

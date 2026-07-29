@@ -1,6 +1,9 @@
 package com.cloud42labo.serendipityspot.data
 
 import android.content.Context
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * スプレッドシートの内容をローカルに1部だけキャッシュする。
@@ -12,6 +15,8 @@ object SpotLocalCache {
     private const val PREFS = "serendipity_spot_cache"
     private const val KEY_SPOTS = "spots_json"
     private const val KEY_SPREADSHEET_ID = "spreadsheet_id"
+    private const val KEY_LAST_REGISTRATION = "diag_last_registration"
+    private const val KEY_LAST_EVENT = "diag_last_event"
 
     fun save(context: Context, spots: List<Spot>) {
         prefs(context).edit().putString(KEY_SPOTS, spots.toJson()).apply()
@@ -28,6 +33,28 @@ object SpotLocalCache {
 
     fun loadSpreadsheetId(context: Context): String? =
         prefs(context).getString(KEY_SPREADSHEET_ID, null)
+
+    // --- 以下は診断用。通知が来ないときに「登録できているか」「イベントが届いているか」を
+    //     切り分けるためだけのもの。アプリの動作そのものには影響しない。
+
+    fun saveLastRegistration(context: Context, text: String) {
+        prefs(context).edit().putString(KEY_LAST_REGISTRATION, stamped(text)).apply()
+    }
+
+    fun loadLastRegistration(context: Context): String? =
+        prefs(context).getString(KEY_LAST_REGISTRATION, null)
+
+    fun saveLastGeofenceEvent(context: Context, text: String) {
+        prefs(context).edit().putString(KEY_LAST_EVENT, stamped(text)).apply()
+    }
+
+    fun loadLastGeofenceEvent(context: Context): String? =
+        prefs(context).getString(KEY_LAST_EVENT, null)
+
+    private fun stamped(text: String): String {
+        val now = SimpleDateFormat("MM/dd HH:mm:ss", Locale.JAPAN).format(Date())
+        return "$now  $text"
+    }
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

@@ -107,6 +107,8 @@ class MainActivity : ComponentActivity() {
                             onSaveSpot = viewModel::addSpot,
                             onEditSpot = viewModel::editSpot,
                             onDeleteSpot = viewModel::deleteSpot,
+                            onTestNotification = viewModel::sendTestNotification,
+                            onRefreshDiagnostics = viewModel::refreshDiagnostics,
                             onFocusConsumed = viewModel::consumeFocusRequest,
                         )
 

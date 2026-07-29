@@ -11,6 +11,8 @@ import com.cloud42labo.serendipityspot.auth.AuthorizationOutcome
 import com.cloud42labo.serendipityspot.auth.GoogleAuthManager
 import com.cloud42labo.serendipityspot.auth.SignedInUser
 import com.cloud42labo.serendipityspot.data.SheetsRepository
+import com.cloud42labo.serendipityspot.data.SpotLocalCache
+import com.cloud42labo.serendipityspot.notification.NotificationHelper
 import com.cloud42labo.serendipityspot.data.Spot
 import com.cloud42labo.serendipityspot.location.GeofenceHelper
 import kotlinx.coroutines.channels.Channel
@@ -27,6 +29,9 @@ data class SpotUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val focusSpotId: String? = null,
+    // 通知が来ないときの切り分け用。アプリの動作には影響しない。
+    val lastRegistration: String? = null,
+    val lastGeofenceEvent: String? = null,
 )
 
 class SpotViewModel(application: Application) : AndroidViewModel(application) {
@@ -92,6 +97,29 @@ class SpotViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    /** 診断表示を最新にする。SharedPreferences から読み直すだけ。 */
+    fun refreshDiagnostics() {
+        val app = getApplication<Application>()
+        _uiState.update {
+            it.copy(
+                lastRegistration = SpotLocalCache.loadLastRegistration(app),
+                lastGeofenceEvent = SpotLocalCache.loadLastGeofenceEvent(app),
+            )
+        }
+    }
+
+    /**
+     * 通知を出す経路が生きているかだけを確かめる。
+     * ジオフェンスを経由せず、受信側と同じ NotificationHelper を直接呼ぶ。
+     */
+    fun sendTestNotification() {
+        val app = getApplication<Application>()
+        val spot = _uiState.value.spots.firstOrNull()
+            ?: Spot(id = "test", lat = 0.0, lng = 0.0, title = "テスト", memo = "通知の確認用")
+        NotificationHelper.ensureChannel(app)
+        NotificationHelper.notifyNearby(app, spot)
     }
 
     fun consumeFocusRequest() {
@@ -171,6 +199,7 @@ class SpotViewModel(application: Application) : AndroidViewModel(application) {
             spots
         }.onSuccess { spots ->
             _uiState.update { it.copy(spots = spots, isLoading = false) }
+            refreshDiagnostics()
         }.onFailure { error -> fail(error, "読み込みに失敗しました") }
     }
 

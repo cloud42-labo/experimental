@@ -39,7 +39,10 @@ class GeofenceHelper(private val context: Context) {
         SpotLocalCache.save(context, spots)
 
         geofencingClient.removeGeofences(pendingIntent).await()
-        if (spots.isEmpty()) return
+        if (spots.isEmpty()) {
+            SpotLocalCache.saveLastRegistration(context, "登録なし（スポット0件）")
+            return
+        }
 
         val targets = spots.take(MAX_GEOFENCES)
         val geofences = targets.map { spot ->
@@ -57,7 +60,15 @@ class GeofenceHelper(private val context: Context) {
             .addGeofences(geofences)
             .build()
 
-        geofencingClient.addGeofences(request, pendingIntent).await()
+        runCatching { geofencingClient.addGeofences(request, pendingIntent).await() }
+            .onSuccess {
+                SpotLocalCache.saveLastRegistration(context, "登録OK ${geofences.size}件")
+            }
+            .onFailure { error ->
+                // 失敗の理由が分からないまま「通知が来ない」になるのを避けるため残す。
+                SpotLocalCache.saveLastRegistration(context, "登録失敗 ${error.message ?: error::class.java.simpleName}")
+                throw error
+            }
     }
 
     companion object {
