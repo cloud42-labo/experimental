@@ -61,17 +61,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.cloud42labo.serendipityspot.data.PlaceResult
 import com.cloud42labo.serendipityspot.data.Spot
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.StreetViewPanoramaOptions
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapsExperimentalFeature
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.streetview.StreetView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -111,6 +116,7 @@ fun MapScreen(
     var searchMode by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var deletingSpot by remember { mutableStateOf<Spot?>(null) }
+    var streetViewSpot by remember { mutableStateOf<Spot?>(null) }
     // 初回だけ現在地へ寄せる。以後はユーザーの操作を邪魔しない。
     var initialLocationApplied by rememberSaveable { mutableStateOf(false) }
 
@@ -193,7 +199,7 @@ fun MapScreen(
                 onRefreshDiagnostics = onRefreshDiagnostics,
                 onEditClick = { editingSpot = it },
                 onDeleteClick = { deletingSpot = it },
-                onStreetViewClick = { openStreetView(context, it.lat, it.lng) },
+                onStreetViewClick = { streetViewSpot = it },
                 onSpotClick = { spot ->
                     cameraPositionState.position =
                         CameraPosition.fromLatLngZoom(LatLng(spot.lat, spot.lng), SPOT_ZOOM)
@@ -282,6 +288,17 @@ fun MapScreen(
             onSave = { title, memo ->
                 onEditSpot(spot, title, memo)
                 editingSpot = null
+            },
+        )
+    }
+
+    streetViewSpot?.let { spot ->
+        StreetViewDialog(
+            spot = spot,
+            onDismiss = { streetViewSpot = null },
+            onOpenInMaps = {
+                openStreetView(context, spot.lat, spot.lng)
+                streetViewSpot = null
             },
         )
     }
@@ -621,4 +638,52 @@ private fun openStreetView(context: Context, lat: Double, lng: Double) {
         Uri.parse("https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=$lat,$lng"),
     )
     runCatching { context.startActivity(onWeb) }
+}
+
+/**
+ * ストリートビューをアプリ内に表示する。
+ *
+ * その地点にパノラマが無い場合は真っ黒のままになる（SDKの仕様）。
+ * 判別できないと壊れたように見えるので、Googleマップへ逃がすボタンを併置する。
+ */
+@OptIn(MapsExperimentalFeature::class)
+@Composable
+private fun StreetViewDialog(
+    spot: Spot,
+    onDismiss: () -> Unit,
+    onOpenInMaps: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            StreetView(
+                modifier = Modifier.fillMaxSize(),
+                streetViewPanoramaOptionsFactory = {
+                    StreetViewPanoramaOptions().position(LatLng(spot.lat, spot.lng))
+                },
+            )
+
+            Card(modifier = Modifier.align(Alignment.TopStart).padding(12.dp)) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "閉じる")
+                    }
+                    Text(
+                        text = spot.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
+            }
+
+            Card(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)) {
+                TextButton(onClick = onOpenInMaps) { Text("Googleマップで開く") }
+            }
+        }
+    }
 }
