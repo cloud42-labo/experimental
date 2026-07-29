@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -25,8 +28,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -77,6 +82,8 @@ fun MapScreen(
     onSignInClick: () -> Unit,
     onSignOutClick: () -> Unit,
     onSaveSpot: (lat: Double, lng: Double, title: String, memo: String) -> Unit,
+    onEditSpot: (spot: Spot, title: String, memo: String) -> Unit,
+    onDeleteSpot: (spot: Spot) -> Unit,
     onFocusConsumed: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -89,6 +96,8 @@ fun MapScreen(
     }
 
     var pendingLatLng by remember { mutableStateOf<LatLng?>(null) }
+    var editingSpot by remember { mutableStateOf<Spot?>(null) }
+    var deletingSpot by remember { mutableStateOf<Spot?>(null) }
     // 初回だけ現在地へ寄せる。以後はユーザーの操作を邪魔しない。
     var initialLocationApplied by rememberSaveable { mutableStateOf(false) }
 
@@ -135,6 +144,8 @@ fun MapScreen(
         sheetContent = {
             SpotListSheet(
                 spots = uiState.spots,
+                onEditClick = { editingSpot = it },
+                onDeleteClick = { deletingSpot = it },
                 onSpotClick = { spot ->
                     cameraPositionState.position =
                         CameraPosition.fromLatLngZoom(LatLng(spot.lat, spot.lng), SPOT_ZOOM)
@@ -148,10 +159,11 @@ fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(isMyLocationEnabled = hasLocationPermission && signedIn),
+                // 標準の現在地ボタンは地図の右上に固定され動かせないため使わない。
+                // 代わりに同じ働きの FAB を右下（親指の届く位置）に置く。
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = false,
-                    // 現在地に戻るボタン。Googleマップと同じ挙動のものが地図右上に出る。
-                    myLocationButtonEnabled = hasLocationPermission && signedIn,
+                    myLocationButtonEnabled = false,
                 ),
                 onMapClick = { latLng ->
                     if (signedIn) pendingLatLng = latLng
@@ -170,10 +182,63 @@ fun MapScreen(
                 SignInOverlay(onSignInClick = onSignInClick)
             }
 
+            if (signedIn && hasLocationPermission) {
+                FloatingActionButton(
+                    onClick = {
+                        scope.launch {
+                            val client = LocationServices.getFusedLocationProviderClient(context)
+                            val location = runCatching { client.lastLocation.await() }.getOrNull()
+                            if (location != null) {
+                                cameraPositionState.position = CameraPosition.fromLatLngZoom(
+                                    LatLng(location.latitude, location.longitude),
+                                    CURRENT_LOCATION_ZOOM,
+                                )
+                            } else {
+                                snackbarHostState.showSnackbar("現在地を取得できませんでした")
+                            }
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.LocationOn,
+                        contentDescription = "現在地へ移動",
+                    )
+                }
+            }
+
             if (uiState.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
         }
+    }
+
+    editingSpot?.let { spot ->
+        EditSpotDialog(
+            spot = spot,
+            onDismiss = { editingSpot = null },
+            onSave = { title, memo ->
+                onEditSpot(spot, title, memo)
+                editingSpot = null
+            },
+        )
+    }
+
+    deletingSpot?.let { spot ->
+        AlertDialog(
+            onDismissRequest = { deletingSpot = null },
+            title = { Text("スポットを削除") },
+            text = { Text("「${spot.title}」を削除します。スプレッドシートからも消えます。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteSpot(spot)
+                    deletingSpot = null
+                }) { Text("削除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingSpot = null }) { Text("キャンセル") }
+            },
+        )
     }
 
     pendingLatLng?.let { latLng ->
@@ -191,6 +256,8 @@ fun MapScreen(
 private fun SpotListSheet(
     spots: List<Spot>,
     onSpotClick: (Spot) -> Unit,
+    onEditClick: (Spot) -> Unit,
+    onDeleteClick: (Spot) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -234,6 +301,23 @@ private fun SpotListSheet(
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
+                        },
+                        trailingContent = {
+                            Row {
+                                IconButton(onClick = { onEditClick(spot) }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = "${spot.title} を編集",
+                                    )
+                                }
+                                IconButton(onClick = { onDeleteClick(spot) }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = "${spot.title} を削除",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
                         },
                         modifier = Modifier.clickable { onSpotClick(spot) },
                     )
@@ -321,4 +405,47 @@ private fun RegisterSheet(
             Spacer(modifier = Modifier.height(8.dp))
         }
     }
+}
+
+@Composable
+private fun EditSpotDialog(
+    spot: Spot,
+    onDismiss: () -> Unit,
+    onSave: (title: String, memo: String) -> Unit,
+) {
+    var title by remember(spot.id) { mutableStateOf(spot.title) }
+    var memo by remember(spot.id) { mutableStateOf(spot.memo) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("スポットを編集") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("名前") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = memo,
+                    onValueChange = { memo = it },
+                    label = { Text("ひとことメモ") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(title, memo) },
+                enabled = title.isNotBlank(),
+            ) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("キャンセル") }
+        },
+    )
 }

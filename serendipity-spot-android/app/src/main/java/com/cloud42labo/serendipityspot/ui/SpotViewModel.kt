@@ -115,13 +115,47 @@ class SpotViewModel(application: Application) : AndroidViewModel(application) {
 
             runCatching {
                 val sheets = authManager.sheetsService(token)
-                val spot = repository.appendSpot(sheets, id, lat, lng, title, memo)
-                val newSpots = _uiState.value.spots + spot
-                geofenceHelper.resync(newSpots)
-                newSpots
-            }.onSuccess { spots ->
-                _uiState.update { it.copy(spots = spots, isLoading = false) }
+                repository.appendSpot(sheets, id, lat, lng, title, memo)
+            }.onSuccess {
+                // 追加直後の Spot は行番号を持たない（編集・削除ができない）。
+                // シートから読み直して確定させる。ジオフェンスとキャッシュもここで揃う。
+                loadSpots()
             }.onFailure { error -> fail(error, "保存に失敗しました") }
+        }
+    }
+
+    fun editSpot(spot: Spot, title: String, memo: String) {
+        if (_uiState.value.user == null || title.isBlank()) return
+        val id = spreadsheetId ?: return
+        viewModelScope.launch {
+            val token = requireAccessToken() ?: return@launch
+            runCatching {
+                val sheets = authManager.sheetsService(token)
+                repository.updateSpotText(sheets, id, spot, title, memo)
+            }.onSuccess { updated ->
+                if (updated) loadSpots() else failStale()
+            }.onFailure { error -> fail(error, "更新に失敗しました") }
+        }
+    }
+
+    fun deleteSpot(spot: Spot) {
+        if (_uiState.value.user == null) return
+        val id = spreadsheetId ?: return
+        viewModelScope.launch {
+            val token = requireAccessToken() ?: return@launch
+            runCatching {
+                val sheets = authManager.sheetsService(token)
+                repository.deleteSpot(sheets, id, spot)
+            }.onSuccess { deleted ->
+                if (deleted) loadSpots() else failStale()
+            }.onFailure { error -> fail(error, "削除に失敗しました") }
+        }
+    }
+
+    /** シート上の行が特定できないとき。読み直せば直る。 */
+    private fun failStale() {
+        _uiState.update {
+            it.copy(isLoading = false, errorMessage = "対象の行を特定できませんでした。読み込み直してください")
         }
     }
 
