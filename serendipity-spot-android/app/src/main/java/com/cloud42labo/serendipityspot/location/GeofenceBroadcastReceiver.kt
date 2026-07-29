@@ -36,21 +36,46 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         }
 
         val transition = geofencingEvent.geofenceTransition
-        val ids = geofencingEvent.triggeringGeofences?.size ?: 0
-        SpotLocalCache.saveLastGeofenceEvent(context, "transition=$transition 対象=${ids}件")
-
-        if (transition != Geofence.GEOFENCE_TRANSITION_ENTER) return
+        if (transition != Geofence.GEOFENCE_TRANSITION_ENTER) {
+            SpotLocalCache.saveLastGeofenceEvent(context, "transition=$transition（対象外）")
+            return
+        }
 
         NotificationHelper.ensureChannel(context)
         val cachedSpots = SpotLocalCache.load(context).associateBy { it.id }
+        val now = System.currentTimeMillis()
+
+        var notified = 0
+        var suppressed = 0
+        var unknown = 0
 
         geofencingEvent.triggeringGeofences?.forEach { geofence ->
-            val spot = cachedSpots[geofence.requestId] ?: return@forEach
+            val spot = cachedSpots[geofence.requestId]
+            if (spot == null) {
+                unknown++
+                return@forEach
+            }
+            // 同じスポットで鳴り続けないようにする。出入りを繰り返す場所でも
+            // 一定時間は1回にまとめる。
+            if (now - SpotLocalCache.lastNotifiedAt(context, spot.id) < NOTIFY_COOLDOWN_MS) {
+                suppressed++
+                return@forEach
+            }
+            SpotLocalCache.markNotified(context, spot.id, now)
             NotificationHelper.notifyNearby(context, spot)
+            notified++
         }
+
+        SpotLocalCache.saveLastGeofenceEvent(
+            context,
+            "ENTER 通知=${notified}件 抑制=${suppressed}件 不明=${unknown}件",
+        )
     }
 
     companion object {
         const val ACTION_GEOFENCE_EVENT = "com.cloud42labo.serendipityspot.ACTION_GEOFENCE_EVENT"
+
+        /** 同じスポットを再通知しない時間。 */
+        private const val NOTIFY_COOLDOWN_MS = 3 * 60 * 60 * 1000L
     }
 }

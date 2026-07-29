@@ -55,8 +55,11 @@ class GeofenceHelper(private val context: Context) {
                 .build()
         }
 
+        // 登録時点で圏内にいても発火させない。
+        // INITIAL_TRIGGER_ENTER を付けると、スポットの中でアプリを開くたびに鳴る。
+        // 知らせたいのは「近づいたこと」であって「いま中にいること」ではない。
         val request = GeofencingRequest.Builder()
-            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+            .setInitialTrigger(0)
             .addGeofences(geofences)
             .build()
 
