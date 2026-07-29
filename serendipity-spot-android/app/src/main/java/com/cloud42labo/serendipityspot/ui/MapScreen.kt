@@ -112,6 +112,8 @@ fun MapScreen(
     }
 
     var pendingLatLng by remember { mutableStateOf<LatLng?>(null) }
+    // 検索から来た場合は候補の名前を初期値にする。地図タップなら空。
+    var pendingTitle by remember { mutableStateOf("") }
     var editingSpot by remember { mutableStateOf<Spot?>(null) }
     var searchMode by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -220,7 +222,10 @@ fun MapScreen(
                     myLocationButtonEnabled = false,
                 ),
                 onMapClick = { latLng ->
-                    if (signedIn) pendingLatLng = latLng
+                    if (signedIn) {
+                        pendingTitle = ""
+                        pendingLatLng = latLng
+                    }
                 },
             ) {
                 uiState.spots.forEach { spot ->
@@ -245,6 +250,12 @@ fun MapScreen(
                         searchMode = false
                         query = ""
                         onClearSearch()
+                        // 探した場所はたいてい登録したい場所なので、そのまま登録に進む。
+                        // 見るだけなら閉じればよい。
+                        if (signedIn) {
+                            pendingTitle = result.name
+                            pendingLatLng = LatLng(result.lat, result.lng)
+                        }
                     },
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
@@ -322,6 +333,7 @@ fun MapScreen(
 
     pendingLatLng?.let { latLng ->
         RegisterSheet(
+            initialTitle = pendingTitle,
             onDismiss = { pendingLatLng = null },
             onSave = { title, memo ->
                 onSaveSpot(latLng.latitude, latLng.longitude, title, memo)
@@ -499,12 +511,13 @@ private fun SignInOverlay(onSignInClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RegisterSheet(
+    initialTitle: String,
     onDismiss: () -> Unit,
     onSave: (title: String, memo: String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState()
-    var title by remember { mutableStateOf("") }
-    var memo by remember { mutableStateOf("") }
+    var title by remember(initialTitle) { mutableStateOf(initialTitle) }
+    var memo by remember(initialTitle) { mutableStateOf("") }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
