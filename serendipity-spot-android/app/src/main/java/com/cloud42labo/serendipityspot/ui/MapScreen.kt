@@ -1,6 +1,9 @@
 package com.cloud42labo.serendipityspot.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
@@ -189,6 +193,7 @@ fun MapScreen(
                 onRefreshDiagnostics = onRefreshDiagnostics,
                 onEditClick = { editingSpot = it },
                 onDeleteClick = { deletingSpot = it },
+                onStreetViewClick = { openStreetView(context, it.lat, it.lng) },
                 onSpotClick = { spot ->
                     cameraPositionState.position =
                         CameraPosition.fromLatLngZoom(LatLng(spot.lat, spot.lng), SPOT_ZOOM)
@@ -317,6 +322,7 @@ private fun SpotListSheet(
     onSpotClick: (Spot) -> Unit,
     onEditClick: (Spot) -> Unit,
     onDeleteClick: (Spot) -> Unit,
+    onStreetViewClick: (Spot) -> Unit,
     onTestNotification: () -> Unit,
     onRefreshDiagnostics: () -> Unit,
 ) {
@@ -365,6 +371,14 @@ private fun SpotListSheet(
                         },
                         trailingContent = {
                             Row {
+                                IconButton(onClick = { onStreetViewClick(spot) }) {
+                                    Icon(
+                                        // ストリートビューの目印はペグマン（人型）なので、
+                                        // 人のアイコンをそのまま使う。
+                                        imageVector = Icons.Filled.Person,
+                                        contentDescription = "${spot.title} をストリートビューで見る",
+                                    )
+                                }
                                 IconButton(onClick = { onEditClick(spot) }) {
                                     Icon(
                                         imageVector = Icons.Filled.Edit,
@@ -589,4 +603,22 @@ private fun SearchResults(
             }
         }
     }
+}
+
+/**
+ * 指定地点のストリートビューを開く。
+ *
+ * アプリ内に埋め込む手もあるが、Googleマップ本体の方が表示が速く操作にも慣れがある。
+ * Googleマップが無い端末のためにブラウザへ落とす。
+ */
+private fun openStreetView(context: Context, lat: Double, lng: Double) {
+    val inMaps = Intent(Intent.ACTION_VIEW, Uri.parse("google.streetview:cbll=$lat,$lng"))
+        .setPackage("com.google.android.apps.maps")
+    if (runCatching { context.startActivity(inMaps) }.isSuccess) return
+
+    val onWeb = Intent(
+        Intent.ACTION_VIEW,
+        Uri.parse("https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=$lat,$lng"),
+    )
+    runCatching { context.startActivity(onWeb) }
 }
