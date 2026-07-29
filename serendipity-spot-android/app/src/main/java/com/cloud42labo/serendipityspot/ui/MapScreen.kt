@@ -1,6 +1,7 @@
 package com.cloud42labo.serendipityspot.ui
 
-import androidx.compose.foundation.background
+import android.annotation.SuppressLint
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,35 +10,48 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.cloud42labo.serendipityspot.data.Spot
+import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
@@ -46,9 +60,16 @@ import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
-private val DEFAULT_CENTER = LatLng(35.6581, 139.7017)
+/** 現在地が取れるまでの暫定表示（渋谷）。取れ次第そちらへ移す。 */
+private val FALLBACK_CENTER = LatLng(35.6581, 139.7017)
+private const val SPOT_ZOOM = 17f
+private const val CURRENT_LOCATION_ZOOM = 16f
 
+@OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("MissingPermission")
 @Composable
 fun MapScreen(
     uiState: SpotUiState,
@@ -58,16 +79,36 @@ fun MapScreen(
     onSaveSpot: (lat: Double, lng: Double, title: String, memo: String) -> Unit,
     onFocusConsumed: () -> Unit,
 ) {
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(DEFAULT_CENTER, 15f)
-    }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val scaffoldState = rememberBottomSheetScaffoldState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(FALLBACK_CENTER, CURRENT_LOCATION_ZOOM)
+    }
+
     var pendingLatLng by remember { mutableStateOf<LatLng?>(null) }
+    // 初回だけ現在地へ寄せる。以後はユーザーの操作を邪魔しない。
+    var initialLocationApplied by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(hasLocationPermission) {
+        if (!hasLocationPermission || initialLocationApplied) return@LaunchedEffect
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val location = runCatching { client.lastLocation.await() }.getOrNull()
+        if (location != null) {
+            cameraPositionState.position = CameraPosition.fromLatLngZoom(
+                LatLng(location.latitude, location.longitude),
+                CURRENT_LOCATION_ZOOM,
+            )
+        }
+        initialLocationApplied = true
+    }
 
     LaunchedEffect(uiState.focusSpotId) {
         val target = uiState.spots.firstOrNull { it.id == uiState.focusSpotId } ?: return@LaunchedEffect
-        cameraPositionState.position = CameraPosition.fromLatLngZoom(LatLng(target.lat, target.lng), 17f)
+        cameraPositionState.position =
+            CameraPosition.fromLatLngZoom(LatLng(target.lat, target.lng), SPOT_ZOOM)
         onFocusConsumed()
     }
 
@@ -75,17 +116,45 @@ fun MapScreen(
         uiState.errorMessage?.let { snackbarHostState.showSnackbar(it) }
     }
 
-    Scaffold(
+    val signedIn = uiState.user != null
+
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        sheetPeekHeight = if (signedIn) 112.dp else 0.dp,
+        topBar = {
+            TopAppBar(
+                title = { Text("Serendipity Spot") },
+                actions = {
+                    if (signedIn) {
+                        TextButton(onClick = onSignOutClick) { Text("ログアウト") }
+                    }
+                },
+            )
+        },
+        sheetContent = {
+            SpotListSheet(
+                spots = uiState.spots,
+                onSpotClick = { spot ->
+                    cameraPositionState.position =
+                        CameraPosition.fromLatLngZoom(LatLng(spot.lat, spot.lng), SPOT_ZOOM)
+                    scope.launch { scaffoldState.bottomSheetState.partialExpand() }
+                },
+            )
+        },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
-                properties = MapProperties(isMyLocationEnabled = hasLocationPermission && uiState.user != null),
-                uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false),
+                properties = MapProperties(isMyLocationEnabled = hasLocationPermission && signedIn),
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = false,
+                    // 現在地に戻るボタン。Googleマップと同じ挙動のものが地図右上に出る。
+                    myLocationButtonEnabled = hasLocationPermission && signedIn,
+                ),
                 onMapClick = { latLng ->
-                    if (uiState.user != null) pendingLatLng = latLng
+                    if (signedIn) pendingLatLng = latLng
                 },
             ) {
                 uiState.spots.forEach { spot ->
@@ -97,40 +166,12 @@ fun MapScreen(
                 }
             }
 
-            if (uiState.user == null) {
+            if (!signedIn) {
                 SignInOverlay(onSignInClick = onSignInClick)
-            } else {
-                // ヒントとログアウトを同じ Row に入れて場所を取り合わせる。
-                // 別々に TopCenter / TopEnd へ置くと、画面が狭いとき文字が重なる。
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "地図をタップしてスポットを登録",
-                            modifier = Modifier
-                                .background(
-                                    color = MaterialTheme.colorScheme.surface,
-                                    shape = MaterialTheme.shapes.large,
-                                )
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
-                    TextButton(onClick = onSignOutClick) {
-                        Text("ログアウト")
-                    }
-                }
             }
 
             if (uiState.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                )
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
         }
     }
@@ -143,6 +184,62 @@ fun MapScreen(
                 pendingLatLng = null
             },
         )
+    }
+}
+
+@Composable
+private fun SpotListSheet(
+    spots: List<Spot>,
+    onSpotClick: (Spot) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 400.dp)
+            .padding(bottom = 16.dp),
+    ) {
+        Text(
+            text = "登録スポット（${spots.size}）",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "地図をタップすると新しいスポットを登録できます",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider()
+
+        if (spots.isEmpty()) {
+            Text(
+                text = "まだ登録がありません。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(24.dp),
+            )
+        } else {
+            LazyColumn {
+                items(spots, key = { it.id }) { spot ->
+                    ListItem(
+                        headlineContent = { Text(spot.title) },
+                        supportingContent = {
+                            if (spot.memo.isNotBlank()) Text(spot.memo)
+                        },
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.Filled.LocationOn,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        modifier = Modifier.clickable { onSpotClick(spot) },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -180,7 +277,7 @@ private fun SignInOverlay(onSignInClick: () -> Unit) {
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RegisterSheet(
     onDismiss: () -> Unit,
