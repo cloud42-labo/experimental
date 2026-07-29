@@ -208,6 +208,9 @@ class SheetsRepository(private val context: Context) {
     }
 
     companion object {
+        // アプリの表示名は「ついでにスポット」に変えたが、この名前は変えないこと。
+        // Drive上のファイルをこの名前で検索して既存データを見つけているため、
+        // 変えると再インストール時に過去のスポットを拾えなくなる。
         private const val FILE_NAME = "Serendipity Spot"
         private const val SHEET_NAME = "Spots"
     }
