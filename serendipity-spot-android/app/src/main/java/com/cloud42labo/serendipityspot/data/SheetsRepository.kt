@@ -6,6 +6,8 @@ import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest
 import com.google.api.services.sheets.v4.model.CellData
 import com.google.api.services.sheets.v4.model.CellFormat
+import com.google.api.services.sheets.v4.model.DeleteDimensionRequest
+import com.google.api.services.sheets.v4.model.DimensionRange
 import com.google.api.services.sheets.v4.model.ExtendedValue
 import com.google.api.services.sheets.v4.model.Request
 import com.google.api.services.sheets.v4.model.RowData
@@ -145,6 +147,64 @@ class SheetsRepository(private val context: Context) {
             .execute()
 
         Spot(id, lat, lng, title, memo, radiusMeters)
+    }
+
+    /**
+     * 名前とメモだけを書き換える。座標・id・作成日時は触らない。
+     * [Spot.rowIndex] はシート読み込み時に振られた行番号で、ローカルキャッシュ由来の
+     * ものは -1 になっている。その場合は更新できないので false を返す。
+     */
+    suspend fun updateSpotText(
+        sheets: Sheets,
+        spreadsheetId: String,
+        spot: Spot,
+        title: String,
+        memo: String,
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (spot.rowIndex < 2) return@withContext false
+        val range = "$SHEET_NAME!D${spot.rowIndex}:E${spot.rowIndex}"
+        sheets.spreadsheets().values()
+            .update(spreadsheetId, range, ValueRange().setValues(listOf(listOf(title, memo))))
+            .setValueInputOption("USER_ENTERED")
+            .execute()
+        true
+    }
+
+    /**
+     * 行ごと削除する。以降の行番号がずれるため、呼び出し側は削除後に
+     * [loadSpots] で読み直すこと。
+     */
+    suspend fun deleteSpot(
+        sheets: Sheets,
+        spreadsheetId: String,
+        spot: Spot,
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (spot.rowIndex < 2) return@withContext false
+        val sheetId = sheetIdOf(sheets, spreadsheetId) ?: return@withContext false
+
+        val request = BatchUpdateSpreadsheetRequest().setRequests(
+            listOf(
+                Request().setDeleteDimension(
+                    DeleteDimensionRequest().setRange(
+                        DimensionRange()
+                            .setSheetId(sheetId)
+                            .setDimension("ROWS")
+                            // API は0始まり・終端排他。rowIndex は1始まりなので -1 する。
+                            .setStartIndex(spot.rowIndex - 1)
+                            .setEndIndex(spot.rowIndex)
+                    )
+                )
+            )
+        )
+        sheets.spreadsheets().batchUpdate(spreadsheetId, request).execute()
+        true
+    }
+
+    private fun sheetIdOf(sheets: Sheets, spreadsheetId: String): Int? {
+        val spreadsheet = sheets.spreadsheets().get(spreadsheetId).execute()
+        return spreadsheet.sheets
+            ?.firstOrNull { it.properties?.title == SHEET_NAME }
+            ?.properties?.sheetId
     }
 
     companion object {

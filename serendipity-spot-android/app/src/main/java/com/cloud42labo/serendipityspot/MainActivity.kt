@@ -105,6 +105,8 @@ class MainActivity : ComponentActivity() {
                             onSignInClick = { viewModel.signIn(this@MainActivity) },
                             onSignOutClick = viewModel::signOut,
                             onSaveSpot = viewModel::addSpot,
+                            onEditSpot = viewModel::editSpot,
+                            onDeleteSpot = viewModel::deleteSpot,
                             onFocusConsumed = viewModel::consumeFocusRequest,
                         )
 
