@@ -84,6 +84,8 @@ fun MapScreen(
     onSaveSpot: (lat: Double, lng: Double, title: String, memo: String) -> Unit,
     onEditSpot: (spot: Spot, title: String, memo: String) -> Unit,
     onDeleteSpot: (spot: Spot) -> Unit,
+    onTestNotification: () -> Unit,
+    onRefreshDiagnostics: () -> Unit,
     onFocusConsumed: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -144,6 +146,10 @@ fun MapScreen(
         sheetContent = {
             SpotListSheet(
                 spots = uiState.spots,
+                lastRegistration = uiState.lastRegistration,
+                lastGeofenceEvent = uiState.lastGeofenceEvent,
+                onTestNotification = onTestNotification,
+                onRefreshDiagnostics = onRefreshDiagnostics,
                 onEditClick = { editingSpot = it },
                 onDeleteClick = { deletingSpot = it },
                 onSpotClick = { spot ->
@@ -255,9 +261,13 @@ fun MapScreen(
 @Composable
 private fun SpotListSheet(
     spots: List<Spot>,
+    lastRegistration: String?,
+    lastGeofenceEvent: String?,
     onSpotClick: (Spot) -> Unit,
     onEditClick: (Spot) -> Unit,
     onDeleteClick: (Spot) -> Unit,
+    onTestNotification: () -> Unit,
+    onRefreshDiagnostics: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -288,7 +298,7 @@ private fun SpotListSheet(
                 modifier = Modifier.padding(24.dp),
             )
         } else {
-            LazyColumn {
+            LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
                 items(spots, key = { it.id }) { spot ->
                     ListItem(
                         headlineContent = { Text(spot.title) },
@@ -323,6 +333,49 @@ private fun SpotListSheet(
                     )
                 }
             }
+        }
+
+        HorizontalDivider()
+        DiagnosticsBlock(
+            lastRegistration = lastRegistration,
+            lastGeofenceEvent = lastGeofenceEvent,
+            onTestNotification = onTestNotification,
+            onRefresh = onRefreshDiagnostics,
+        )
+    }
+}
+
+/**
+ * 通知が来ないときの切り分け用。
+ * 「ジオフェンスを登録できているか」と「イベントが端末に届いているか」を分けて見る。
+ */
+@Composable
+private fun DiagnosticsBlock(
+    lastRegistration: String?,
+    lastGeofenceEvent: String?,
+    onTestNotification: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
+        Text(
+            text = "診断",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "登録: ${lastRegistration ?: "まだ記録なし"}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text = "受信: ${lastGeofenceEvent ?: "まだ一度も受け取っていない"}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row {
+            TextButton(onClick = onTestNotification) { Text("テスト通知") }
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(onClick = onRefresh) { Text("更新") }
         }
     }
 }
