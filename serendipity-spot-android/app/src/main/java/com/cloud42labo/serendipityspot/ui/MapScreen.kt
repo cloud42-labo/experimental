@@ -167,7 +167,7 @@ fun MapScreen(
                             },
                         )
                     } else {
-                        Text("Serendipity Spot")
+                        Text("ついでにスポット")
                     }
                 },
                 actions = {
@@ -480,7 +480,7 @@ private fun SignInOverlay(onSignInClick: () -> Unit) {
                     modifier = Modifier.size(40.dp),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Text("Serendipity Spot", style = MaterialTheme.typography.titleLarge)
+                Text("ついでにスポット", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "Googleアカウントでログインすると、スポットがあなたのスプレッドシートに保存されます",

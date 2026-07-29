@@ -60,7 +60,7 @@ object NotificationHelper {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("Serendipity Spot: ${spot.title}")
+            .setContentTitle(spot.title)
             .setContentText(spot.memo.ifBlank { "近くに来ました！" })
             .setStyle(NotificationCompat.BigTextStyle().bigText(spot.memo.ifBlank { "近くに来ました！" }))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
