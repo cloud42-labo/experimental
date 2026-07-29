@@ -17,6 +17,7 @@ object SpotLocalCache {
     private const val KEY_SPREADSHEET_ID = "spreadsheet_id"
     private const val KEY_LAST_REGISTRATION = "diag_last_registration"
     private const val KEY_LAST_EVENT = "diag_last_event"
+    private const val KEY_NOTIFIED_AT_PREFIX = "notified_at_"
 
     fun save(context: Context, spots: List<Spot>) {
         prefs(context).edit().putString(KEY_SPOTS, spots.toJson()).apply()
@@ -33,6 +34,14 @@ object SpotLocalCache {
 
     fun loadSpreadsheetId(context: Context): String? =
         prefs(context).getString(KEY_SPREADSHEET_ID, null)
+
+    /** そのスポットに最後に通知した時刻。まだ通知していなければ0。 */
+    fun lastNotifiedAt(context: Context, spotId: String): Long =
+        prefs(context).getLong(KEY_NOTIFIED_AT_PREFIX + spotId, 0L)
+
+    fun markNotified(context: Context, spotId: String, at: Long = System.currentTimeMillis()) {
+        prefs(context).edit().putLong(KEY_NOTIFIED_AT_PREFIX + spotId, at).apply()
+    }
 
     // --- 以下は診断用。通知が来ないときに「登録できているか」「イベントが届いているか」を
     //     切り分けるためだけのもの。アプリの動作そのものには影響しない。
