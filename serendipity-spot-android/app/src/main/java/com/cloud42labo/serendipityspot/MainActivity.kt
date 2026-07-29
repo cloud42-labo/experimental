@@ -109,6 +109,8 @@ class MainActivity : ComponentActivity() {
                             onDeleteSpot = viewModel::deleteSpot,
                             onTestNotification = viewModel::sendTestNotification,
                             onRefreshDiagnostics = viewModel::refreshDiagnostics,
+                            onSearch = viewModel::searchPlaces,
+                            onClearSearch = viewModel::clearSearchResults,
                             onFocusConsumed = viewModel::consumeFocusRequest,
                         )
 
