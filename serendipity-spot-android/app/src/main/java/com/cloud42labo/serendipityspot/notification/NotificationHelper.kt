@@ -37,7 +37,11 @@ object NotificationHelper {
         manager.createNotificationChannel(channel)
     }
 
-    fun notifyNearby(context: Context, spot: Spot) {
+    /**
+     * @param isNudge 圏内に留まっているときの二度目の合図。一度目を見逃した場合に効く。
+     *   通知IDは一度目と同じにして、シェードに積まずに鳴らし直す。
+     */
+    fun notifyNearby(context: Context, spot: Spot, isNudge: Boolean = false) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -58,11 +62,14 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val body = spot.memo.ifBlank { "近くに来ました！" }
+        val title = if (isNudge) "まだ近くです: ${spot.title}" else spot.title
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle(spot.title)
-            .setContentText(spot.memo.ifBlank { "近くに来ました！" })
-            .setStyle(NotificationCompat.BigTextStyle().bigText(spot.memo.ifBlank { "近くに来ました！" }))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)

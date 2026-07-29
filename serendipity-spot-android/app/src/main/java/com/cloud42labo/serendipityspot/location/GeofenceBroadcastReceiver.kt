@@ -36,7 +36,9 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         }
 
         val transition = geofencingEvent.geofenceTransition
-        if (transition != Geofence.GEOFENCE_TRANSITION_ENTER) {
+        val isEnter = transition == Geofence.GEOFENCE_TRANSITION_ENTER
+        val isDwell = transition == Geofence.GEOFENCE_TRANSITION_DWELL
+        if (!isEnter && !isDwell) {
             SpotLocalCache.saveLastGeofenceEvent(context, "transition=$transition（対象外）")
             return
         }
@@ -55,9 +57,27 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 unknown++
                 return@forEach
             }
+            val lastNotified = SpotLocalCache.lastNotifiedAt(context, spot.id)
+
+            if (isDwell) {
+                // 二度目の合図。一度目を見逃した場合の救済なので、
+                // 「同じ滞在の続き」であるときに限る。
+                val sameVisit = now - lastNotified < SAME_VISIT_MS
+                val nudgedRecently =
+                    now - SpotLocalCache.lastNudgedAt(context, spot.id) < NOTIFY_COOLDOWN_MS
+                if (!sameVisit || nudgedRecently) {
+                    suppressed++
+                    return@forEach
+                }
+                SpotLocalCache.markNudged(context, spot.id, now)
+                NotificationHelper.notifyNearby(context, spot, isNudge = true)
+                notified++
+                return@forEach
+            }
+
             // 同じスポットで鳴り続けないようにする。出入りを繰り返す場所でも
             // 一定時間は1回にまとめる。
-            if (now - SpotLocalCache.lastNotifiedAt(context, spot.id) < NOTIFY_COOLDOWN_MS) {
+            if (now - lastNotified < NOTIFY_COOLDOWN_MS) {
                 suppressed++
                 return@forEach
             }
@@ -68,7 +88,8 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
         SpotLocalCache.saveLastGeofenceEvent(
             context,
-            "ENTER 通知=${notified}件 抑制=${suppressed}件 不明=${unknown}件",
+            "${if (isDwell) "DWELL" else "ENTER"} 通知=${notified}件 " +
+                "抑制=${suppressed}件 不明=${unknown}件",
         )
     }
 
@@ -77,5 +98,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
         /** 同じスポットを再通知しない時間。 */
         private const val NOTIFY_COOLDOWN_MS = 3 * 60 * 60 * 1000L
+
+        /**
+         * 一度目の通知からこの時間内の DWELL は「同じ滞在の続き」とみなし、
+         * 二度目の合図を送る。これを過ぎていたら、一度離れて戻ったと考えて送らない。
+         */
+        private const val SAME_VISIT_MS = 30 * 60 * 1000L
     }
 }

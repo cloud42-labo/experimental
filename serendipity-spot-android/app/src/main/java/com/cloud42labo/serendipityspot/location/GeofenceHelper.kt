@@ -50,8 +50,12 @@ class GeofenceHelper(private val context: Context) {
                 .setRequestId(spot.id)
                 .setCircularRegion(spot.lat, spot.lng, spot.radiusMeters)
                 .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
-                .setLoiteringDelay(0)
+                // ENTER で1回、そのまま滞在していれば DWELL でもう1回。
+                // 一度見逃しても二度目がある形にする。
+                .setTransitionTypes(
+                    Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_DWELL
+                )
+                .setLoiteringDelay(DWELL_DELAY_MS)
                 .build()
         }
 
@@ -76,5 +80,8 @@ class GeofenceHelper(private val context: Context) {
 
     companion object {
         private const val MAX_GEOFENCES = 100
+
+        /** 圏内に留まっていると判定されるまでの時間。これを過ぎると DWELL が飛ぶ。 */
+        private const val DWELL_DELAY_MS = 2 * 60 * 1000
     }
 }
