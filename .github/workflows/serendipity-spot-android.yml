@@ -89,13 +89,26 @@ jobs:
         # 通るのに「サインインだけ失敗する」APKができあがる。切り分けが難しいので
         # ここで落とす。出るのは公開情報のフィンガープリントだけ。
         run: |
-          fingerprint() { grep -E '^[[:space:]]*SHA1:' | head -1 | sed 's/.*SHA1: *//' | tr -d ' \r'; }
+          # 大文字/コロン有無の表記ゆれを吸収して比較する。
+          # keytool は AA:BB:.. 形式、apksigner は aabb.. 形式で出す。
+          normalize() { tr -d ': \r' | tr 'A-Z' 'a-z'; }
 
           KEYSTORE_SHA1=$(keytool -list -v \
             -keystore "$ANDROID_USER_HOME/debug.keystore" \
-            -alias androiddebugkey -storepass android -keypass android | fingerprint)
-          APK_SHA1=$(keytool -printcert \
-            -jarfile app/build/outputs/apk/debug/app-debug.apk | fingerprint)
+            -alias androiddebugkey -storepass android -keypass android \
+            | grep -E '^[[:space:]]*SHA1:' | head -1 | sed 's/.*SHA1: *//' | normalize)
+
+          # keytool -printcert -jarfile は v1（JAR）署名しか読めない。
+          # minSdk 26 のこのアプリは v2/v3 のみで署名されるため何も取れない。
+          # 署名方式に依らず読める apksigner を使う。
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner が見つからない。build-tools がインストールされていない。"
+            exit 1
+          fi
+          APK_SHA1=$("$APKSIGNER" verify --print-certs \
+            app/build/outputs/apk/debug/app-debug.apk \
+            | grep -i 'SHA-1 digest' | head -1 | sed 's/.*: *//' | normalize)
 
           echo "keystore  : $KEYSTORE_SHA1"
           echo "APK signer: $APK_SHA1"
