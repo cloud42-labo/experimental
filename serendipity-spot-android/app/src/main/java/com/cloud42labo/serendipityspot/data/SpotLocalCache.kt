@@ -18,6 +18,7 @@ object SpotLocalCache {
     private const val KEY_LAST_REGISTRATION = "diag_last_registration"
     private const val KEY_LAST_EVENT = "diag_last_event"
     private const val KEY_NOTIFIED_AT_PREFIX = "notified_at_"
+    private const val KEY_NUDGED_AT_PREFIX = "nudged_at_"
 
     fun save(context: Context, spots: List<Spot>) {
         prefs(context).edit().putString(KEY_SPOTS, spots.toJson()).apply()
@@ -41,6 +42,14 @@ object SpotLocalCache {
 
     fun markNotified(context: Context, spotId: String, at: Long = System.currentTimeMillis()) {
         prefs(context).edit().putLong(KEY_NOTIFIED_AT_PREFIX + spotId, at).apply()
+    }
+
+    /** そのスポットで「まだ近くにいます」の二度目を送った時刻。 */
+    fun lastNudgedAt(context: Context, spotId: String): Long =
+        prefs(context).getLong(KEY_NUDGED_AT_PREFIX + spotId, 0L)
+
+    fun markNudged(context: Context, spotId: String, at: Long = System.currentTimeMillis()) {
+        prefs(context).edit().putLong(KEY_NUDGED_AT_PREFIX + spotId, at).apply()
     }
 
     // --- 以下は診断用。通知が来ないときに「登録できているか」「イベントが届いているか」を
