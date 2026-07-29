@@ -19,7 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
@@ -55,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.cloud42labo.serendipityspot.data.PlaceResult
 import com.cloud42labo.serendipityspot.data.Spot
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.CameraPosition
@@ -86,6 +89,8 @@ fun MapScreen(
     onDeleteSpot: (spot: Spot) -> Unit,
     onTestNotification: () -> Unit,
     onRefreshDiagnostics: () -> Unit,
+    onSearch: (String) -> Unit,
+    onClearSearch: () -> Unit,
     onFocusConsumed: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -99,6 +104,8 @@ fun MapScreen(
 
     var pendingLatLng by remember { mutableStateOf<LatLng?>(null) }
     var editingSpot by remember { mutableStateOf<Spot?>(null) }
+    var searchMode by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
     var deletingSpot by remember { mutableStateOf<Spot?>(null) }
     // 初回だけ現在地へ寄せる。以後はユーザーの操作を邪魔しない。
     var initialLocationApplied by rememberSaveable { mutableStateOf(false) }
@@ -135,10 +142,40 @@ fun MapScreen(
         sheetPeekHeight = if (signedIn) 112.dp else 0.dp,
         topBar = {
             TopAppBar(
-                title = { Text("Serendipity Spot") },
+                title = {
+                    if (searchMode) {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text("住所・駅名・施設名") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                IconButton(onClick = { onSearch(query) }) {
+                                    Icon(Icons.Filled.Search, contentDescription = "検索する")
+                                }
+                            },
+                        )
+                    } else {
+                        Text("Serendipity Spot")
+                    }
+                },
                 actions = {
-                    if (signedIn) {
-                        TextButton(onClick = onSignOutClick) { Text("ログアウト") }
+                    if (searchMode) {
+                        IconButton(onClick = {
+                            searchMode = false
+                            query = ""
+                            onClearSearch()
+                        }) {
+                            Icon(Icons.Filled.Close, contentDescription = "検索を閉じる")
+                        }
+                    } else {
+                        IconButton(onClick = { searchMode = true }) {
+                            Icon(Icons.Filled.Search, contentDescription = "場所を検索")
+                        }
+                        if (signedIn) {
+                            TextButton(onClick = onSignOutClick) { Text("ログアウト") }
+                        }
                     }
                 },
             )
@@ -186,6 +223,20 @@ fun MapScreen(
 
             if (!signedIn) {
                 SignInOverlay(onSignInClick = onSignInClick)
+            }
+
+            if (uiState.searchResults.isNotEmpty()) {
+                SearchResults(
+                    results = uiState.searchResults,
+                    onPick = { result ->
+                        cameraPositionState.position =
+                            CameraPosition.fromLatLngZoom(LatLng(result.lat, result.lng), SPOT_ZOOM)
+                        searchMode = false
+                        query = ""
+                        onClearSearch()
+                    },
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
             }
 
             if (signedIn && hasLocationPermission) {
@@ -501,4 +552,41 @@ private fun EditSpotDialog(
             TextButton(onClick = onDismiss) { Text("キャンセル") }
         },
     )
+}
+
+/**
+ * 検索候補。地図の上に重ねるが、選ぶか閉じるかで即座に消える一時的なものなので
+ * 常設の要素とは扱いが違う。
+ */
+@Composable
+private fun SearchResults(
+    results: List<PlaceResult>,
+    onPick: (PlaceResult) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth().padding(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    ) {
+        LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
+            items(results) { result ->
+                ListItem(
+                    headlineContent = { Text(result.name) },
+                    supportingContent = {
+                        if (result.subtitle.isNotBlank() && result.subtitle != result.name) {
+                            Text(result.subtitle)
+                        }
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    modifier = Modifier.clickable { onPick(result) },
+                )
+            }
+        }
+    }
 }

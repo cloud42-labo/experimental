@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.cloud42labo.serendipityspot.auth.AuthorizationOutcome
 import com.cloud42labo.serendipityspot.auth.GoogleAuthManager
 import com.cloud42labo.serendipityspot.auth.SignedInUser
+import com.cloud42labo.serendipityspot.data.PlaceResult
+import com.cloud42labo.serendipityspot.data.PlaceSearcher
 import com.cloud42labo.serendipityspot.data.SheetsRepository
 import com.cloud42labo.serendipityspot.data.SpotLocalCache
 import com.cloud42labo.serendipityspot.notification.NotificationHelper
@@ -32,6 +34,8 @@ data class SpotUiState(
     // 通知が来ないときの切り分け用。アプリの動作には影響しない。
     val lastRegistration: String? = null,
     val lastGeofenceEvent: String? = null,
+    val searchResults: List<PlaceResult> = emptyList(),
+    val isSearching: Boolean = false,
 )
 
 class SpotViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,6 +43,7 @@ class SpotViewModel(application: Application) : AndroidViewModel(application) {
     private val authManager = GoogleAuthManager(application)
     private val repository = SheetsRepository(application)
     private val geofenceHelper = GeofenceHelper(application)
+    private val placeSearcher = PlaceSearcher(application)
 
     private var spreadsheetId: String? = null
 
@@ -120,6 +125,29 @@ class SpotViewModel(application: Application) : AndroidViewModel(application) {
             ?: Spot(id = "test", lat = 0.0, lng = 0.0, title = "テスト", memo = "通知の確認用")
         NotificationHelper.ensureChannel(app)
         NotificationHelper.notifyNearby(app, spot)
+    }
+
+    /** 住所・駅名・施設名から候補を引く。サインイン不要。 */
+    fun searchPlaces(query: String) {
+        if (query.isBlank()) {
+            clearSearchResults()
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSearching = true) }
+            val results = runCatching { placeSearcher.search(query) }.getOrDefault(emptyList())
+            _uiState.update {
+                it.copy(
+                    isSearching = false,
+                    searchResults = results,
+                    errorMessage = if (results.isEmpty()) "見つかりませんでした" else it.errorMessage,
+                )
+            }
+        }
+    }
+
+    fun clearSearchResults() {
+        _uiState.update { it.copy(searchResults = emptyList(), isSearching = false) }
     }
 
     fun consumeFocusRequest() {
