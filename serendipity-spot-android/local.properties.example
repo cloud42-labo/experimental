@@ -12,3 +12,11 @@ MAPS_API_KEY=YOUR_MAPS_API_KEY_HERE
 # Credential Manager のサインインに渡す server client ID で、Android 型のものとは別物。
 # 末尾は .apps.googleusercontent.com になる。
 GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_OAUTH_CLIENT_ID.apps.googleusercontent.com
+
+# 以下はメンテナー専用。release ビルド（assembleRelease）に自分の署名鍵で
+# 署名したいときだけ設定する。空のままなら release も自動デバッグ署名になる。
+# 鍵ファイル自体はリポジトリの外に置くこと（例: ~/keys/serendipity-spot-release.jks）。
+# RELEASE_STORE_FILE=/absolute/path/to/release.keystore
+# RELEASE_STORE_PASSWORD=
+# RELEASE_KEY_ALIAS=
+# RELEASE_KEY_PASSWORD=

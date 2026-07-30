@@ -34,10 +34,27 @@ android {
         )
     }
 
+    signingConfigs {
+        // RELEASE_STORE_FILE が無い間は release ビルドも自動デバッグ署名のまま。
+        // 秘密鍵はこのプロジェクトのコードには一切含めない。
+        create("release") {
+            val storeFilePath = localProperties.getProperty("RELEASE_STORE_FILE")
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.getByName("release").let { config ->
+                if (config.storeFile != null) signingConfig = config
+            }
         }
     }
 

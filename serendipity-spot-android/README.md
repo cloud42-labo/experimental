@@ -157,11 +157,13 @@ Gradle 本体・Maven Central・plugins.gradle.org は既定で許可済みな�
 
 外出先など、PCが手元に無い状態で修正を試したいとき用。`main` に変更が入るたびに
 [ワークフロー](../.github/workflows/serendipity-spot-android.yml)がAPKをビルドし、
-`dev` タグのプレリリースに貼り直す。**ダウンロードURLは毎回同じ**なので、スマホの
-ブラウザでこれを開けばよい。
+`dev`（debug署名）タグのプレリリースに貼り直す。release用の鍵を設定していれば、
+同時に `latest`（release署名、正式配布用）タグにも貼り直す。**どちらもダウンロードURL
+は毎回同じ**なので、スマホのブラウザでこれを開けばよい。
 
 ```
 https://github.com/cloud42-labo/experimental/releases/download/dev/app-debug.apk
+https://github.com/cloud42-labo/experimental/releases/download/latest/app-release.apk
 ```
 
 ### 必要な準備（初回のみ）
@@ -173,6 +175,10 @@ https://github.com/cloud42-labo/experimental/releases/download/dev/app-debug.apk
 | `SERENDIPITY_DEBUG_KEYSTORE_BASE64` | デバッグ署名鍵を `base64 -w0` にかけた文字列。必須 |
 | `SERENDIPITY_GOOGLE_SERVER_CLIENT_ID` | ウェブ アプリケーション型のクライアントID。必須 |
 | `SERENDIPITY_MAPS_API_KEY` | Maps のAPIキー。任意（未設定だと地図が灰色になるだけ） |
+| `SERENDIPITY_RELEASE_KEYSTORE_BASE64` | release署名鍵を `base64 -w0` にかけた文字列。任意（未設定なら`latest`のビルド・公開自体をスキップする） |
+| `SERENDIPITY_RELEASE_STORE_PASSWORD` | release鍵のストアパスワード |
+| `SERENDIPITY_RELEASE_KEY_ALIAS` | release鍵のエイリアス |
+| `SERENDIPITY_RELEASE_KEY_PASSWORD` | release鍵のキーパスワード |
 
 **2. CIの鍵のSHA-1をOAuthクライアントに登録する**
 
@@ -181,10 +187,27 @@ CIが使う鍵は手元の `~/.android/debug.keystore` とは別物になるた�
 Cloud Console でAndroid型のOAuthクライアントを**もう1つ**作り、CIの鍵のSHA-1を登録する。
 同じパッケージ名で複数登録してよい。
 
-CIの鍵のSHA-1は、Actions のログの `Verify APK signer` ステップに出る。
-このステップはAPKの実際の署名者を検証し、鍵と一致しなければビルドを落とす。
+CIの鍵のSHA-1は、Actions のログの `Verify APK signer` / `Verify release APK signer`
+ステップに出る。このステップはAPKの実際の署名者を検証し、鍵と一致しなければビルドを落とす。
 
 手元の `debug.keystore` をそのままシークレットに入れれば、この2番目の登録は不要。
+
+### release鍵を用意する（正式配布する場合のみ・PC側の作業）
+
+release鍵は**このプロジェクトのクラウドセッションでは生成しない**。失っても取り返しの
+つかない鍵で、生成したその場で無くすリスクを避けるため、必ず自分のPCで作業する。
+
+```sh
+keytool -genkeypair -v -keystore release.keystore -alias serendipity-spot \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+1. パスワードとキーストアファイルは、パスワード管理ツールなど**このリポジトリの外**に
+   必ずバックアップする。無くすと以後アプリを同じ署名で更新できなくなり、
+   全利用者が入れ直しになる
+2. `keytool -list -v -keystore release.keystore -alias serendipity-spot` でSHA-1を取得し、
+   上と同様にCloud ConsoleでAndroid型のOAuthクライアントとして登録する
+3. `base64 -w0 release.keystore` の出力を `SERENDIPITY_RELEASE_KEYSTORE_BASE64` に設定する
 
 ### 端末側
 
