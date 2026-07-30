@@ -46,6 +46,9 @@ jobs:
       # 探すため、XDG_CONFIG_HOME を設定しているランナー（GitHub Actions がそう）では
       # $HOME/.android に置いた鍵が無視され、AGPがその場で別の鍵を作ってしまう。
       ANDROID_USER_HOME: ${{ github.workspace }}/.android
+      # if: の条件式に secrets.NAME を直接書くとワークフローとして無効になる
+      # （GitHubの制約）。job env に一度写してから if で参照する。
+      HAS_RELEASE_KEY: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -75,7 +78,7 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$ANDROID_USER_HOME/debug.keystore"
 
       - name: Restore release keystore
-        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_RELEASE_KEY == 'true' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 }}
         run: echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
@@ -167,11 +170,11 @@ jobs:
           echo "https://github.com/${{ github.repository }}/releases/download/dev/app-debug.apk" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build release APK
-        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_RELEASE_KEY == 'true' }}
         run: ./gradlew --no-daemon assembleRelease
 
       - name: Verify release APK signer
-        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_RELEASE_KEY == 'true' }}
         env:
           RELEASE_KEY_ALIAS: ${{ secrets.SERENDIPITY_RELEASE_KEY_ALIAS }}
           RELEASE_STORE_PASSWORD: ${{ secrets.SERENDIPITY_RELEASE_STORE_PASSWORD }}
@@ -199,7 +202,7 @@ jobs:
           echo "::notice::release APK signer SHA-1 = $APK_SHA1 （Cloud Console のAndroid型OAuthクライアントに登録されている必要がある）"
 
       - name: Publish to latest release
-        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_RELEASE_KEY == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
