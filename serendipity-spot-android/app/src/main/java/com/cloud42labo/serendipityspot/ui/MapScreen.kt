@@ -106,7 +106,7 @@ fun MapScreen(
     onDeleteSpot: (spot: Spot) -> Unit,
     onTestNotification: () -> Unit,
     onRefreshDiagnostics: () -> Unit,
-    onSearch: (String) -> Unit,
+    onSearch: (query: String, nearLat: Double, nearLng: Double) -> Unit,
     onClearSearch: () -> Unit,
     onFocusConsumed: () -> Unit,
 ) {
@@ -183,7 +183,10 @@ fun MapScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             trailingIcon = {
-                                IconButton(onClick = { onSearch(query) }) {
+                                IconButton(onClick = {
+                                    val center = cameraPositionState.position.target
+                                    onSearch(query, center.latitude, center.longitude)
+                                }) {
                                     Icon(Icons.Filled.Search, contentDescription = "検索する")
                                 }
                             },
