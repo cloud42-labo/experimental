@@ -71,6 +71,7 @@ import com.cloud42labo.serendipityspot.R
 import com.cloud42labo.serendipityspot.data.PlaceResult
 import com.cloud42labo.serendipityspot.data.Spot
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.MapsInitializer
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -686,15 +687,23 @@ private fun openStreetView(context: Context, lat: Double, lng: Double) {
  *
  * 登録済み（立った旗）と検索候補（まだ立っていない旗）を、形ではなく濃さで区別する。
  * 形を変えると別のものに見えてしまい、「同じ旗がこれから立つ」という関係が伝わらない。
+ *
+ * **失敗しても null を返す。** 目印の見た目のために起動不能になるのは筋が悪いので、
+ * 呼び出し側は null なら既定のマーカーにフォールバックする。
  */
-private fun flagDescriptor(context: Context, tint: Int, sizeDp: Int = 44): BitmapDescriptor {
-    val drawable = ContextCompat.getDrawable(context, R.drawable.ic_flag_pin)!!.mutate()
-    DrawableCompat.setTint(drawable, tint)
+private fun flagDescriptor(context: Context, tint: Int, sizeDp: Int = 44): BitmapDescriptor? =
+    runCatching {
+        // BitmapDescriptorFactory は Maps が初期化されるまで使えない。
+        // 地図の生成より先に呼ぶと落ちる（v0.10.0 の起動不能はこれが原因）。
+        MapsInitializer.initialize(context)
 
-    val px = (sizeDp * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
-    val bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
-    drawable.setBounds(0, 0, px, px)
-    drawable.draw(Canvas(bitmap))
+        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_flag_pin)!!.mutate()
+        DrawableCompat.setTint(drawable, tint)
 
-    return BitmapDescriptorFactory.fromBitmap(bitmap)
-}
+        val px = (sizeDp * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+        drawable.setBounds(0, 0, px, px)
+        drawable.draw(Canvas(bitmap))
+
+        BitmapDescriptorFactory.fromBitmap(bitmap)
+    }.getOrNull()
