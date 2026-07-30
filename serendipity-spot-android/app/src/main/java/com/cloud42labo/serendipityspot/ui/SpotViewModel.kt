@@ -127,15 +127,19 @@ class SpotViewModel(application: Application) : AndroidViewModel(application) {
         NotificationHelper.notifyNearby(app, spot)
     }
 
-    /** 住所・駅名・施設名から候補を引く。サインイン不要。 */
-    fun searchPlaces(query: String) {
+    /**
+     * 住所・駅名・施設名から候補を引く。サインイン不要。
+     * [nearLat]/[nearLng] は今見ている地図の中心。近くを優先して探すために渡す。
+     */
+    fun searchPlaces(query: String, nearLat: Double, nearLng: Double) {
         if (query.isBlank()) {
             clearSearchResults()
             return
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true) }
-            val results = runCatching { placeSearcher.search(query) }.getOrDefault(emptyList())
+            val results = runCatching { placeSearcher.search(query, nearLat, nearLng) }
+                .getOrDefault(emptyList())
             _uiState.update {
                 it.copy(
                     isSearching = false,
