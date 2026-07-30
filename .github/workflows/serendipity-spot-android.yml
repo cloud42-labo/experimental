@@ -1,8 +1,10 @@
-name: serendipity-spot-android debug build
+name: serendipity-spot-android build
 
 # PCが手元に無くても、スマホから直接ダウンロードして入れられるAPKを用意するための
-# ワークフロー。main に入った変更を毎回ビルドし、`dev` タグのプレリリースに
-# app-debug.apk を上書きで貼り直す。ダウンロードURLは常に同じ。
+# ワークフロー。main に入った変更を毎回ビルドし、`dev` タグのプレリリース（debug署名）に
+# app-debug.apk を上書きで貼り直す。release用の鍵が設定されていれば、同時に `latest`
+# タグ（正式配布用、release署名）にも app-release.apk を貼り直す。ダウンロードURLは
+# どちらも常に同じ。
 #
 # 必要なシークレット（Settings > Secrets and variables > Actions）:
 #   SERENDIPITY_DEBUG_KEYSTORE_BASE64  必須。デバッグ署名鍵をbase64にしたもの。
@@ -11,6 +13,14 @@ name: serendipity-spot-android debug build
 #                                      登録が無いとサインインだけが失敗する。
 #   SERENDIPITY_GOOGLE_SERVER_CLIENT_ID 必須。「ウェブ アプリケーション」型のクライアントID。
 #   SERENDIPITY_MAPS_API_KEY            任意。未設定でもビルドは通るが地図が灰色になる。
+#
+#   以下はrelease（正式配布）ビルド用。未設定ならreleaseのビルド・公開はスキップされ、
+#   debugのみ動く（このワークフローが壊れることはない）。鍵はメンテナーのPCで
+#   生成したものを使う。生成方法・SHA-1のOAuthクライアント登録は README 参照。
+#   SERENDIPITY_RELEASE_KEYSTORE_BASE64  release署名鍵をbase64にしたもの。
+#   SERENDIPITY_RELEASE_STORE_PASSWORD
+#   SERENDIPITY_RELEASE_KEY_ALIAS
+#   SERENDIPITY_RELEASE_KEY_PASSWORD
 
 on:
   push:
@@ -64,14 +74,29 @@ jobs:
           mkdir -p "$ANDROID_USER_HOME"
           echo "$KEYSTORE_BASE64" | base64 -d > "$ANDROID_USER_HOME/debug.keystore"
 
+      - name: Restore release keystore
+        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+
       - name: Write local.properties
         env:
           MAPS_API_KEY: ${{ secrets.SERENDIPITY_MAPS_API_KEY }}
           GOOGLE_SERVER_CLIENT_ID: ${{ secrets.SERENDIPITY_GOOGLE_SERVER_CLIENT_ID }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.SERENDIPITY_RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.SERENDIPITY_RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.SERENDIPITY_RELEASE_KEY_PASSWORD }}
         run: |
           {
             echo "MAPS_API_KEY=${MAPS_API_KEY}"
             echo "GOOGLE_SERVER_CLIENT_ID=${GOOGLE_SERVER_CLIENT_ID}"
+            if [ -f app/release.keystore ]; then
+              echo "RELEASE_STORE_FILE=release.keystore"
+              echo "RELEASE_STORE_PASSWORD=${RELEASE_STORE_PASSWORD}"
+              echo "RELEASE_KEY_ALIAS=${RELEASE_KEY_ALIAS}"
+              echo "RELEASE_KEY_PASSWORD=${RELEASE_KEY_PASSWORD}"
+            fi
           } > local.properties
           if [ -z "$GOOGLE_SERVER_CLIENT_ID" ]; then
             echo "::warning::SERENDIPITY_GOOGLE_SERVER_CLIENT_ID が未設定。サインインは失敗する。"
@@ -140,3 +165,50 @@ jobs:
           echo "### APK を更新した" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "https://github.com/${{ github.repository }}/releases/download/dev/app-debug.apk" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build release APK
+        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Verify release APK signer
+        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        env:
+          RELEASE_KEY_ALIAS: ${{ secrets.SERENDIPITY_RELEASE_KEY_ALIAS }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.SERENDIPITY_RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.SERENDIPITY_RELEASE_KEY_PASSWORD }}
+        run: |
+          normalize() { tr -d ': \r' | tr 'A-Z' 'a-z'; }
+
+          KEYSTORE_SHA1=$(keytool -list -v \
+            -keystore app/release.keystore \
+            -alias "$RELEASE_KEY_ALIAS" -storepass "$RELEASE_STORE_PASSWORD" -keypass "$RELEASE_KEY_PASSWORD" \
+            | grep -E '^[[:space:]]*SHA1:' | head -1 | sed 's/.*SHA1: *//' | normalize)
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          APK_SHA1=$("$APKSIGNER" verify --print-certs \
+            app/build/outputs/apk/release/app-release.apk \
+            | grep -i 'SHA-1 digest' | head -1 | sed 's/.*: *//' | normalize)
+
+          echo "keystore  : $KEYSTORE_SHA1"
+          echo "APK signer: $APK_SHA1"
+
+          if [ -z "$APK_SHA1" ] || [ "$KEYSTORE_SHA1" != "$APK_SHA1" ]; then
+            echo "::error::release APKがCIのrelease鍵で署名されていない。"
+            exit 1
+          fi
+          echo "::notice::release APK signer SHA-1 = $APK_SHA1 （Cloud Console のAndroid型OAuthクライアントに登録されている必要がある）"
+
+      - name: Publish to latest release
+        if: ${{ secrets.SERENDIPITY_RELEASE_KEYSTORE_BASE64 != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          gh release view latest > /dev/null 2>&1 || \
+            gh release create latest \
+              --title "latest（最新の正式ビルド）" \
+              --notes "main の最新release署名ビルド。push のたびに app-release.apk が差し替わる。"
+          gh release upload latest "$APK" --clobber
+          echo "### release APK を更新した" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${{ github.repository }}/releases/download/latest/app-release.apk" >> "$GITHUB_STEP_SUMMARY"
