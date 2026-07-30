@@ -3,6 +3,8 @@ package com.cloud42labo.serendipityspot.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -59,24 +61,26 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.DrawableCompat
+import com.cloud42labo.serendipityspot.R
 import com.cloud42labo.serendipityspot.data.PlaceResult
 import com.cloud42labo.serendipityspot.data.Spot
 import com.google.android.gms.location.LocationServices
-import com.google.android.gms.maps.StreetViewPanoramaOptions
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.ktx.MapsExperimentalFeature
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
-import com.google.maps.android.compose.streetview.StreetView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -84,6 +88,9 @@ import kotlinx.coroutines.tasks.await
 private val FALLBACK_CENTER = LatLng(35.6581, 139.7017)
 private const val SPOT_ZOOM = 17f
 private const val CURRENT_LOCATION_ZOOM = 16f
+
+/** 竿の根元が地点を指すように、左下寄りに合わせる。 */
+private val FLAG_ANCHOR = Offset(0.25f, 0.95f)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("MissingPermission")
@@ -116,9 +123,10 @@ fun MapScreen(
     var pendingTitle by remember { mutableStateOf("") }
     var editingSpot by remember { mutableStateOf<Spot?>(null) }
     var searchMode by remember { mutableStateOf(false) }
+    // 候補の一覧を出しているか。1つ選んだら閉じるが、旗は地図に残す。
+    var resultListVisible by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var deletingSpot by remember { mutableStateOf<Spot?>(null) }
-    var streetViewSpot by remember { mutableStateOf<Spot?>(null) }
     // 初回だけ現在地へ寄せる。以後はユーザーの操作を邪魔しない。
     var initialLocationApplied by rememberSaveable { mutableStateOf(false) }
 
@@ -142,11 +150,22 @@ fun MapScreen(
         onFocusConsumed()
     }
 
+    LaunchedEffect(uiState.searchResults) {
+        if (uiState.searchResults.isNotEmpty()) resultListVisible = true
+    }
+
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { snackbarHostState.showSnackbar(it) }
     }
 
     val signedIn = uiState.user != null
+
+    // 登録済みは濃く、検索で出ただけの候補は薄く。
+    // 「まだ立っていない旗」をタップすると登録に進む、という見え方にする。
+    val plantedColor = MaterialTheme.colorScheme.primary
+    val unplantedColor = MaterialTheme.colorScheme.outline
+    val plantedFlag = remember(plantedColor) { flagDescriptor(context, plantedColor.toArgb()) }
+    val unplantedFlag = remember(unplantedColor) { flagDescriptor(context, unplantedColor.toArgb()) }
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
@@ -177,6 +196,7 @@ fun MapScreen(
                         IconButton(onClick = {
                             searchMode = false
                             query = ""
+                            resultListVisible = false
                             onClearSearch()
                         }) {
                             Icon(Icons.Filled.Close, contentDescription = "検索を閉じる")
@@ -201,7 +221,7 @@ fun MapScreen(
                 onRefreshDiagnostics = onRefreshDiagnostics,
                 onEditClick = { editingSpot = it },
                 onDeleteClick = { deletingSpot = it },
-                onStreetViewClick = { streetViewSpot = it },
+                onStreetViewClick = { openStreetView(context, it.lat, it.lng) },
                 onSpotClick = { spot ->
                     cameraPositionState.position =
                         CameraPosition.fromLatLngZoom(LatLng(spot.lat, spot.lng), SPOT_ZOOM)
@@ -233,7 +253,28 @@ fun MapScreen(
                         state = MarkerState(LatLng(spot.lat, spot.lng)),
                         title = spot.title,
                         snippet = spot.memo,
+                        icon = plantedFlag,
+                        anchor = FLAG_ANCHOR,
                     )
+                }
+
+                // 検索で当たった場所。まだ立っていない旗として置く。
+                // タップすると登録に進み、保存されたら立った旗に変わる。
+                if (signedIn) {
+                    uiState.searchResults.forEach { result ->
+                        Marker(
+                            state = MarkerState(LatLng(result.lat, result.lng)),
+                            title = result.name,
+                            snippet = "タップして登録",
+                            icon = unplantedFlag,
+                            anchor = FLAG_ANCHOR,
+                            onClick = {
+                                pendingTitle = result.name
+                                pendingLatLng = LatLng(result.lat, result.lng)
+                                true
+                            },
+                        )
+                    }
                 }
             }
 
@@ -241,7 +282,7 @@ fun MapScreen(
                 SignInOverlay(onSignInClick = onSignInClick)
             }
 
-            if (uiState.searchResults.isNotEmpty()) {
+            if (resultListVisible && uiState.searchResults.isNotEmpty()) {
                 SearchResults(
                     results = uiState.searchResults,
                     onPick = { result ->
@@ -249,13 +290,9 @@ fun MapScreen(
                             CameraPosition.fromLatLngZoom(LatLng(result.lat, result.lng), SPOT_ZOOM)
                         searchMode = false
                         query = ""
-                        onClearSearch()
-                        // 探した場所はたいてい登録したい場所なので、そのまま登録に進む。
-                        // 見るだけなら閉じればよい。
-                        if (signedIn) {
-                            pendingTitle = result.name
-                            pendingLatLng = LatLng(result.lat, result.lng)
-                        }
+                        // 一覧は閉じるが、候補は地図上に「まだ立っていない旗」として残す。
+                        // 登録するかは旗をタップして決める。
+                        resultListVisible = false
                     },
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
@@ -303,17 +340,6 @@ fun MapScreen(
         )
     }
 
-    streetViewSpot?.let { spot ->
-        StreetViewDialog(
-            spot = spot,
-            onDismiss = { streetViewSpot = null },
-            onOpenInMaps = {
-                openStreetView(context, spot.lat, spot.lng)
-                streetViewSpot = null
-            },
-        )
-    }
-
     deletingSpot?.let { spot ->
         AlertDialog(
             onDismissRequest = { deletingSpot = null },
@@ -338,6 +364,8 @@ fun MapScreen(
             onSave = { title, memo ->
                 onSaveSpot(latLng.latitude, latLng.longitude, title, memo)
                 pendingLatLng = null
+                // 立った旗に置き換わるので、候補の旗は片付ける
+                onClearSearch()
             },
         )
     }
@@ -654,49 +682,19 @@ private fun openStreetView(context: Context, lat: Double, lng: Double) {
 }
 
 /**
- * ストリートビューをアプリ内に表示する。
+ * 旗の目印を作る。ベクタ画像を色だけ変えて2種類に使い回す。
  *
- * その地点にパノラマが無い場合は真っ黒のままになる（SDKの仕様）。
- * 判別できないと壊れたように見えるので、Googleマップへ逃がすボタンを併置する。
+ * 登録済み（立った旗）と検索候補（まだ立っていない旗）を、形ではなく濃さで区別する。
+ * 形を変えると別のものに見えてしまい、「同じ旗がこれから立つ」という関係が伝わらない。
  */
-@OptIn(MapsExperimentalFeature::class)
-@Composable
-private fun StreetViewDialog(
-    spot: Spot,
-    onDismiss: () -> Unit,
-    onOpenInMaps: () -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            StreetView(
-                modifier = Modifier.fillMaxSize(),
-                streetViewPanoramaOptionsFactory = {
-                    StreetViewPanoramaOptions().position(LatLng(spot.lat, spot.lng))
-                },
-            )
+private fun flagDescriptor(context: Context, tint: Int, sizeDp: Int = 44): BitmapDescriptor {
+    val drawable = ContextCompat.getDrawable(context, R.drawable.ic_flag_pin)!!.mutate()
+    DrawableCompat.setTint(drawable, tint)
 
-            Card(modifier = Modifier.align(Alignment.TopStart).padding(12.dp)) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Filled.Close, contentDescription = "閉じる")
-                    }
-                    Text(
-                        text = spot.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
-                }
-            }
+    val px = (sizeDp * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+    val bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+    drawable.setBounds(0, 0, px, px)
+    drawable.draw(Canvas(bitmap))
 
-            Card(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)) {
-                TextButton(onClick = onOpenInMaps) { Text("Googleマップで開く") }
-            }
-        }
-    }
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
 }

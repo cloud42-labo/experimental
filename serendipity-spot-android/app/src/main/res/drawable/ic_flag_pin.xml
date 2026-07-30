@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  スポットの目印。旗を立てる＝ここに寄りたいと決める、という動作をそのまま絵にしたもの。
+  色は実行時に差し替える（登録済みは濃く、未登録の候補は薄く）。
+  竿の根元が地点を指すよう、Marker 側の anchor を左寄りにして使う。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 竿 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M5.2,2.5h1.8v19.0h-1.8z" />
+
+    <!-- 旗。先端に切り込みを入れて旗らしくする -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7.0,3.2h11.4l-2.9,4.4l2.9,4.4h-11.4z" />
+</vector>
