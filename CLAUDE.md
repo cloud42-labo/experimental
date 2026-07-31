@@ -44,6 +44,20 @@ experimental/
 PRを作ったら、そこで止めずマージまで行う（承認待ちで放置しない）。これは
 `cloud42-labo/brain` に限らず、Claude Codeが操作する全リポジトリに適用する。
 
+## AIレビュー・修正ループ
+
+Claude が作った PR（`claude/*` ブランチ）は、`.github/workflows/ai-pr-review-loop.yml` により
+OpenAI Codex が自動レビューする。指摘があれば Claude が自動修正して再レビュー、CI成功かつ
+指摘なしで自動マージする。**最大3ラウンドで収束しなければ `needs-human` ラベルが付いて停止する。**
+
+- レビュー規約は [AGENTS.md](AGENTS.md)（Codexが自動で読む）
+- 必要なSecrets・リポジトリ設定は [README.md](README.md) の「AIレビュー・修正ループ」節
+- **セッション開始時、このリポジトリに `needs-human` ラベルの付いたPRが無いか確認し、
+  あれば優先的に拾う。** 3ラウンドで収束しなかった＝AIループでは解けなかった問題
+- これも`cloud42-labo/brain`に限らず、Claude Codeが関わる全リポジトリに適用する基本ルール
+  （詳細・設計根拠: [brain/decisions/0008](https://github.com/cloud42-labo/brain/blob/main/decisions/0008-ai-review-loop-codex-vs-claude.md)、
+  [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md)）
+
 ## バージョニング
 
 試作が育って継続的に使われるようになったアプリには、セマンティックバージョニング
