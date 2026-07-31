@@ -1,0 +1,158 @@
+name: AI Review Round (reusable)
+
+# ai-pr-review-loop.yml から呼ばれる「1ラウンド」の実処理:
+# Codexレビュー → 承認でなければClaudeが修正してcommit・push。
+#
+# GITHUB_TOKEN で行うレビュー投稿・pushは、新しい workflow run を起動しない
+# （GitHubの仕様。再帰的なworkflow実行を防ぐための制限）。そのため、レビュー→修正→
+# 再レビューの反復を「別のイベントで次のrunを起こす」形にせず、呼び出し側
+# (ai-pr-review-loop.yml) が **同一run内で** このワークフローを最大3回 (round1〜round3)
+# 呼び出すことで完結させている。
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+    outputs:
+      verdict:
+        description: "APPROVE / REQUEST_CHANGES / 空文字（このラウンドは対象外で何もしなかった）"
+        value: ${{ jobs.round.outputs.verdict }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  round:
+    runs-on: ubuntu-latest
+    outputs:
+      verdict: ${{ steps.review.outputs.verdict }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      MARKER: "<!-- codex-review-loop -->"
+      PR_NUMBER: ${{ inputs.pr_number }}
+    steps:
+      - name: PRがまだ対象か確認する
+        id: guard
+        run: |
+          set -euo pipefail
+          gh pr view "$PR_NUMBER" --json state,isDraft,headRefName,baseRefName,labels > pr.json
+          STATE=$(jq -r '.state' pr.json)
+          DRAFT=$(jq -r '.isDraft' pr.json)
+          HAS_NEEDS_HUMAN=$(jq -r '[.labels[].name] | index("needs-human") != null' pr.json)
+          if [ "$STATE" != "OPEN" ] || [ "$DRAFT" = "true" ] || [ "$HAS_NEEDS_HUMAN" = "true" ]; then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$(jq -r '.headRefName' pr.json)" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$(jq -r '.baseRefName' pr.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.proceed == 'true'
+        with:
+          ref: ${{ steps.guard.outputs.head_ref }}
+          fetch-depth: 0
+
+      - name: レビュー依頼文を作る
+        if: steps.guard.outputs.proceed == 'true'
+        env:
+          BASE_REF: ${{ steps.guard.outputs.base_ref }}
+        run: |
+          set -euo pipefail
+          {
+            echo "このリポジトリの pull request #${PR_NUMBER} をレビューしてください。"
+            echo
+            echo "- 差分は git diff origin/${BASE_REF}...HEAD で確認してください。"
+            echo "  作業ディレクトリは既にこのPRのブランチをチェックアウト済みです。"
+            echo "- レビュー観点は AGENTS.md に書かれた規約に従ってください。"
+            echo "- コードの修正は行わず、レビューのみ行ってください。"
+            echo "- 出力の最後に、次のいずれか1行だけを厳密にこの形式で書いてください。"
+            echo "  他の文言と混ぜないでください。"
+            echo "    CODEX_VERDICT: APPROVE"
+            echo "    CODEX_VERDICT: REQUEST_CHANGES"
+            echo "- REQUEST_CHANGES の場合は、その直前に具体的な指摘事項を箇条書きで"
+            echo "  書いてください。"
+          } > /tmp/codex-prompt.md
+
+      - name: Codexレビューを実行する
+        if: steps.guard.outputs.proceed == 'true'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: /tmp/codex-prompt.md
+          output-file: /tmp/codex-output.md
+
+      - name: Codexレビューを投稿し、判定する
+        id: review
+        if: steps.guard.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          OUT=/tmp/codex-output.md
+          if [ ! -s "$OUT" ]; then
+            echo "CODEX_VERDICT: REQUEST_CHANGES" > "$OUT"
+            echo "(Codexの出力が空だったため、安全側に倒してREQUEST_CHANGES扱いにしています)" >> "$OUT"
+          fi
+          VERDICT=$(grep -E '^CODEX_VERDICT: (APPROVE|REQUEST_CHANGES)$' "$OUT" | tail -1 \
+            | sed -E 's/^CODEX_VERDICT: //' || true)
+          if [ -z "$VERDICT" ]; then
+            VERDICT="REQUEST_CHANGES"
+            echo "(判定行を検出できなかったため、安全側に倒してREQUEST_CHANGES扱いにしています)" >> "$OUT"
+          fi
+          {
+            echo "$MARKER"
+            echo
+            cat "$OUT"
+          } > /tmp/codex-review-body.md
+          if [ "$VERDICT" = "APPROVE" ]; then
+            gh pr review "$PR_NUMBER" --approve --body-file /tmp/codex-review-body.md
+          else
+            gh pr review "$PR_NUMBER" --request-changes --body-file /tmp/codex-review-body.md
+          fi
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+
+      - name: 修正指示文を作る
+        if: steps.review.outputs.verdict == 'REQUEST_CHANGES'
+        env:
+          HEAD_REF: ${{ steps.guard.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          {
+            echo "このリポジトリの pull request #${PR_NUMBER} (ブランチ ${HEAD_REF}) について、"
+            echo "直前に投稿されたOpenAI Codexのレビュー指摘を確認し、問題を修正してください。"
+            echo
+            echo "- 最新のレビューコメントは gh api repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews"
+            echo "  や gh pr view ${PR_NUMBER} --comments で確認できます。"
+            echo "- このリポジトリの規約は CLAUDE.md と AGENTS.md に従ってください。"
+            echo "  他のディレクトリ（他の試作アプリ）には手を入れないでください。"
+            echo "- ファイルを修正してください。コミットは後続のステップが行います。"
+          } > /tmp/claude-fix-prompt.md
+
+      - name: Claudeで自動修正する
+        if: steps.review.outputs.verdict == 'REQUEST_CHANGES'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "/tmp/claude-fix-prompt.md の指示に従ってください。"
+
+      - name: 修正をcommit・pushする
+        if: steps.review.outputs.verdict == 'REQUEST_CHANGES'
+        env:
+          HEAD_REF: ${{ steps.guard.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "ai-pr-review-loop"
+          git config user.email "actions@github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "AIレビュー・修正ループ: Codexの指摘に対応"
+          fi
+          # claude-code-action が既にcommit・pushまで済ませている場合、
+          # ここでのcommitは無く、pushも「変更なし」で成功するだけになる。
+          if ! git push origin "HEAD:${HEAD_REF}"; then
+            echo "::warning::pushに失敗した（Claudeが修正できなかった可能性がある）"
+          fi
