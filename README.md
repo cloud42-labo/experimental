@@ -21,47 +21,19 @@ experimental/
 このリポジトリは [Claude Code](https://claude.com/claude-code) が開発・保守する。
 運用ルールは [CLAUDE.md](CLAUDE.md)、AIレビュー規約は [AGENTS.md](AGENTS.md) を参照。
 
-### AIレビュー・修正ループ
+### PRレビュー・マージ
 
-Claude が作った PR（`claude/*` ブランチ）は、`.github/workflows/ai-pr-review-loop.yml` に
-より自動で以下を行う。
+このリポジトリ自体のGitHub Actionsではなく、**ChatGPT側の2つの仕組み**でPRのレビュー・
+マージを行う（API課金の発生する自前のワークフローは廃止した。経緯は
+[cloud42-labo/brain の decisions/0008 追記](https://github.com/cloud42-labo/brain/blob/main/decisions/0008-ai-review-loop-codex-vs-claude.md) 参照）。
 
-1. **OpenAI Codex** が PR の差分をレビューする（レビュー規約は [AGENTS.md](AGENTS.md)）
-2. 指摘があれば **Claude** が自動で修正し、コミットをpushする
-3. Codex が再レビューする（1〜2を繰り返す）
-4. CIが成功し、Codexの指摘が無くなれば**自動でsquashマージ**する
-5. **最大3ラウンドで収束しなければ**、`needs-human` ラベルを付けてPRにコメントし、
-   それ以上の自動処理を止める（人間の判断待ち）
+1. Claude が `claude/*` ブランチでPRを作り、**そこで止める（自分ではマージしない）**
+2. **Codex の Automatic reviews**（ChatGPT Plus/Pro契約の範囲）が、このリポジトリの
+   PRを自動レビューする。レビュー規約は [AGENTS.md](AGENTS.md) の `## Code Review Rules`
+   （Codexが自動で読む）。重大度の高い指摘（P0/P1）のみをGitHubの通常のレビューとして投稿する
+3. **ChatGPT側の毎時タスク**が、Codexのレビュー結果とCIの状態を確認し、指摘が無く
+   CIも問題なければGitHub連携でsquashマージする。指摘があればマージせず待つ
 
-設計の背景・別ベンダーAIにレビューさせる理由は
-[cloud42-labo/brain の decisions/0008](https://github.com/cloud42-labo/brain/blob/main/decisions/0008-ai-review-loop-codex-vs-claude.md) 参照。
-
-**現状の制約:** PR時点で走るCI（テスト・ビルド）は、このリポジトリのどのアプリにも
-まだ無い（唯一のCIである `serendipity-spot-android` のビルドworkflowは `main` への push
-時のみ動作する）。そのため当面「CI成功」の判定は形骸化し、実質Codexレビューの承認のみが
-マージ条件になる。将来いずれかのアプリにPR時点のCIを追加すれば、このワークフローは
-変更なしで自動的にそれもゲートに含める。
-
-#### 必要なGitHub Secrets（Settings > Secrets and variables > Actions）
-
-| Secret | 用途 |
-| :--- | :--- |
-| `ANTHROPIC_API_KEY` または `CLAUDE_CODE_OAUTH_TOKEN` | どちらか一方。Claude Codeによる自動修正 |
-| `OPENAI_API_KEY` | Codexによる自動レビュー |
-
-（`serendipity-spot-android` のビルド・署名に使う `SERENDIPITY_*` シークレットとは別物）
-
-#### 必要なリポジトリ設定
-
-- **Settings > Actions > General > Workflow permissions** を
-  **`Read and write permissions`** にする（コミットのpush・PRのマージ・ラベル付けに必要）
-- （推奨・任意）**Settings > Branches** で `main` にブランチ保護を設定し、直接pushを
-  技術的にも禁止する。現状は運用ルール（`CLAUDE.md`）のみで、技術的な強制はされていない
-
-#### 手動での再開・停止
-
-- `needs-human` ラベルが付いたPRは自動処理が止まっている。対応後、ラベルを外し、
-  Actions画面から「AI PR Review Loop」を **workflow_dispatch**（PR番号を指定）で
-  手動実行するとループを再開できる
-- ループ自体を止めたい場合は、`.github/workflows/ai-pr-review-loop.yml` を無効化するか、
-  対象PRに手動で `needs-human` ラベルを付ける
+このリポジトリ側で必要な設定は無い（Secretsの登録もWorkflow permissionsの変更も不要）。
+ChatGPT側の設定（このリポジトリへのCodex Automatic reviewsの有効化、毎時タスクのGitHub
+連携）は別途ChatGPTのCodex設定画面で行う。

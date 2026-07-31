@@ -41,22 +41,28 @@ experimental/
 
 ## GitHub操作
 
-PRを作ったら、そこで止めずマージまで行う（承認待ちで放置しない）。これは
-`cloud42-labo/brain` に限らず、Claude Codeが操作する全リポジトリに適用する。
+**このリポジトリでは、Claudeが作ったPR（`claude/*`ブランチ）は作ったところで止め、
+Claude自身はマージしない。** レビュー・マージはChatGPT側の仕組み（下記「PRレビュー・
+マージ」）に委ねる。これは「PRを作ったら止めずマージまで行う」という他リポジトリでの
+既定ルール（[brain/notes/github-pr-workflow](https://github.com/cloud42-labo/brain/blob/main/notes/github-pr-workflow.md)）を、このリポジトリに限って上書きするもの。
 
-## AIレビュー・修正ループ
+## PRレビュー・マージ
 
-Claude が作った PR（`claude/*` ブランチ）は、`.github/workflows/ai-pr-review-loop.yml` により
-OpenAI Codex が自動レビューする。指摘があれば Claude が自動修正して再レビュー、CI成功かつ
-指摘なしで自動マージする。**最大3ラウンドで収束しなければ `needs-human` ラベルが付いて停止する。**
+このリポジトリ自体のGitHub Actionsではなく、**ChatGPT側の2つの仕組み**でPRのレビュー・
+マージを行う。
 
-- レビュー規約は [AGENTS.md](AGENTS.md)（Codexが自動で読む）
-- 必要なSecrets・リポジトリ設定は [README.md](README.md) の「AIレビュー・修正ループ」節
-- **セッション開始時、このリポジトリに `needs-human` ラベルの付いたPRが無いか確認し、
-  あれば優先的に拾う。** 3ラウンドで収束しなかった＝AIループでは解けなかった問題
-- これも`cloud42-labo/brain`に限らず、Claude Codeが関わる全リポジトリに適用する基本ルール
-  （詳細・設計根拠: [brain/decisions/0008](https://github.com/cloud42-labo/brain/blob/main/decisions/0008-ai-review-loop-codex-vs-claude.md)、
-  [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md)）
+1. Claude が `claude/*` ブランチでPRを作り、そこで止める
+2. **Codex の Automatic reviews**（ChatGPT Plus/Pro契約の範囲）がPRを自動レビューする。
+   レビュー規約は [AGENTS.md](AGENTS.md) の `## Code Review Rules`
+3. **ChatGPT側の毎時タスク**が、Codexの指摘とCIの状態を確認し、問題なければ
+   GitHub連携でsquashマージする。指摘があればマージせず待つ
+
+- 自前のGitHub Actionsワークフロー（`openai/codex-action` / `anthropics/claude-code-action`
+  をAPI課金で呼び出す方式）は一度実装したが、課金を避けるためにやめた。詳細は
+  [brain/decisions/0008 の追記](https://github.com/cloud42-labo/brain/blob/main/decisions/0008-ai-review-loop-codex-vs-claude.md)
+- **セッション開始時、レビュー待ち・マージ待ちのまま長く止まっているPRが無いか確認し、
+  あれば状況を把握する。** ChatGPT側の毎時タスクが拾えていない可能性がある
+- 詳細: [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md)
 
 ## バージョニング
 
