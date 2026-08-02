@@ -45,7 +45,7 @@ def test_launcher_passes_secrets_only_through_child_environment() -> None:
 def test_launcher_matches_application_lease_validation() -> None:
     text = launcher_text()
 
-    assert "[ValidateRange(30, 86400)]" in text
+    assert "[ValidateRange(30, 2147483647)]" in text
 
 
 def test_launcher_resolves_relative_python_path_from_project_root() -> None:
