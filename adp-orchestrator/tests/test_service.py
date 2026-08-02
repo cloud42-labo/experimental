@@ -141,3 +141,27 @@ def test_stale_terminal_conflict_has_no_external_side_effects(
     assert result.kind == "conflict"
     assert tasks.records == []
     assert agents.records == []
+
+
+def test_heartbeat_renews_lease_without_external_side_effects(
+    tmp_path: Path,
+) -> None:
+    subject, tasks, agents = service(tmp_path)
+    subject.handle(make_event(event_type="work_started", status="running"))
+    tasks.records.clear()
+    agents.records.clear()
+
+    result = subject.handle(
+        make_event(
+            event_id="heartbeat-1",
+            from_agent="claude",
+            to_agent="chris",
+            event_type="work_heartbeat",
+            status="running",
+        )
+    )
+
+    assert result.kind == "accepted"
+    assert result.status == "running"
+    assert tasks.records == []
+    assert agents.records == []
