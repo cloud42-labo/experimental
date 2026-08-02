@@ -43,7 +43,7 @@ cp .env.example .env
 
 `.env`へTokenとチャンネルIDを設定します。`.env`はGit管理しません。`NOTION_TOKEN`と`GITHUB_TOKEN`は空欄でも起動できます。
 
-`ADP_LOCK_LEASE_SECONDS`はTaskロックの有効期限で、既定値は3600秒です。クラッシュで終了イベントを送れなくても期限切れ後に別Agentが再取得できます。長時間処理では`heartbeat_task`でLeaseを延長できます。
+`ADP_LOCK_LEASE_SECONDS`はTaskロックの有効期限で、既定値は3600秒です。クラッシュで終了イベントを送れなくても期限切れ後に別Runが再取得できます。長時間処理では`work_heartbeat`イベントを定期送信し、同一Agent・同一RunだけがLeaseを延長できます。
 
 ## 起動
 
@@ -53,9 +53,39 @@ python -m adp_orchestrator.app
 
 Slackの`#adp-control`で `@ADP Orchestrator` に続けてJSONイベントを投稿します。実Slackイベントでは、JSON内の`event_id`よりSlack署名済みEnvelopeの`event_id`を優先します。
 
-冪等キーは`correlation_id`、`task_id`、`event_type`、`attempt`を正規化JSONにしてSHA-256化します。そのため、同一試行の重複は排除しつつ、attempt 2・3は別の再試行として処理でき、区切り文字を含むID同士も衝突しません。
+### Runと冪等性
 
-Taskロックは`work_started`で取得し、Lock Owner本人の`work_completed`または`failed`だけが解除できます。古いAgentから遅れて届いた終了イベントは現行AgentのロックやNotion状態を変更しません。
+1回の試行は`task_id + correlation_id + attempt`から生成する`run_id`で識別します。同じClaudeでもattempt 1とattempt 2は別Runです。
+
+イベントの冪等キーは`run_id + event_type`を正規化JSONにしてSHA-256化します。Heartbeatだけは同じRunで繰り返すため、Slack署名済み`event_id`も含めます。これにより、同一Heartbeatの再配信は排除しつつ、次のHeartbeatは受理できます。
+
+### Task Lock
+
+Taskロックは`work_started`で取得し、Agent名とRun IDの組合せで所有します。`work_completed`、`failed`、Worker自身の`human_required`は、同じAgent・同じRunだけが解除できます。
+
+古いattemptから遅れて届いた完了・失敗・Human RequestはConflictとして拒否し、現行RunのロックやNotion状態を変更しません。`work_started`が競合した場合はevent claimを戻すため、現行Run終了後に同じStartイベントを再送できます。
+
+### Heartbeat
+
+長時間処理では次のイベントを定期送信します。
+
+```json
+{
+  "schema_version": "1.0",
+  "event_id": "Slack側で上書きされる",
+  "task_id": "ADP-012-D",
+  "correlation_id": "同じRunの相関ID",
+  "from_agent": "claude",
+  "to_agent": "chris",
+  "event_type": "work_heartbeat",
+  "status": "running",
+  "summary": "実装を継続中",
+  "attempt": 1,
+  "max_attempts": 3
+}
+```
+
+HeartbeatはローカルLeaseだけを更新し、NotionやAI起動Adapterへ副作用を出しません。
 
 ## Adapter構造
 
@@ -76,11 +106,15 @@ Notion更新、AI起動、Slack返信・Human Request通知が一時失敗した
 pytest
 ```
 
-純粋ロジック・モックHTTPテストは**55件**です。
+純粋ロジック・モックHTTPテストは**64件**です。
 
-- 正規化ハッシュによる冪等性とattempt 3までのエスカレーション
-- Task Lock Owner検証、期限切れ回収、Heartbeat、旧DB移行
-- 古いAgentの終了イベント拒否
+- attempt単位のRun IDと衝突しない冪等性
+- 同一Runで繰り返せるHeartbeat
+- Agent + Run IDによるTask Lock所有権
+- 期限切れ回収、Heartbeat、旧DB移行
+- 同じAgentの古いattempt終了イベント拒否
+- stale Human Requestの拒否
+- Start競合後の同一イベント再試行
 - 外部Adapter・Slack送信失敗後のRollback
 - Human Request対象の自動起動禁止
 - Notion Status / Result / Blockerの設定と解除
