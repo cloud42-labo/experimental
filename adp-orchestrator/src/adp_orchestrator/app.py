@@ -15,6 +15,9 @@ from .router import EventRouter, RouteResult
 
 _CODE_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 _MENTION = re.compile(r"<@[A-Z0-9]+>")
+_VALIDATION_ERROR_MESSAGE = (
+    "Event validation failed. Check schema_version, required fields, and allowed values."
+)
 
 
 def extract_event_payload(text: str) -> dict[str, Any]:
@@ -38,7 +41,7 @@ def format_result(result: RouteResult) -> str:
         f"*Task:* `{result.task_id}`\n"
         f"*Result:* `{result.kind}`\n"
         f"*Status:* `{result.status}`\n"
-        f"*Target:* `{result.target_agent or '-'} `\n"
+        f"*Target:* `{result.target_agent or '-'}`\n"
         f"{result.message}"
     )
 
@@ -58,12 +61,9 @@ def build_app(settings: Settings) -> App:
             payload = extract_event_payload(str(event.get("text", "")))
             handoff = HandoffEvent.model_validate(payload)
             result = router.route(handoff)
-        except (ValueError, json.JSONDecodeError, ValidationError) as exc:
-            # Error text is safe because Settings validators never include tokens.
-            say(
-                text=f"Event validation failed: {exc}",
-                thread_ts=thread_ts,
-            )
+        except (ValueError, json.JSONDecodeError, ValidationError):
+            # Never echo the payload or exception because users can paste secrets.
+            say(text=_VALIDATION_ERROR_MESSAGE, thread_ts=thread_ts)
             return
 
         say(text=format_result(result), thread_ts=thread_ts)
