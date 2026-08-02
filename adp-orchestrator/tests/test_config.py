@@ -20,8 +20,23 @@ def base_settings(tmp_path: Path) -> dict[str, object]:
 def test_accepts_valid_configuration(tmp_path: Path) -> None:
     settings = Settings(**base_settings(tmp_path))
     assert settings.adp_db_path == tmp_path / "orchestrator.sqlite3"
+    assert settings.adp_lock_lease_seconds == 3600
     assert settings.notion_token is None
     assert settings.github_token is None
+
+
+def test_accepts_custom_lock_lease(tmp_path: Path) -> None:
+    values = base_settings(tmp_path)
+    values["adp_lock_lease_seconds"] = 7200
+    assert Settings(**values).adp_lock_lease_seconds == 7200
+
+
+def test_rejects_too_short_lock_lease(tmp_path: Path) -> None:
+    values = base_settings(tmp_path)
+    values["adp_lock_lease_seconds"] = 29
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(**values)
+    assert "ADP_LOCK_LEASE_SECONDS" in str(exc_info.value)
 
 
 def test_accepts_optional_secret_tokens(tmp_path: Path) -> None:
