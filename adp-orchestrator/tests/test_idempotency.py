@@ -36,7 +36,7 @@ def test_expired_lock_is_reclaimed(tmp_path: Path) -> None:
     assert lock.run_id == "run-2"
 
 
-def test_heartbeat_extends_exact_run_lock(tmp_path: Path) -> None:
+def test_heartbeat_extends_exact_non_terminal_run(tmp_path: Path) -> None:
     db_path = tmp_path / "orchestrator.sqlite3"
     store = IdempotencyStore(db_path, 3600)
     assert store.acquire_task("ADP-012", "claude", "run-1") is True
@@ -64,11 +64,14 @@ def test_heartbeat_extends_exact_run_lock(tmp_path: Path) -> None:
     assert extended == (1,)
 
 
-def test_heartbeat_cannot_extend_same_agent_different_run(tmp_path: Path) -> None:
+def test_heartbeat_rejects_wrong_or_terminal_run(tmp_path: Path) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
     store.acquire_task("ADP-012", "claude", "run-1")
     assert store.heartbeat_task("ADP-012", "claude", "run-2") is False
-    assert store.current_lock("ADP-012").run_id == "run-1"  # type: ignore[union-attr]
+    assert store.claim_terminal_event(
+        "terminal-1", "terminal-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+    assert store.heartbeat_task("ADP-012", "claude", "run-1") is False
 
 
 def test_release_requires_exact_agent_and_run(tmp_path: Path) -> None:
@@ -80,94 +83,140 @@ def test_release_requires_exact_agent_and_run(tmp_path: Path) -> None:
     assert store.current_lock("ADP-012") is None
 
 
-def test_restore_released_latest_run(tmp_path: Path) -> None:
+def test_start_claim_and_lock_are_atomic_and_conflict_is_retryable(
+    tmp_path: Path,
+) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "duplicate"
+    assert store.claim_started_event(
+        "start-2", "start-key-2", "ADP-012", "gemini", "run-2"
+    ) == "conflict"
+
+    assert store.release_task("ADP-012", "claude", "run-1") is True
+    assert store.claim_started_event(
+        "start-2", "start-key-2", "ADP-012", "gemini", "run-2"
+    ) == "accepted"
+
+
+def test_terminal_claim_reserves_exact_live_run(tmp_path: Path) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
     assert store.acquire_task("ADP-012", "claude", "run-1") is True
-    assert store.release_task("ADP-012", "claude", "run-1") is True
 
-    assert store.restore_task_if_latest("ADP-012", "claude", "run-1") is True
+    assert store.claim_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
     lock = store.current_lock("ADP-012")
     assert lock is not None
-    assert lock.agent == "claude"
-    assert lock.run_id == "run-1"
+    assert lock.terminal_event_id == "complete-1"
+    assert store.claim_terminal_event(
+        "fail-1", "fail-key-1", "ADP-012", "claude", "run-1"
+    ) == "conflict"
 
 
-def test_restore_rejects_run_superseded_even_after_successor_completes(
+def test_start_rollback_releases_claim_only_with_live_non_terminal_lock(
     tmp_path: Path,
 ) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
-    assert store.acquire_task("ADP-012", "claude", "run-1") is True
-    assert store.release_task("ADP-012", "claude", "run-1") is True
-    assert store.acquire_task("ADP-012", "gemini", "run-2") is True
-    assert store.release_task("ADP-012", "gemini", "run-2") is True
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
 
-    assert store.restore_task_if_latest("ADP-012", "claude", "run-1") is False
+    assert store.rollback_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) is True
+    assert store.current_lock("ADP-012") is None
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+
+
+def test_start_rollback_cannot_resurrect_completed_run(tmp_path: Path) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+    assert store.claim_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+
+    assert store.rollback_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) is False
+    assert store.finalize_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) is True
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "duplicate"
     assert store.current_lock("ADP-012") is None
 
 
-def test_atomic_start_rollback_releases_claim_and_exact_lock(
+def test_terminal_rollback_keeps_lock_and_allows_exact_retry(
     tmp_path: Path,
 ) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
-    assert store.claim_event("event-1", "key-1") is True
-    assert store.acquire_task("ADP-012", "claude", "run-1") is True
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+    assert store.claim_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
 
-    store.rollback_started_event(
-        "event-1",
-        "key-1",
-        "ADP-012",
-        "claude",
-        "run-1",
-    )
-
-    assert store.current_lock("ADP-012") is None
-    assert store.claim_event("event-1", "key-1") is True
-
-
-def test_atomic_terminal_rollback_releases_claim_and_restores_latest_lock(
-    tmp_path: Path,
-) -> None:
-    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
-    assert store.acquire_task("ADP-012", "claude", "run-1") is True
-    assert store.release_task("ADP-012", "claude", "run-1") is True
-    assert store.claim_event("event-1", "key-1") is True
-
-    restored = store.rollback_terminal_event(
-        "event-1",
-        "key-1",
-        "ADP-012",
-        "claude",
-        "run-1",
-    )
-
-    assert restored is True
+    assert store.rollback_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) is True
     lock = store.current_lock("ADP-012")
     assert lock is not None
     assert lock.run_id == "run-1"
-    assert store.claim_event("event-1", "key-1") is True
+    assert lock.terminal_event_id is None
+    assert store.claim_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
 
 
-def test_atomic_terminal_rollback_does_not_restore_superseded_run(
+def test_successor_cannot_start_until_terminal_delivery_finalizes(
     tmp_path: Path,
 ) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
-    assert store.acquire_task("ADP-012", "claude", "run-1") is True
-    assert store.release_task("ADP-012", "claude", "run-1") is True
-    assert store.acquire_task("ADP-012", "gemini", "run-2") is True
-    assert store.release_task("ADP-012", "gemini", "run-2") is True
-    assert store.claim_event("event-1", "key-1") is True
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+    assert store.claim_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
 
-    restored = store.rollback_terminal_event(
-        "event-1",
-        "key-1",
-        "ADP-012",
-        "claude",
-        "run-1",
-    )
+    assert store.claim_started_event(
+        "start-2", "start-key-2", "ADP-012", "gemini", "run-2"
+    ) == "conflict"
+    assert store.finalize_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) is True
+    assert store.claim_started_event(
+        "start-2", "start-key-2", "ADP-012", "gemini", "run-2"
+    ) == "accepted"
 
-    assert restored is False
+
+def test_terminal_finalize_keeps_claim_deduplicated(tmp_path: Path) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.claim_started_event(
+        "start-1", "start-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+    assert store.claim_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) == "accepted"
+    assert store.finalize_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) is True
+
     assert store.current_lock("ADP-012") is None
-    assert store.claim_event("event-1", "key-1") is True
+    assert store.claim_terminal_event(
+        "complete-1", "complete-key-1", "ADP-012", "claude", "run-1"
+    ) == "duplicate"
 
 
 def test_legacy_lock_without_run_or_lease_is_recovered(tmp_path: Path) -> None:
