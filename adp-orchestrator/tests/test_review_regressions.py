@@ -36,55 +36,6 @@ def make_event(**overrides: object) -> HandoffEvent:
     return HandoffEvent.model_validate(payload)
 
 
-def test_terminal_event_conflicts_when_exact_release_loses_race(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    subject = EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3"))
-    first_start = make_event(
-        event_id="start-1",
-        event_type="work_started",
-        status="running",
-        to_agent="claude",
-        attempt=1,
-    )
-    next_start = make_event(
-        event_id="start-2",
-        event_type="work_started",
-        status="running",
-        to_agent="gemini",
-        attempt=2,
-    )
-    assert subject.route(first_start).kind == "accepted"
-
-    original_release = subject.store.release_task
-
-    def lose_release_race(
-        task_id: str,
-        expected_agent: str,
-        expected_run_id: str,
-    ) -> bool:
-        assert original_release(task_id, expected_agent, expected_run_id)
-        assert subject.store.acquire_task(task_id, "gemini", next_start.run_id)
-        return False
-
-    monkeypatch.setattr(subject.store, "release_task", lose_release_race)
-    completion = make_event(
-        event_id="complete-1",
-        from_agent="claude",
-        to_agent="chris",
-        event_type="work_completed",
-        status="done",
-        attempt=1,
-    )
-
-    result = subject.route(completion)
-
-    assert result.kind == "conflict"
-    assert result.status == "running"
-    assert result.target_agent == "gemini"
-
-
 def test_wrong_worker_does_not_claim_real_owners_terminal_event(
     tmp_path: Path,
 ) -> None:
@@ -116,21 +67,23 @@ def test_wrong_worker_does_not_claim_real_owners_terminal_event(
     )
 
     assert subject.route(wrong_owner).kind == "conflict"
-    assert subject.route(real_owner).kind == "accepted"
+    real_result = subject.route(real_owner)
+    assert real_result.kind == "accepted"
+    subject.finalize(real_owner, real_result)
 
 
-def test_terminal_rollback_cannot_restore_run_after_successor_completed(
+def test_late_start_rollback_retains_claim_after_terminal_reservation(
     tmp_path: Path,
 ) -> None:
     subject = EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3"))
-    first_start = make_event(
+    started = make_event(
         event_id="start-1",
         event_type="work_started",
         status="running",
         to_agent="claude",
         attempt=1,
     )
-    first_complete = make_event(
+    completed = make_event(
         event_id="complete-1",
         from_agent="claude",
         to_agent="chris",
@@ -138,39 +91,96 @@ def test_terminal_rollback_cannot_restore_run_after_successor_completed(
         status="done",
         attempt=1,
     )
-    second_start = make_event(
+
+    assert subject.route(started).kind == "accepted"
+    completed_result = subject.route(completed)
+    assert completed_result.kind == "accepted"
+
+    subject.rollback(started)
+    subject.finalize(completed, completed_result)
+
+    assert subject.route(started).kind == "ignored"
+    assert subject.store.current_lock("ADP-012") is None
+
+
+def test_terminal_delivery_failure_blocks_successor_and_remains_retryable(
+    tmp_path: Path,
+) -> None:
+    subject = EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3"))
+    started = make_event(
+        event_id="start-1",
+        event_type="work_started",
+        status="running",
+        to_agent="claude",
+        attempt=1,
+    )
+    completed = make_event(
+        event_id="complete-1",
+        from_agent="claude",
+        to_agent="chris",
+        event_type="work_completed",
+        status="done",
+        attempt=1,
+    )
+    successor = make_event(
         event_id="start-2",
         event_type="work_started",
         status="running",
         to_agent="gemini",
         attempt=2,
     )
-    second_complete = make_event(
-        event_id="complete-2",
-        from_agent="gemini",
+
+    assert subject.route(started).kind == "accepted"
+    assert subject.route(completed).kind == "accepted"
+    assert subject.route(successor).kind == "conflict"
+
+    subject.rollback(completed)
+
+    lock = subject.store.current_lock("ADP-012")
+    assert lock is not None
+    assert lock.run_id == completed.run_id
+    assert lock.terminal_event_id is None
+    assert subject.route(successor).kind == "conflict"
+
+    retry_result = subject.route(completed)
+    assert retry_result.kind == "accepted"
+    subject.finalize(completed, retry_result)
+    assert subject.route(successor).kind == "accepted"
+
+
+def test_first_terminal_reservation_rejects_contradictory_terminal(
+    tmp_path: Path,
+) -> None:
+    subject = EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3"))
+    started = make_event(
+        event_id="start-1",
+        event_type="work_started",
+        status="running",
+        to_agent="claude",
+        attempt=1,
+    )
+    completed = make_event(
+        event_id="complete-1",
+        from_agent="claude",
         to_agent="chris",
         event_type="work_completed",
         status="done",
-        attempt=2,
+        attempt=1,
     )
-    third_start = make_event(
-        event_id="start-3",
-        event_type="work_started",
-        status="running",
-        to_agent="codex",
-        attempt=3,
+    failed = make_event(
+        event_id="failed-1",
+        from_agent="claude",
+        to_agent="chris",
+        event_type="failed",
+        status="blocked",
+        attempt=1,
     )
 
-    assert subject.route(first_start).kind == "accepted"
-    assert subject.route(first_complete).kind == "accepted"
-    assert subject.route(second_start).kind == "accepted"
-    assert subject.route(second_complete).kind == "accepted"
-
-    subject.rollback(first_complete)
-
-    result = subject.route(third_start)
-    assert result.kind == "accepted"
-    assert result.target_agent == "codex"
+    assert subject.route(started).kind == "accepted"
+    completed_result = subject.route(completed)
+    assert completed_result.kind == "accepted"
+    assert subject.route(failed).kind == "conflict"
+    subject.finalize(completed, completed_result)
 
 
 def test_fenced_json_keeps_closing_braces_inside_strings() -> None:
