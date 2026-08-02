@@ -9,14 +9,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables.
 
-    Validation errors intentionally mention only variable names and never include
-    secret values.
+    Validation errors mention variable names but hide the supplied values.
     """
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     slack_bot_token: str
