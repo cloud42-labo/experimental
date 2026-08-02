@@ -51,4 +51,9 @@ class HandoffEvent(BaseModel):
 
     @property
     def idempotency_key(self) -> str:
-        return f"{self.correlation_id}:{self.task_id}:{self.event_type}"
+        # A retry is a distinct semantic event. The Slack envelope event_id still
+        # deduplicates transport retries within the same attempt.
+        return (
+            f"{self.correlation_id}:{self.task_id}:"
+            f"{self.event_type}:attempt-{self.attempt}"
+        )
