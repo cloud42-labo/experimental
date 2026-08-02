@@ -26,6 +26,7 @@ _AGENT_NAMES = {
     "chris": "ChatGPT",
     "claude": "Claude Opus",
     "gemini": "Gemini CLI",
+    "codex": "Codex",
     "human": "Human",
 }
 
@@ -60,12 +61,7 @@ def _rich_text(content: str) -> dict[str, object]:
 
 
 class NotionTaskRepository:
-    """Updates one Stories & Tasks row through Notion's Update page API.
-
-    The adapter is intentionally not enabled by default. It can be injected into
-    ``OrchestrationService`` after a Notion token and page-sharing permissions are
-    configured.
-    """
+    """Updates one Stories & Tasks row through Notion's Update page API."""
 
     def __init__(
         self,
@@ -101,17 +97,22 @@ class NotionTaskRepository:
             properties["Blocker"] = {"rich_text": []}
             properties["Environment Help"] = {"checkbox": False}
 
-        response = self.client.patch(
-            f"{_NOTION_API_BASE}/pages/{page_id}",
-            headers={
-                "Authorization": (
-                    f"Bearer {self.config.token.get_secret_value()}"
-                ),
-                "Content-Type": "application/json",
-                "Notion-Version": self.config.api_version,
-            },
-            json={"properties": properties},
-        )
+        try:
+            response = self.client.patch(
+                f"{_NOTION_API_BASE}/pages/{page_id}",
+                headers={
+                    "Authorization": (
+                        f"Bearer {self.config.token.get_secret_value()}"
+                    ),
+                    "Content-Type": "application/json",
+                    "Notion-Version": self.config.api_version,
+                },
+                json={"properties": properties},
+            )
+        except httpx.RequestError as exc:
+            # Never include exception text because it can contain a URL, headers,
+            # proxy details, or user-controlled transport diagnostics.
+            raise NotionAdapterError("Notion page update transport failed") from exc
 
         if response.is_error:
             raise NotionAdapterError(
