@@ -30,18 +30,16 @@ class EventRouter:
         if event.event_type == "work_started":
             self.store.release_task(event.task_id, event.to_agent, event.run_id)
         elif event.event_type in {"work_completed", "failed"}:
-            if self.store.current_lock(event.task_id) is None:
-                self.store.acquire_task(
-                    event.task_id,
-                    event.from_agent,
-                    event.run_id,
-                )
+            self.store.restore_task_if_latest(
+                event.task_id,
+                event.from_agent,
+                event.run_id,
+            )
         elif (
             event.event_type == "human_required"
             and event.from_agent in _WORKER_AGENTS
-            and self.store.current_lock(event.task_id) is None
         ):
-            self.store.acquire_task(
+            self.store.restore_task_if_latest(
                 event.task_id,
                 event.from_agent,
                 event.run_id,
