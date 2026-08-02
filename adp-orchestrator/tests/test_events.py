@@ -21,9 +21,19 @@ def valid_payload() -> dict[str, object]:
     }
 
 
-def test_valid_event_has_stable_idempotency_key() -> None:
+def test_idempotency_key_includes_attempt() -> None:
     event = HandoffEvent.model_validate(valid_payload())
-    assert event.idempotency_key == "correlation-1:ADP-012:task_assigned"
+    assert event.idempotency_key == (
+        "correlation-1:ADP-012:task_assigned:attempt-1"
+    )
+
+
+def test_retry_attempt_has_distinct_idempotency_key() -> None:
+    first = HandoffEvent.model_validate(valid_payload())
+    payload = valid_payload()
+    payload["attempt"] = 2
+    second = HandoffEvent.model_validate(payload)
+    assert first.idempotency_key != second.idempotency_key
 
 
 def test_attempt_must_not_exceed_max_attempts() -> None:
