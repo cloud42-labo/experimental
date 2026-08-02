@@ -118,6 +118,7 @@ function Get-AdpCredentialSecret {
 $botToken = $null
 $appToken = $null
 $process = $null
+$processInfo = $null
 $exitCode = 1
 
 try {
