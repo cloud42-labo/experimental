@@ -70,10 +70,7 @@ def service(tmp_path: Path) -> tuple[
 
 def test_assignment_records_task_and_enqueues_agent(tmp_path: Path) -> None:
     subject, tasks, agents = service(tmp_path)
-    event = make_event()
-
-    result = subject.handle(event)
-
+    result = subject.handle(make_event())
     assert result.kind == "accepted"
     assert len(tasks.records) == 1
     assert len(agents.records) == 1
@@ -82,10 +79,8 @@ def test_assignment_records_task_and_enqueues_agent(tmp_path: Path) -> None:
 def test_duplicate_has_no_external_side_effects(tmp_path: Path) -> None:
     subject, tasks, agents = service(tmp_path)
     event = make_event()
-
     subject.handle(event)
     result = subject.handle(event)
-
     assert result.kind == "ignored"
     assert len(tasks.records) == 1
     assert len(agents.records) == 1
@@ -93,15 +88,14 @@ def test_duplicate_has_no_external_side_effects(tmp_path: Path) -> None:
 
 def test_human_request_is_recorded_but_never_auto_activated(tmp_path: Path) -> None:
     subject, tasks, agents = service(tmp_path)
-    event = make_event(
-        event_type="human_required",
-        status="blocked",
-        to_agent="human",
-        requires_human=True,
+    result = subject.handle(
+        make_event(
+            event_type="human_required",
+            status="blocked",
+            to_agent="human",
+            requires_human=True,
+        )
     )
-
-    result = subject.handle(event)
-
     assert result.kind == "human_required"
     assert len(tasks.records) == 1
     assert agents.records == []
@@ -121,7 +115,29 @@ def test_adapter_failure_allows_same_event_to_retry(tmp_path: Path) -> None:
         subject.handle(event)
 
     result = subject.handle(event)
-
     assert result.kind == "accepted"
     assert result.status == "running"
     assert len(tasks.records) == 1
+
+
+def test_stale_terminal_conflict_has_no_external_side_effects(
+    tmp_path: Path,
+) -> None:
+    subject, tasks, agents = service(tmp_path)
+    subject.handle(make_event(event_type="work_started", status="running"))
+    tasks.records.clear()
+    agents.records.clear()
+
+    result = subject.handle(
+        make_event(
+            event_id="late-complete",
+            from_agent="gemini",
+            to_agent="chris",
+            event_type="work_completed",
+            status="done",
+        )
+    )
+
+    assert result.kind == "conflict"
+    assert tasks.records == []
+    assert agents.records == []
