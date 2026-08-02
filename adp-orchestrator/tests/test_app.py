@@ -23,6 +23,10 @@ class RecordingService:
     def __init__(self) -> None:
         self.rolled_back: list[HandoffEvent] = []
         self.finalized: list[tuple[HandoffEvent, RouteResult]] = []
+        self.delivery_checks: list[tuple[HandoffEvent, RouteResult]] = []
+
+    def ensure_delivery(self, event: HandoffEvent, result: RouteResult) -> None:
+        self.delivery_checks.append((event, result))
 
     def rollback(self, event: HandoffEvent) -> None:
         self.rolled_back.append(event)
@@ -195,6 +199,7 @@ def test_successful_delivery_finalizes_accepted_result(tmp_path: Path) -> None:
 
     assert service.finalized == [(event, result)]
     assert service.rolled_back == []
+    assert service.delivery_checks == [(event, result), (event, result)]
 
 
 def test_slack_thread_reply_failure_rolls_back_event(tmp_path: Path) -> None:
@@ -223,6 +228,7 @@ def test_slack_thread_reply_failure_rolls_back_event(tmp_path: Path) -> None:
 
     assert service.finalized == []
     assert service.rolled_back == [event]
+    assert service.delivery_checks == [(event, result)]
 
 
 def test_human_channel_failure_rolls_back_event(tmp_path: Path) -> None:
@@ -249,6 +255,7 @@ def test_human_channel_failure_rolls_back_event(tmp_path: Path) -> None:
 
     assert service.finalized == []
     assert service.rolled_back == [event]
+    assert service.delivery_checks == [(event, result), (event, result)]
 
 
 def test_finalize_failure_rolls_back_reserved_result(tmp_path: Path) -> None:
@@ -274,6 +281,7 @@ def test_finalize_failure_rolls_back_reserved_result(tmp_path: Path) -> None:
         )
 
     assert service.rolled_back == [event]
+    assert service.delivery_checks == [(event, result), (event, result)]
 
 
 def test_ignored_delivery_failure_does_not_remove_original_claim(
