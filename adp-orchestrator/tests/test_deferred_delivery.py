@@ -4,6 +4,7 @@ from pathlib import Path
 from adp_orchestrator.app import DeferredDeliveryScheduler
 from adp_orchestrator.config import Settings
 from adp_orchestrator.events import HandoffEvent
+from adp_orchestrator.outbox import DeferredDeliveryOutbox
 from adp_orchestrator.router import RouteResult
 
 
@@ -36,12 +37,27 @@ class DeferredThenAcceptedService:
             target_agent=event.to_agent,
         )
 
+    def ensure_delivery(self, event: HandoffEvent, result: RouteResult) -> None:
+        del event, result
+
     def finalize(self, event: HandoffEvent, result: RouteResult) -> None:
         del event, result
         self.finalized.set()
 
     def rollback(self, event: HandoffEvent) -> None:
         self.rolled_back.append(event)
+
+
+class AcceptedService(DeferredThenAcceptedService):
+    def handle(self, event: HandoffEvent) -> RouteResult:
+        self.calls += 1
+        return RouteResult(
+            kind="accepted",
+            task_id=event.task_id,
+            status="done",
+            message="Persisted delivery accepted.",
+            target_agent=event.to_agent,
+        )
 
 
 class RecordingClient:
@@ -81,38 +97,90 @@ def terminal_event() -> HandoffEvent:
     )
 
 
-def test_deferred_redelivery_is_retained_and_retried_automatically(
+def scheduler(
+    *,
+    tmp_path: Path,
+    service: DeferredThenAcceptedService,
+    client: RecordingClient,
+    outbox: DeferredDeliveryOutbox,
+) -> DeferredDeliveryScheduler:
+    return DeferredDeliveryScheduler(
+        runtime=ActiveRuntime(),  # type: ignore[arg-type]
+        service=service,  # type: ignore[arg-type]
+        settings=settings(tmp_path),
+        client=client,
+        outbox=outbox,
+        retry_seconds=0.01,
+        poll_seconds=0.01,
+        claim_seconds=0.05,
+    )
+
+
+def test_deferred_redelivery_is_persisted_and_retried_automatically(
     tmp_path: Path,
 ) -> None:
     service = DeferredThenAcceptedService()
     client = RecordingClient()
-    scheduler = DeferredDeliveryScheduler(
-        runtime=ActiveRuntime(),  # type: ignore[arg-type]
-        service=service,  # type: ignore[arg-type]
-        settings=settings(tmp_path),
-        retry_seconds=0.01,
+    outbox = DeferredDeliveryOutbox(tmp_path / "orchestrator.sqlite3")
+    subject = scheduler(
+        tmp_path=tmp_path,
+        service=service,
+        client=client,
+        outbox=outbox,
     )
+    subject.start()
     event = terminal_event()
 
-    assert scheduler.schedule(
+    subject.defer(
         handoff=event,
         channel="C_CONTROL",
         thread_ts="123.45",
-        client=client,
-    ) is True
-    assert scheduler.schedule(
+    )
+    subject.defer(
         handoff=event,
         channel="C_CONTROL",
         thread_ts="123.45",
-        client=client,
-    ) is False
+    )
 
     assert service.finalized.wait(timeout=1.0) is True
-    scheduler.stop()
+    subject.stop()
 
     assert service.calls == 2
     assert service.rolled_back == []
+    assert outbox.count() == 0
     assert len(client.messages) == 1
     assert client.messages[0]["channel"] == "C_CONTROL"
     assert client.messages[0]["thread_ts"] == "123.45"
     assert "Recovered delivery accepted" in str(client.messages[0]["text"])
+
+
+def test_new_scheduler_resumes_delivery_persisted_before_restart(
+    tmp_path: Path,
+) -> None:
+    event = terminal_event()
+    outbox = DeferredDeliveryOutbox(tmp_path / "orchestrator.sqlite3")
+    outbox.defer(
+        idempotency_key=event.idempotency_key,
+        event_json=event.model_dump_json(),
+        channel_id="C_CONTROL",
+        thread_ts="123.45",
+        delay_seconds=0.001,
+    )
+
+    service = AcceptedService()
+    client = RecordingClient()
+    replacement = scheduler(
+        tmp_path=tmp_path,
+        service=service,
+        client=client,
+        outbox=DeferredDeliveryOutbox(tmp_path / "orchestrator.sqlite3"),
+    )
+    replacement.start()
+
+    assert service.finalized.wait(timeout=1.0) is True
+    replacement.stop()
+
+    assert outbox.count() == 0
+    assert service.calls == 1
+    assert len(client.messages) == 1
+    assert "Persisted delivery accepted" in str(client.messages[0]["text"])
