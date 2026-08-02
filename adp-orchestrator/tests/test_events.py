@@ -23,6 +23,21 @@ def valid_payload() -> dict[str, object]:
     }
 
 
+def terminal_payload() -> dict[str, object]:
+    payload = valid_payload()
+    payload.update(
+        {
+            "event_id": "complete-1",
+            "from_agent": "claude",
+            "to_agent": "chris",
+            "event_type": "work_completed",
+            "status": "done",
+            "summary": "Completed the work",
+        }
+    )
+    return payload
+
+
 def test_run_id_and_event_key_are_stable_versioned_hashes() -> None:
     first = HandoffEvent.model_validate(valid_payload())
     second = HandoffEvent.model_validate(valid_payload())
@@ -89,6 +104,64 @@ def test_heartbeat_redelivery_has_same_key() -> None:
     first = HandoffEvent.model_validate(payload)
     second = HandoffEvent.model_validate(payload)
     assert first.idempotency_key == second.idempotency_key
+
+
+def test_terminal_redelivery_with_new_envelope_has_same_key() -> None:
+    first_payload = terminal_payload()
+    second_payload = dict(first_payload)
+    second_payload["event_id"] = "complete-redelivery"
+
+    first = HandoffEvent.model_validate(first_payload)
+    second = HandoffEvent.model_validate(second_payload)
+
+    assert first.run_id == second.run_id
+    assert first.idempotency_key == second.idempotency_key
+
+
+@pytest.mark.parametrize(
+    ("field", "changed_value"),
+    [
+        ("status", "review"),
+        ("summary", "Changed completion details"),
+        ("max_attempts", 4),
+        ("to_agent", "codex"),
+        ("github_url", "https://github.com/cloud42-labo/experimental/pull/58"),
+    ],
+)
+def test_terminal_outcome_changes_produce_distinct_keys(
+    field: str,
+    changed_value: object,
+) -> None:
+    first_payload = terminal_payload()
+    changed_payload = dict(first_payload)
+    changed_payload[field] = changed_value
+
+    first = HandoffEvent.model_validate(first_payload)
+    changed = HandoffEvent.model_validate(changed_payload)
+
+    assert first.run_id == changed.run_id
+    assert first.idempotency_key != changed.idempotency_key
+
+
+def test_failed_escalation_rule_is_bound_to_terminal_key() -> None:
+    first_payload = terminal_payload()
+    first_payload.update(
+        {
+            "event_type": "failed",
+            "status": "blocked",
+            "summary": "Attempt failed",
+            "attempt": 3,
+            "max_attempts": 3,
+        }
+    )
+    changed_payload = dict(first_payload)
+    changed_payload["max_attempts"] = 4
+
+    first = HandoffEvent.model_validate(first_payload)
+    changed = HandoffEvent.model_validate(changed_payload)
+
+    assert first.run_id == changed.run_id
+    assert first.idempotency_key != changed.idempotency_key
 
 
 def test_attempt_must_not_exceed_max_attempts() -> None:
