@@ -70,7 +70,9 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
 }
 ```
 
-実Slackイベントでは、JSON内の`event_id`よりSlack署名済みEnvelopeの`event_id`を優先します。MVPは検証結果と次工程を同じSlackスレッドへ返信します。
+実Slackイベントでは、JSON内の`event_id`よりSlack署名済みEnvelopeの`event_id`を優先します。`attempt`は冪等キーに含まれるため、同じ`correlation_id`でもattempt 2・3を別の再試行として処理できます。
+
+Taskロックは`work_started`で取得し、`work_completed`または`failed`を送信したAgent本人だけが解除できます。古いAgentから遅れて届いた完了・失敗イベントは現行AgentのロックやNotion状態を変更しません。
 
 ## Adapter構造
 
@@ -81,7 +83,9 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
 - `GitHubReferenceClient`: Issue / Pull Requestを読み取る境界
 - MVP既定値は`NoopTaskRepository`と`NoopAgentActivator`
 
-`NOTION_TOKEN`が未設定ならTask更新はNo-opです。設定されている場合だけ`NotionTaskRepository`が自動的に有効になり、`Status`、`Result`、`Assigned Agent`、`Blocker`、`Environment Help`を更新します。外部更新が一時失敗した場合はイベントClaimとTaskロックを戻し、設定修正後に同じイベントを再試行できます。
+`NOTION_TOKEN`が未設定ならTask更新はNo-opです。設定されている場合だけ`NotionTaskRepository`が自動的に有効になり、`Status`、`Result`、`Assigned Agent`、`Blocker`、`Environment Help`を更新します。
+
+Notion更新、AI起動、Slack返信・Human Request通知が一時失敗した場合はevent claimを戻します。`work_started`の失敗時は取得したロックも解除し、完了・失敗イベントの配信失敗時は元のWorkerロックを可能な範囲で復元します。これによりSlack再送または再投稿で処理を継続できます。
 
 `GitHubReferenceClient`は読み取り専用です。公開Issue / PRはTokenなし、privateリポジトリは`GITHUB_TOKEN`付きで参照できます。MVPではGitHubへの書き込みは行いません。
 
@@ -91,15 +95,18 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
 pytest
 ```
 
-現在の純粋ロジック・モックHTTPテストは40件です。
+現在の純粋ロジック・モックHTTPテストは45件です。
 
 - イベント契約の検証
+- attemptを含む冪等キーとattempt 3までのエスカレーション
 - Slack Envelope event IDの優先
 - 原子的な重複イベント排除
 - `task_assigned`から`work_started`への正常遷移
 - 同一Taskの二重Running防止
+- Lock Owner一致による完了・失敗時の解除
+- 古いAgentの完了・失敗イベントの拒否
 - 失敗時のロック解放と再試行
-- 外部Adapter失敗後のイベントClaimロールバック
+- 外部Adapter・Slack送信失敗後のevent claimロールバック
 - 3回失敗後のHuman Request化
 - Human Request対象の自動起動禁止
 - Tokenを例外へ含めない設定検証
@@ -114,14 +121,14 @@ pytest
 ```text
 src/adp_orchestrator/
 ├── adapters.py       # Notion・AI起動の境界と安全なNo-op
-├── app.py            # Slack Socket Modeの入口
+├── app.py            # Slack Socket Modeの入口と送信失敗Rollback
 ├── config.py         # 環境変数検証と任意Token
-├── events.py         # メッセージ契約
+├── events.py         # メッセージ契約とattempt単位の冪等キー
 ├── github_adapter.py # GitHub Issue / PR読み取りAdapter
-├── idempotency.py    # SQLite処理履歴とTaskロック
+├── idempotency.py    # SQLite処理履歴とOwner付きTaskロック
 ├── notion_adapter.py # Notion Page更新Adapter
-├── router.py         # 状態遷移とルーティング
-└── service.py        # RouterとAdapterの調停・失敗時Rollback
+├── router.py         # 状態遷移、Owner検証、Rollback
+└── service.py        # RouterとAdapterの調停
 ```
 
 ## 制約
