@@ -23,7 +23,7 @@ class EventRouter:
         self.store = store
 
     def route(self, event: HandoffEvent) -> RouteResult:
-        if self.store.is_processed(event.event_id, event.idempotency_key):
+        if not self.store.claim_event(event.event_id, event.idempotency_key):
             return RouteResult(
                 kind="ignored",
                 task_id=event.task_id,
@@ -33,7 +33,7 @@ class EventRouter:
             )
 
         if event.requires_human or event.event_type == "human_required":
-            self.store.mark_processed(event.event_id, event.idempotency_key)
+            self.store.release_task(event.task_id)
             return RouteResult(
                 kind="human_required",
                 task_id=event.task_id,
@@ -42,32 +42,33 @@ class EventRouter:
                 target_agent="human",
             )
 
-        if event.event_type == "failed" and event.attempt >= event.max_attempts:
+        if event.event_type == "failed":
             self.store.release_task(event.task_id)
-            self.store.mark_processed(event.event_id, event.idempotency_key)
-            return RouteResult(
-                kind="human_required",
-                task_id=event.task_id,
-                status="blocked",
-                message=(
-                    f"Automatic attempts exhausted ({event.attempt}/"
-                    f"{event.max_attempts}). Human review required."
-                ),
-                target_agent="human",
-            )
+            if event.attempt >= event.max_attempts:
+                return RouteResult(
+                    kind="human_required",
+                    task_id=event.task_id,
+                    status="blocked",
+                    message=(
+                        f"Automatic attempts exhausted ({event.attempt}/"
+                        f"{event.max_attempts}). Human review required."
+                    ),
+                    target_agent="human",
+                )
 
-        if event.event_type in {"task_assigned", "work_started"}:
+        # Assignment announces the next agent but does not lock the task.
+        # The lock starts only when work_started is received.
+        if event.event_type == "work_started":
             acquired = self.store.acquire_task(event.task_id, event.to_agent)
             if not acquired:
                 current_agent = self.store.current_agent(event.task_id)
-                self.store.mark_processed(event.event_id, event.idempotency_key)
                 return RouteResult(
                     kind="conflict",
                     task_id=event.task_id,
                     status="running",
                     message=(
                         f"Task is already running with agent {current_agent}; "
-                        "second assignment was not started."
+                        "second start was not accepted."
                     ),
                     target_agent=current_agent,
                 )
@@ -75,7 +76,6 @@ class EventRouter:
         if event.event_type == "work_completed":
             self.store.release_task(event.task_id)
 
-        self.store.mark_processed(event.event_id, event.idempotency_key)
         next_status = {
             "task_assigned": "ready",
             "work_started": "running",
