@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from .adapters import AgentActivator, TaskRepository
 from .events import HandoffEvent
 from .router import EventRouter, RouteResult
+
+DeliveryGuard = Callable[[HandoffEvent, RouteResult], None]
 
 
 class OrchestrationService:
@@ -13,16 +17,22 @@ class OrchestrationService:
         router: EventRouter,
         task_repository: TaskRepository,
         agent_activator: AgentActivator,
+        delivery_guard: DeliveryGuard | None = None,
     ) -> None:
         self.router = router
         self.task_repository = task_repository
         self.agent_activator = agent_activator
+        self.delivery_guard = delivery_guard
 
     def rollback(self, event: HandoffEvent) -> None:
         self.router.rollback(event)
 
     def finalize(self, event: HandoffEvent, result: RouteResult) -> None:
         self.router.finalize(event, result)
+
+    def ensure_delivery(self, event: HandoffEvent, result: RouteResult) -> None:
+        if self.delivery_guard is not None:
+            self.delivery_guard(event, result)
 
     def handle(self, event: HandoffEvent) -> RouteResult:
         result = self.router.route(event)
@@ -36,6 +46,7 @@ class OrchestrationService:
             return result
 
         try:
+            self.ensure_delivery(event, result)
             self.task_repository.record(event, result)
 
             should_enqueue = (
@@ -44,6 +55,7 @@ class OrchestrationService:
                 and result.target_agent not in {None, "human"}
             )
             if should_enqueue:
+                self.ensure_delivery(event, result)
                 self.agent_activator.enqueue(event, result)
         except Exception:
             self.rollback(event)
