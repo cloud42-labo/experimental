@@ -41,7 +41,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-WindowsでTokenを`.env`へ複製せずに起動するLauncherはスタックPR #58で提供します。Windows資格情報マネージャーの汎用資格情報を正本にし、Tokenを子Python Processへだけ渡します。
+WindowsでTokenを`.env`へ複製せずに起動するLauncherはPR #58で提供します。Windows資格情報マネージャーの汎用資格情報を正本にし、Tokenを子Python Processへだけ渡します。
 
 ## 設定
 
@@ -55,7 +55,7 @@ ADP_RUNTIME_HEARTBEAT_SECONDS=10
 - `ADP_RUNTIME_LEASE_SECONDS`: Orchestrator Process OwnerのLease
 - `ADP_RUNTIME_HEARTBEAT_SECONDS`: Process Owner Heartbeat間隔
 
-Runtime HeartbeatはRuntime Leaseの3分の1以下にします。アプリはDaemon Threadと各Slackイベント受付前の両方でOwner Leaseを更新します。
+Runtime HeartbeatはRuntime Leaseより短く設定します。アプリはDaemon Threadと各Slackイベント受付前の両方でOwner Leaseを更新します。
 
 ## 起動
 
@@ -64,6 +64,22 @@ python -m adp_orchestrator.app
 ```
 
 Slackの`#adp-control`で`@ADP Orchestrator`に続けてJSONイベントを投稿します。実Slackイベントでは、JSON内の`event_id`よりSlack署名済みEnvelopeの`event_id`を優先します。先頭のOrchestrator mentionだけを除去し、`summary`などJSON文字列内のSlack mentionは保持します。
+
+## ACKと永続Outbox
+
+Slack Boltは`process_before_response=True`で構築し、Listener完了前の早期ACKを防ぎます。
+
+Validation済みイベントは、Routing、Notion更新、Agent起動、Slack返信より前にSQLiteの`deferred_deliveries` Outboxへ保存します。
+
+- 直接Listener処理が成功した場合だけOutbox行を削除する
+- Adapter、Slack、Finalizeが失敗した場合はOutbox行を残して自動再試行する
+- 同一semantic keyは1行へ集約する
+- 直接処理中は参照カウントでSchedulerによる同一イベント処理を抑止する
+- Duplicate / Conflict返信の成功はOwner処理の完了証明にしない
+- Process再起動時は保存済みOutboxを自動再開する
+- Routing ClaimがCrash前に保存済みでも、Outbox行が残る限り外部配信未完了として再構成する
+
+Claim済みの`task_assigned`、`review_requested`、`work_started`は、保存済みEventと現行Lockから受理結果を復元します。`work_started`に後続Terminal予約が存在する場合、古い`running`状態をNotionへ戻さず、欠けたSlack側だけを補完します。
 
 ## Runと冪等性
 
@@ -79,7 +95,7 @@ Terminalイベントでは、次のOutcome定義をすべて冪等キーへ含�
 - requires_human
 - attempt / max_attempts
 
-そのため、Slack Envelope IDだけが異なる完全一致の再配信は同じイベントとして扱い、status、summary、max_attemptsなどが変わった再投稿は矛盾する別Outcomeとして拒否します。
+Slack Envelope IDだけが異なる完全一致の再配信は同じOutcomeとして扱い、status、summary、max_attemptsなどが変わった再投稿は矛盾する別Outcomeとして拒否します。
 
 ## Task LockとTerminal配信予約
 
@@ -93,18 +109,20 @@ Start側の配信失敗は、Exact Runの非Terminal Lockを実際に削除で�
 
 ## Orchestrator Process OwnerとCrash復旧
 
-Terminal予約には、配信を担当するOrchestrator Processの`terminal_owner_id`を保存します。各Processは`runtime_instances`へ期限付きOwner Leaseを登録し、稼働中はHeartbeatを継続します。
+Terminal予約には配信を担当するOrchestrator Processの`terminal_owner_id`を保存します。各Processは`runtime_instances`へ期限付きOwner Leaseを登録し、稼働中はHeartbeatを継続します。
+
+ローカルMVPではSQLite DBごとのOS Process File Lockも取得し、同じDBを使うOrchestratorの二重起動を拒否します。Windowsでは`msvcrt.locking`、Unixでは`fcntl.flock`を使用します。
 
 - 旧OwnerのLeaseが有効な間、別ProcessはTerminal予約を奪わない
-- 旧Ownerが生存中に届いた同一Terminal再配信は`deferred`としてProcess内Queueへ1件だけ保持する
-- QueueはRuntime Lease経過後に自動再試行する
-- 旧Ownerが先にFinalizeした場合、Deferred処理は安全に終了する
-- 旧OwnerのLeaseが失効した場合、同じRun・同じOutcomeだけを新Processへ移譲する
+- 旧Ownerが生存中に届いた再配信はSQLite Outboxへ保持する
+- 旧Ownerが先にFinalizeした場合、Outbox側は安全に終了する
+- 旧OwnerのLease失効後は同じRun・同じOutcomeだけを新Processへ移譲する
 - 異なるTerminal Outcomeへの変更はOwner失効後も拒否する
+- Notion、Agent起動、Slack、Human Request、Finalize直前にDelivery Guardを実行する
 - 旧Ownerによる遅延Finalize / RollbackはOwner条件で拒否する
-- 正常終了ではOwner Leaseを即時解除する
+- 正常終了ではOwner LeaseとOS Process Lockを解放する
 
-Runtime Heartbeatが失敗したProcessは新しいSlackイベントを受け付けずFail Closedします。
+Runtime Heartbeatが失敗したProcessは新しいSlackイベントや外部副作用を受け付けずFail Closedします。
 
 ## Worker Heartbeat
 
@@ -160,18 +178,20 @@ GitHub Actionsは、`adp-orchestrator/**`のPull Requestと対象Branch Pushで�
 - `python -m compileall -q src`
 - Full Test Suite
 
-最新headでは112 testsが成功しています。
+最新headでは121 testsが成功しています。
 
 主な検証範囲:
 
 - Run IDと衝突しない冪等性
 - Terminal Outcome全項目の固定
 - Event ClaimとStart Lock取得の原子性
+- ACK前のOutbox永続化
+- 直接処理中のOutbox競合防止
+- Routing Claim保存後のCrash復旧
+- Process再起動後のOutbox再開
 - Terminal配信予約・Finalize・Rollback・Exact Retry
 - Terminal配信完了まで後続Runを開始させない制御
-- Start再配信による完了Runの復活防止
-- Runtime Ownerの二重配信防止とCrash Recovery
-- Active Owner中に届いた再配信のDeferred自動再試行
+- OS Process LockとRuntime Owner Fence
 - Worker / Runtime Heartbeat
 - 古いattempt、誤Agent、stale Human Requestの拒否
 - Notion / GitHub transport errorの秘密情報非露出
@@ -187,6 +207,7 @@ src/adp_orchestrator/
 ├── github_adapter.py
 ├── idempotency.py
 ├── notion_adapter.py
+├── outbox.py
 ├── router.py
 ├── runtime.py
 └── service.py
@@ -195,7 +216,7 @@ src/adp_orchestrator/
 ## 制約
 
 - PC停止中はイベントを処理しません
-- Deferred QueueはProcess内に保持します。新Process自体も再度停止した場合はSlackイベントの再投稿が必要です
+- SQLite Outboxは同じDBを使用する次回起動時に再開します
 - Slackの過去メッセージ再同期は未実装です
 - Notion実接続にはTokenとページ共有権限が必要です
 - GitHub Adapterは現在読み取り専用です
