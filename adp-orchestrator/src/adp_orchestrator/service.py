@@ -27,7 +27,7 @@ class OrchestrationService:
     def handle(self, event: HandoffEvent) -> RouteResult:
         result = self.router.route(event)
 
-        if result.kind in {"ignored", "conflict"}:
+        if result.kind in {"ignored", "conflict", "deferred"}:
             return result
 
         # Heartbeats renew only the local lease. They do not rewrite Notion or
