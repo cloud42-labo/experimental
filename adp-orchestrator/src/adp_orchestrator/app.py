@@ -33,8 +33,6 @@ _NOTION_ERROR_MESSAGE = (
 
 
 def extract_event_payload(text: str) -> dict[str, Any]:
-    """Extract a JSON object from a Slack mention without evaluating code."""
-
     cleaned = _MENTION.sub("", text).strip()
     match = _CODE_BLOCK.search(cleaned)
     candidate = match.group(1) if match else cleaned
@@ -51,8 +49,6 @@ def extract_event_payload(text: str) -> dict[str, Any]:
 def apply_envelope_event_id(
     payload: dict[str, Any], body: dict[str, Any]
 ) -> dict[str, Any]:
-    """Use Slack's signed envelope event ID instead of a user-supplied value."""
-
     enriched = dict(payload)
     envelope_event_id = body.get("event_id")
     if isinstance(envelope_event_id, str) and envelope_event_id:
@@ -76,6 +72,35 @@ def build_task_repository(settings: Settings) -> TaskRepository:
     return NotionTaskRepository(
         NotionAdapterConfig(token=settings.notion_token)
     )
+
+
+def deliver_result(
+    *,
+    handoff: HandoffEvent,
+    result: RouteResult,
+    thread_ts: str | None,
+    say: Any,
+    client: Any,
+    settings: Settings,
+    service: OrchestrationService,
+) -> None:
+    """Deliver Slack output and release the event claim if delivery fails."""
+
+    try:
+        say(text=format_result(result), thread_ts=thread_ts)
+        if result.kind == "human_required":
+            client.chat_postMessage(
+                channel=settings.adp_human_requests_channel_id,
+                text=(
+                    f"Human Request for `{result.task_id}`\n"
+                    f"{result.message}\n"
+                    f"Source thread: {thread_ts}"
+                ),
+            )
+    except Exception:
+        if result.kind != "ignored":
+            service.rollback(handoff)
+        raise
 
 
 def build_app(settings: Settings) -> App:
@@ -105,7 +130,6 @@ def build_app(settings: Settings) -> App:
             handoff = HandoffEvent.model_validate(payload)
             result = service.handle(handoff)
         except (ValueError, json.JSONDecodeError, ValidationError):
-            # Never echo the payload or exception because users can paste secrets.
             say(text=_VALIDATION_ERROR_MESSAGE, thread_ts=thread_ts)
             return
         except NotionAdapterError:
@@ -121,17 +145,15 @@ def build_app(settings: Settings) -> App:
             )
             return
 
-        say(text=format_result(result), thread_ts=thread_ts)
-
-        if result.kind == "human_required":
-            client.chat_postMessage(
-                channel=settings.adp_human_requests_channel_id,
-                text=(
-                    f"Human Request for `{result.task_id}`\n"
-                    f"{result.message}\n"
-                    f"Source thread: {thread_ts}"
-                ),
-            )
+        deliver_result(
+            handoff=handoff,
+            result=result,
+            thread_ts=thread_ts,
+            say=say,
+            client=client,
+            settings=settings,
+            service=service,
+        )
 
     return app
 
