@@ -119,6 +119,60 @@ def test_wrong_worker_does_not_claim_real_owners_terminal_event(
     assert subject.route(real_owner).kind == "accepted"
 
 
+def test_terminal_rollback_cannot_restore_run_after_successor_completed(
+    tmp_path: Path,
+) -> None:
+    subject = EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3"))
+    first_start = make_event(
+        event_id="start-1",
+        event_type="work_started",
+        status="running",
+        to_agent="claude",
+        attempt=1,
+    )
+    first_complete = make_event(
+        event_id="complete-1",
+        from_agent="claude",
+        to_agent="chris",
+        event_type="work_completed",
+        status="done",
+        attempt=1,
+    )
+    second_start = make_event(
+        event_id="start-2",
+        event_type="work_started",
+        status="running",
+        to_agent="gemini",
+        attempt=2,
+    )
+    second_complete = make_event(
+        event_id="complete-2",
+        from_agent="gemini",
+        to_agent="chris",
+        event_type="work_completed",
+        status="done",
+        attempt=2,
+    )
+    third_start = make_event(
+        event_id="start-3",
+        event_type="work_started",
+        status="running",
+        to_agent="codex",
+        attempt=3,
+    )
+
+    assert subject.route(first_start).kind == "accepted"
+    assert subject.route(first_complete).kind == "accepted"
+    assert subject.route(second_start).kind == "accepted"
+    assert subject.route(second_complete).kind == "accepted"
+
+    subject.rollback(first_complete)
+
+    result = subject.route(third_start)
+    assert result.kind == "accepted"
+    assert result.target_agent == "codex"
+
+
 def test_fenced_json_keeps_closing_braces_inside_strings() -> None:
     payload = {
         "event_id": "event-1",
