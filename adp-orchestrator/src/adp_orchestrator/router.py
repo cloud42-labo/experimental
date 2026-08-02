@@ -7,6 +7,7 @@ from .events import HandoffEvent
 from .idempotency import IdempotencyStore
 
 RouteKind = Literal["ignored", "accepted", "human_required", "conflict"]
+_WORKER_AGENTS = {"claude", "gemini", "codex"}
 
 
 @dataclass(frozen=True)
@@ -23,16 +24,20 @@ class EventRouter:
         self.store = store
 
     def rollback(self, event: HandoffEvent) -> None:
-        """Allow a safe retry when an external adapter failed."""
+        """Allow a safe retry when an external adapter or Slack delivery failed."""
 
         self.store.release_event(event.event_id, event.idempotency_key)
         if event.event_type == "work_started":
             self.store.release_task(event.task_id, event.to_agent)
         elif event.event_type in {"work_completed", "failed"}:
-            # Terminal routing releases the worker lock before adapter calls.
-            # Restore it only when no newer agent has acquired the task.
             if self.store.current_agent(event.task_id) is None:
                 self.store.acquire_task(event.task_id, event.from_agent)
+        elif (
+            event.event_type == "human_required"
+            and event.from_agent in _WORKER_AGENTS
+            and self.store.current_agent(event.task_id) is None
+        ):
+            self.store.acquire_task(event.task_id, event.from_agent)
 
     def _terminal_owner_conflict(
         self, event: HandoffEvent
@@ -69,8 +74,6 @@ class EventRouter:
             )
 
         if event.requires_human or event.event_type == "human_required":
-            # A controller can request human help, but only the current worker can
-            # release its own lock.
             self.store.release_task(event.task_id, event.from_agent)
             return RouteResult(
                 kind="human_required",
@@ -98,8 +101,6 @@ class EventRouter:
                 target_agent="human",
             )
 
-        # Assignment announces the next agent but does not lock the task.
-        # The lock starts only when work_started is received.
         if event.event_type == "work_started":
             acquired = self.store.acquire_task(event.task_id, event.to_agent)
             if not acquired:
