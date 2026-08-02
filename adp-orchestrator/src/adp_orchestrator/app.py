@@ -18,6 +18,7 @@ _MENTION = re.compile(r"<@[A-Z0-9]+>")
 _VALIDATION_ERROR_MESSAGE = (
     "Event validation failed. Check schema_version, required fields, and allowed values."
 )
+_WRONG_CHANNEL_MESSAGE = "ADP task events are accepted only in #adp-control."
 
 
 def extract_event_payload(text: str) -> dict[str, Any]:
@@ -36,6 +37,18 @@ def extract_event_payload(text: str) -> dict[str, Any]:
     return payload
 
 
+def apply_envelope_event_id(
+    payload: dict[str, Any], body: dict[str, Any]
+) -> dict[str, Any]:
+    """Use Slack's signed envelope event ID instead of a user-supplied value."""
+
+    enriched = dict(payload)
+    envelope_event_id = body.get("event_id")
+    if isinstance(envelope_event_id, str) and envelope_event_id:
+        enriched["event_id"] = envelope_event_id
+    return enriched
+
+
 def format_result(result: RouteResult) -> str:
     return (
         f"*Task:* `{result.task_id}`\n"
@@ -52,13 +65,20 @@ def build_app(settings: Settings) -> App:
     router = EventRouter(store)
 
     @app.event("app_mention")
-    def handle_mention(event: dict[str, Any], say: Any, client: Any) -> None:
+    def handle_mention(
+        event: dict[str, Any], body: dict[str, Any], say: Any, client: Any
+    ) -> None:
         if event.get("bot_id"):
             return
 
         thread_ts = event.get("thread_ts") or event.get("ts")
+        if event.get("channel") != settings.adp_control_channel_id:
+            say(text=_WRONG_CHANNEL_MESSAGE, thread_ts=thread_ts)
+            return
+
         try:
             payload = extract_event_payload(str(event.get("text", "")))
+            payload = apply_envelope_event_id(payload, body)
             handoff = HandoffEvent.model_validate(payload)
             result = router.route(handoff)
         except (ValueError, json.JSONDecodeError, ValidationError):
