@@ -18,6 +18,7 @@ from .notion_adapter import (
     NotionAdapterError,
     NotionTaskRepository,
 )
+from .outbox import DeferredDelivery, DeferredDeliveryOutbox
 from .router import EventRouter, RouteResult
 from .runtime import RuntimeLease, RuntimeLeaseConfig, RuntimeLeaseError
 from .service import OrchestrationService
@@ -36,6 +37,8 @@ _RUNTIME_ERROR_MESSAGE = (
     "Orchestrator runtime lease is unavailable. Restart the local process "
     "before retrying this event."
 )
+_WORKER_AGENTS = {"claude", "gemini", "codex"}
+_TERMINAL_EVENT_TYPES = {"work_completed", "failed", "human_required"}
 
 
 def extract_event_payload(text: str) -> dict[str, Any]:
@@ -90,11 +93,13 @@ def deliver_result(
     settings: Settings,
     service: OrchestrationService,
 ) -> None:
-    """Deliver Slack output, then finalize or roll back reserved routing state."""
+    """Fence, deliver, then finalize or roll back reserved routing state."""
 
     try:
+        service.ensure_delivery(handoff, result)
         say(text=format_result(result), thread_ts=thread_ts)
         if result.kind == "human_required":
+            service.ensure_delivery(handoff, result)
             client.chat_postMessage(
                 channel=settings.adp_human_requests_channel_id,
                 text=(
@@ -104,6 +109,7 @@ def deliver_result(
                 ),
             )
         if result.kind in {"accepted", "human_required"}:
+            service.ensure_delivery(handoff, result)
             service.finalize(handoff, result)
     except Exception:
         if result.kind in {"accepted", "human_required"}:
@@ -112,7 +118,7 @@ def deliver_result(
 
 
 class DeferredDeliveryScheduler:
-    """Retain one redelivery until a stale runtime owner can be reclaimed."""
+    """Processes a persistent SQLite outbox across process restarts."""
 
     def __init__(
         self,
@@ -120,137 +126,127 @@ class DeferredDeliveryScheduler:
         runtime: RuntimeLease,
         service: OrchestrationService,
         settings: Settings,
+        client: Any,
+        outbox: DeferredDeliveryOutbox,
         retry_seconds: float,
+        poll_seconds: float = 1.0,
+        claim_seconds: float = 30.0,
     ) -> None:
-        if retry_seconds <= 0:
-            raise ValueError("retry_seconds must be positive")
+        if retry_seconds <= 0 or poll_seconds <= 0 or claim_seconds <= 0:
+            raise ValueError("scheduler intervals must be positive")
         self.runtime = runtime
         self.service = service
         self.settings = settings
+        self.client = client
+        self.outbox = outbox
         self.retry_seconds = retry_seconds
+        self.poll_seconds = poll_seconds
+        self.claim_seconds = claim_seconds
+        self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
+        self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        self._timers: dict[str, threading.Timer] = {}
-        self._stopped = False
 
-    def schedule(
-        self,
-        *,
-        handoff: HandoffEvent,
-        channel: str,
-        thread_ts: str | None,
-        client: Any,
-    ) -> bool:
-        key = handoff.idempotency_key
+    @property
+    def is_started(self) -> bool:
         with self._lock:
-            if self._stopped or key in self._timers:
-                return False
-            self._start_timer_locked(
-                key=key,
-                handoff=handoff,
-                channel=channel,
-                thread_ts=thread_ts,
-                client=client,
+            return self._thread is not None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._thread is not None:
+                return
+            self._stop_event.clear()
+            self._wake_event.set()
+            self._thread = threading.Thread(
+                target=self._loop,
+                name="adp-deferred-outbox",
+                daemon=True,
             )
-            return True
+            self._thread.start()
 
-    def _start_timer_locked(
+    def defer(
         self,
         *,
-        key: str,
         handoff: HandoffEvent,
         channel: str,
         thread_ts: str | None,
-        client: Any,
     ) -> None:
-        timer = threading.Timer(
-            self.retry_seconds,
-            self._run,
-            kwargs={
-                "key": key,
-                "handoff": handoff,
-                "channel": channel,
-                "thread_ts": thread_ts,
-                "client": client,
-            },
+        self.outbox.defer(
+            idempotency_key=handoff.idempotency_key,
+            event_json=handoff.model_dump_json(),
+            channel_id=channel,
+            thread_ts=thread_ts,
+            delay_seconds=self.retry_seconds,
         )
-        timer.daemon = True
-        self._timers[key] = timer
-        timer.start()
+        self._wake_event.set()
 
-    def _finish_or_reschedule(
-        self,
-        *,
-        key: str,
-        handoff: HandoffEvent,
-        channel: str,
-        thread_ts: str | None,
-        client: Any,
-        reschedule: bool,
-    ) -> None:
-        with self._lock:
-            self._timers.pop(key, None)
-            if reschedule and not self._stopped:
-                self._start_timer_locked(
-                    key=key,
-                    handoff=handoff,
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    client=client,
-                )
+    def _loop(self) -> None:
+        while not self._stop_event.is_set():
+            deliveries = self.outbox.claim_due(
+                claim_seconds=self.claim_seconds,
+            )
+            if deliveries:
+                for delivery in deliveries:
+                    if self._stop_event.is_set():
+                        self.outbox.reschedule(
+                            delivery.idempotency_key,
+                            self.poll_seconds,
+                        )
+                        return
+                    self._process(delivery)
+                continue
+            self._wake_event.wait(self.poll_seconds)
+            self._wake_event.clear()
 
-    def _run(
-        self,
-        *,
-        key: str,
-        handoff: HandoffEvent,
-        channel: str,
-        thread_ts: str | None,
-        client: Any,
-    ) -> None:
-        reschedule = False
+    def _process(self, delivery: DeferredDelivery) -> None:
         try:
             self.runtime.ensure_active()
+            handoff = HandoffEvent.model_validate_json(delivery.event_json)
             result = self.service.handle(handoff)
             if result.kind == "deferred":
-                reschedule = True
-            elif result.kind not in {"ignored", "conflict"}:
-                deliver_result(
-                    handoff=handoff,
-                    result=result,
-                    thread_ts=thread_ts,
-                    say=lambda **kwargs: client.chat_postMessage(
-                        channel=channel,
-                        **kwargs,
-                    ),
-                    client=client,
-                    settings=self.settings,
-                    service=self.service,
+                self.outbox.reschedule(
+                    delivery.idempotency_key,
+                    self.retry_seconds,
                 )
-        except RuntimeLeaseError:
-            # This process no longer owns a valid runtime lease. A restart is
-            # required; retaining timers in a failed process would be unsafe.
-            reschedule = False
-        except Exception:
-            # Accepted routing state is rolled back by service/deliver_result.
-            # Keep the one preserved Slack redelivery for a later exact retry.
-            reschedule = True
-        finally:
-            self._finish_or_reschedule(
-                key=key,
+                return
+            if result.kind in {"ignored", "conflict"}:
+                self.outbox.complete(delivery.idempotency_key)
+                return
+
+            deliver_result(
                 handoff=handoff,
-                channel=channel,
-                thread_ts=thread_ts,
-                client=client,
-                reschedule=reschedule,
+                result=result,
+                thread_ts=delivery.thread_ts,
+                say=lambda **kwargs: self.client.chat_postMessage(
+                    channel=delivery.channel_id,
+                    **kwargs,
+                ),
+                client=self.client,
+                settings=self.settings,
+                service=self.service,
+            )
+            self.outbox.complete(delivery.idempotency_key)
+        except (ValidationError, ValueError):
+            # A persisted payload that no longer matches the contract cannot be
+            # delivered safely. Remove it rather than retrying forever.
+            self.outbox.complete(delivery.idempotency_key)
+        except Exception:
+            # Adapter and Slack failures roll back accepted routing state. The
+            # durable payload remains available for the next exact retry.
+            self.outbox.reschedule(
+                delivery.idempotency_key,
+                self.retry_seconds,
             )
 
     def stop(self) -> None:
         with self._lock:
-            self._stopped = True
-            timers = list(self._timers.values())
-            self._timers.clear()
-        for timer in timers:
-            timer.cancel()
+            thread = self._thread
+            self._thread = None
+            self._stop_event.set()
+            self._wake_event.set()
+        if thread is not None and thread is not threading.current_thread():
+            thread.join()
 
 
 def build_app(settings: Settings) -> App:
@@ -268,6 +264,25 @@ def build_app(settings: Settings) -> App:
     )
     runtime.start()
 
+    def delivery_guard(event: HandoffEvent, result: RouteResult) -> None:
+        runtime.ensure_active()
+        is_worker_terminal = (
+            event.from_agent in _WORKER_AGENTS
+            and event.event_type in _TERMINAL_EVENT_TYPES
+            and result.kind in {"accepted", "human_required"}
+        )
+        if not is_worker_terminal:
+            return
+        lock = store.current_lock(event.task_id)
+        if (
+            lock is None
+            or lock.agent != event.from_agent
+            or lock.run_id != event.run_id
+            or lock.terminal_event_id != event.event_id
+            or lock.terminal_owner_id != runtime.instance_id
+        ):
+            raise RuntimeLeaseError("Terminal delivery ownership was superseded")
+
     try:
         service = OrchestrationService(
             router=EventRouter(
@@ -276,13 +291,18 @@ def build_app(settings: Settings) -> App:
             ),
             task_repository=build_task_repository(settings),
             agent_activator=NoopAgentActivator(),
+            delivery_guard=delivery_guard,
         )
+        outbox = DeferredDeliveryOutbox(settings.adp_db_path)
         deferred_scheduler = DeferredDeliveryScheduler(
             runtime=runtime,
             service=service,
             settings=settings,
+            client=app.client,
+            outbox=outbox,
             retry_seconds=float(settings.adp_runtime_lease_seconds + 1),
         )
+        deferred_scheduler.start()
     except Exception:
         runtime.stop()
         raise
@@ -326,11 +346,12 @@ def build_app(settings: Settings) -> App:
             return
 
         if result.kind == "deferred":
-            deferred_scheduler.schedule(
+            # Persist before acknowledging Slack, so a replacement restart cannot
+            # lose the only redelivery that arrived during the old Owner lease.
+            deferred_scheduler.defer(
                 handoff=handoff,
                 channel=str(event["channel"]),
                 thread_ts=thread_ts,
-                client=client,
             )
             say(text=format_result(result), thread_ts=thread_ts)
             return
