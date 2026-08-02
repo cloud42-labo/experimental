@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .events import HandoffEvent
-from .idempotency import IdempotencyStore
+from .idempotency import IdempotencyStore, TaskLock
 
 RouteKind = Literal["ignored", "accepted", "human_required", "conflict"]
 _WORKER_AGENTS = {"claude", "gemini", "codex"}
@@ -28,40 +28,62 @@ class EventRouter:
 
         self.store.release_event(event.event_id, event.idempotency_key)
         if event.event_type == "work_started":
-            self.store.release_task(event.task_id, event.to_agent)
+            self.store.release_task(event.task_id, event.to_agent, event.run_id)
         elif event.event_type in {"work_completed", "failed"}:
-            if self.store.current_agent(event.task_id) is None:
-                self.store.acquire_task(event.task_id, event.from_agent)
+            if self.store.current_lock(event.task_id) is None:
+                self.store.acquire_task(
+                    event.task_id,
+                    event.from_agent,
+                    event.run_id,
+                )
         elif (
             event.event_type == "human_required"
             and event.from_agent in _WORKER_AGENTS
-            and self.store.current_agent(event.task_id) is None
+            and self.store.current_lock(event.task_id) is None
         ):
-            self.store.acquire_task(event.task_id, event.from_agent)
-
-    def _terminal_owner_conflict(
-        self, event: HandoffEvent
-    ) -> RouteResult | None:
-        current_agent = self.store.current_agent(event.task_id)
-        if current_agent == event.from_agent:
-            return None
-        if current_agent is None:
-            message = (
-                f"No active run is owned by {event.from_agent}; "
-                f"stale {event.event_type} was not accepted."
+            self.store.acquire_task(
+                event.task_id,
+                event.from_agent,
+                event.run_id,
             )
+
+    def _lock_conflict(
+        self,
+        event: HandoffEvent,
+        lock: TaskLock | None,
+    ) -> RouteResult:
+        if lock is None:
+            message = (
+                f"No active run matches {event.from_agent} attempt "
+                f"{event.attempt}; stale {event.event_type} was not accepted."
+            )
+            status = "ready"
+            target_agent = None
         else:
             message = (
-                f"Task is currently owned by {current_agent}; stale "
-                f"{event.event_type} from {event.from_agent} was not accepted."
+                f"Task is owned by {lock.agent} in another run; stale "
+                f"{event.event_type} from {event.from_agent} attempt "
+                f"{event.attempt} was not accepted."
             )
+            status = "running"
+            target_agent = lock.agent
         return RouteResult(
             kind="conflict",
             task_id=event.task_id,
-            status="running" if current_agent is not None else "ready",
+            status=status,
             message=message,
-            target_agent=current_agent,
+            target_agent=target_agent,
         )
+
+    def _require_worker_run(self, event: HandoffEvent) -> RouteResult | None:
+        lock = self.store.current_lock(event.task_id)
+        if (
+            lock is not None
+            and lock.agent == event.from_agent
+            and lock.run_id == event.run_id
+        ):
+            return None
+        return self._lock_conflict(event, lock)
 
     def route(self, event: HandoffEvent) -> RouteResult:
         if not self.store.claim_event(event.event_id, event.idempotency_key):
@@ -74,7 +96,15 @@ class EventRouter:
             )
 
         if event.requires_human or event.event_type == "human_required":
-            self.store.release_task(event.task_id, event.from_agent)
+            if event.from_agent in _WORKER_AGENTS:
+                conflict = self._require_worker_run(event)
+                if conflict is not None:
+                    return conflict
+                self.store.release_task(
+                    event.task_id,
+                    event.from_agent,
+                    event.run_id,
+                )
             return RouteResult(
                 kind="human_required",
                 task_id=event.task_id,
@@ -84,10 +114,14 @@ class EventRouter:
             )
 
         if event.event_type in {"failed", "work_completed"}:
-            conflict = self._terminal_owner_conflict(event)
+            conflict = self._require_worker_run(event)
             if conflict is not None:
                 return conflict
-            self.store.release_task(event.task_id, event.from_agent)
+            self.store.release_task(
+                event.task_id,
+                event.from_agent,
+                event.run_id,
+            )
 
         if event.event_type == "failed" and event.attempt >= event.max_attempts:
             return RouteResult(
@@ -102,19 +136,41 @@ class EventRouter:
             )
 
         if event.event_type == "work_started":
-            acquired = self.store.acquire_task(event.task_id, event.to_agent)
+            acquired = self.store.acquire_task(
+                event.task_id,
+                event.to_agent,
+                event.run_id,
+            )
             if not acquired:
-                current_agent = self.store.current_agent(event.task_id)
-                return RouteResult(
-                    kind="conflict",
-                    task_id=event.task_id,
-                    status="running",
-                    message=(
-                        f"Task is already running with agent {current_agent}; "
-                        "second start was not accepted."
-                    ),
-                    target_agent=current_agent,
+                # A start conflict is transient: once the current run ends, the
+                # exact same start event may be retried successfully.
+                self.store.release_event(event.event_id, event.idempotency_key)
+                return self._lock_conflict(
+                    event,
+                    self.store.current_lock(event.task_id),
                 )
+
+        if event.event_type == "work_heartbeat":
+            renewed = self.store.heartbeat_task(
+                event.task_id,
+                event.from_agent,
+                event.run_id,
+            )
+            if not renewed:
+                return self._lock_conflict(
+                    event,
+                    self.store.current_lock(event.task_id),
+                )
+            return RouteResult(
+                kind="accepted",
+                task_id=event.task_id,
+                status="running",
+                message=(
+                    f"work_heartbeat accepted for {event.from_agent}: "
+                    f"{event.summary}"
+                ),
+                target_agent=event.from_agent,
+            )
 
         next_status = {
             "task_assigned": "ready",
