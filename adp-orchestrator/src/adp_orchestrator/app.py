@@ -264,13 +264,24 @@ class DeferredDeliveryScheduler:
             self.runtime.ensure_active()
             handoff = HandoffEvent.model_validate_json(delivery.event_json)
             result = self.service.handle(handoff)
+            if result.kind == "ignored":
+                # The durable row proves that external delivery did not finish.
+                # Reconstruct the previously accepted non-terminal lifecycle
+                # instead of treating its routing claim as completion.
+                result = self.service.replay_claimed(handoff)
             if result.kind == "deferred":
                 self.outbox.reschedule(
                     delivery.idempotency_key,
                     self.retry_seconds,
                 )
                 return
-            if result.kind in {"ignored", "conflict"}:
+            if result.kind == "ignored":
+                self.outbox.reschedule(
+                    delivery.idempotency_key,
+                    self.retry_seconds,
+                )
+                return
+            if result.kind == "conflict":
                 self.outbox.complete(delivery.idempotency_key)
                 return
 
