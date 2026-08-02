@@ -20,9 +20,19 @@ from adp_orchestrator.router import RouteResult
 class RecordingService:
     def __init__(self) -> None:
         self.rolled_back: list[HandoffEvent] = []
+        self.finalized: list[tuple[HandoffEvent, RouteResult]] = []
 
     def rollback(self, event: HandoffEvent) -> None:
         self.rolled_back.append(event)
+
+    def finalize(self, event: HandoffEvent, result: RouteResult) -> None:
+        self.finalized.append((event, result))
+
+
+class FailingFinalizeService(RecordingService):
+    def finalize(self, event: HandoffEvent, result: RouteResult) -> None:
+        del event, result
+        raise RuntimeError("terminal finalization failed")
 
 
 class FailingClient:
@@ -125,6 +135,31 @@ def test_with_notion_token_enables_notion_repository(tmp_path: Path) -> None:
     repository.close()
 
 
+def test_successful_delivery_finalizes_accepted_result(tmp_path: Path) -> None:
+    service = RecordingService()
+    event = handoff()
+    result = RouteResult(
+        kind="accepted",
+        task_id=event.task_id,
+        status="ready",
+        message="accepted",
+        target_agent="claude",
+    )
+
+    deliver_result(
+        handoff=event,
+        result=result,
+        thread_ts="123.45",
+        say=lambda **kwargs: None,
+        client=object(),
+        settings=settings(tmp_path),
+        service=service,  # type: ignore[arg-type]
+    )
+
+    assert service.finalized == [(event, result)]
+    assert service.rolled_back == []
+
+
 def test_slack_thread_reply_failure_rolls_back_event(tmp_path: Path) -> None:
     service = RecordingService()
     event = handoff()
@@ -149,6 +184,7 @@ def test_slack_thread_reply_failure_rolls_back_event(tmp_path: Path) -> None:
             service=service,  # type: ignore[arg-type]
         )
 
+    assert service.finalized == []
     assert service.rolled_back == [event]
 
 
@@ -170,6 +206,32 @@ def test_human_channel_failure_rolls_back_event(tmp_path: Path) -> None:
             thread_ts="123.45",
             say=lambda **kwargs: None,
             client=FailingClient(),
+            settings=settings(tmp_path),
+            service=service,  # type: ignore[arg-type]
+        )
+
+    assert service.finalized == []
+    assert service.rolled_back == [event]
+
+
+def test_finalize_failure_rolls_back_reserved_result(tmp_path: Path) -> None:
+    service = FailingFinalizeService()
+    event = handoff()
+    result = RouteResult(
+        kind="accepted",
+        task_id=event.task_id,
+        status="ready",
+        message="accepted",
+        target_agent="claude",
+    )
+
+    with pytest.raises(RuntimeError, match="terminal finalization failed"):
+        deliver_result(
+            handoff=event,
+            result=result,
+            thread_ts="123.45",
+            say=lambda **kwargs: None,
+            client=object(),
             settings=settings(tmp_path),
             service=service,  # type: ignore[arg-type]
         )
@@ -203,6 +265,7 @@ def test_ignored_delivery_failure_does_not_remove_original_claim(
             service=service,  # type: ignore[arg-type]
         )
 
+    assert service.finalized == []
     assert service.rolled_back == []
 
 
@@ -246,4 +309,5 @@ def test_conflict_delivery_failure_does_not_restore_rejected_run(
             service=service,  # type: ignore[arg-type]
         )
 
+    assert service.finalized == []
     assert service.rolled_back == []
