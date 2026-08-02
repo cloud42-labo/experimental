@@ -80,6 +80,12 @@ def create_slack_app(settings: Settings) -> App:
     )
 
 
+def direct_delivery_completes_outbox(result: RouteResult) -> bool:
+    """Only an accepted action can prove the persisted work was completed."""
+
+    return result.kind in {"accepted", "human_required"}
+
+
 def build_task_repository(settings: Settings) -> TaskRepository:
     if settings.notion_token is None:
         return NoopTaskRepository()
@@ -456,7 +462,7 @@ def build_app(settings: Settings) -> App:
         else:
             deferred_scheduler.finish_direct(
                 handoff.idempotency_key,
-                delivered=True,
+                delivered=direct_delivery_completes_outbox(result),
             )
 
     setattr(app, "_adp_deferred_scheduler", deferred_scheduler)
