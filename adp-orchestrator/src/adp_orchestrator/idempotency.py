@@ -95,8 +95,13 @@ class IdempotencyStore:
             """
             DELETE FROM task_locks
             WHERE run_id IS NULL
-               OR lease_expires_at IS NULL
-               OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP
+               OR (
+                    terminal_event_id IS NULL
+                    AND (
+                        lease_expires_at IS NULL
+                        OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP
+                    )
+               )
             """
         )
 
