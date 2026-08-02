@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-ClaimResult = Literal["accepted", "duplicate", "conflict"]
+ClaimResult = Literal["accepted", "duplicate", "conflict", "deferred"]
 
 
 @dataclass(frozen=True)
@@ -299,7 +299,7 @@ class IdempotencyStore:
         expected_run_id: str,
         delivery_owner_id: str,
     ) -> ClaimResult:
-        """Select, reserve, or recover one terminal outcome for an exact run."""
+        """Select, reserve, defer, or recover one terminal outcome."""
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -399,7 +399,9 @@ class IdempotencyStore:
                 return "conflict"
 
             if self._runtime_is_active(connection, terminal_owner):
-                return "duplicate"
+                if terminal_owner == delivery_owner_id:
+                    return "duplicate"
+                return "deferred"
 
             # The prior process stopped heartbeating. Preserve the selected
             # outcome and transfer only its delivery ownership.
