@@ -30,7 +30,14 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
-実Tokenは`.env`やPowerShell履歴へ貼り付けず、Windows資格情報マネージャーを正本にします。資格情報を子Processの環境変数だけへ渡す起動Scriptは後続タスク`ADP-012-F`で追加します。Script追加前は、実Slack E2EではなくPlaceholderを使うローカルテストだけを実行します。
+実Tokenは`.env`やPowerShell履歴へ貼り付けず、Windows資格情報マネージャーの**汎用資格情報**を正本にします。
+
+| Target name | Password |
+|---|---|
+| `ADP_SLACK_BOT_TOKEN` | `xoxb-...` |
+| `ADP_SLACK_APP_TOKEN` | `xapp-...` |
+
+登録方法と起動方法の詳細は[`scripts/README.md`](scripts/README.md)を参照してください。
 
 ### macOS / Linux
 
@@ -47,6 +54,20 @@ cp .env.example .env
 `ADP_LOCK_LEASE_SECONDS`はTaskロックの有効期限で、既定値は3600秒です。クラッシュで終了イベントを送れなくても期限切れ後に別Runが再取得できます。長時間処理では`work_heartbeat`イベントを定期送信し、同一Agent・同一RunだけがLeaseを延長できます。
 
 ## 起動
+
+### Windows
+
+```powershell
+.\scripts\start-windows.ps1 `
+  -ControlChannelId C0123456789 `
+  -HumanRequestsChannelId C0123456790 `
+  -DailyChannelId C0123456791 `
+  -PythonCommand .\.venv\Scripts\python.exe
+```
+
+Windows Launcherは資格情報マネージャーからTokenを読み、子Python Processの環境変数だけへ渡します。成功すると`Bolt app is running!`と表示されます。
+
+### macOS / Linux
 
 ```bash
 python -m adp_orchestrator.app
@@ -129,7 +150,7 @@ pytest
 - Notion / GitHub transport errorの安全な正規化と秘密情報非露出
 - GitHub Issue / PR URL解析とメタデータ取得
 
-最新のテスト件数と実行結果はPR本文に記録します。
+2026-08-02にWindows実機で、資格情報読取、Socket Mode接続、`app_mention`受信、正式な`task_assigned`イベントの`accepted`返信まで確認済みです。
 
 ## ディレクトリ
 
@@ -152,5 +173,5 @@ src/adp_orchestrator/
 - Slackの過去メッセージ再同期は未実装です
 - Notion実接続にはTokenとページ共有権限が必要です
 - GitHub Adapterは現在読み取り専用です
-- 実Slack E2EはCredential Manager起動Script追加後に行います
-- 常時稼働環境への移行はE2E成功後に判断します
+- Windows Launcherの実Slack E2Eは確認済みですが、常時稼働環境ではありません
+- 常時稼働環境への移行は追加機能のE2E成功後に判断します
