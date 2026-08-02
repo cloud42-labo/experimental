@@ -21,27 +21,35 @@ SlackをAI同士の自由会話に使うのではなく、タスク、結果、�
 
 ## セットアップ
 
-```bash
-cd adp-orchestrator
-python -m venv .venv
-```
-
-Windows PowerShell:
+### Windows PowerShell
 
 ```powershell
+cd adp-orchestrator
+python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
 
-macOS / Linux:
+実Tokenは`.env`やPowerShell履歴へ貼り付けず、Windows資格情報マネージャーの**汎用資格情報**を正本にします。
+
+| Target name | User name | Password |
+|---|---|---|
+| `ADP_SLACK_BOT_TOKEN` | `SLACK_BOT_TOKEN` | `xoxb-...` |
+| `ADP_SLACK_APP_TOKEN` | `SLACK_APP_TOKEN` | `xapp-...` |
+
+登録方法と起動方法の詳細は[`scripts/README.md`](scripts/README.md)を参照してください。Signing SecretはSocket Mode起動には使用しません。
+
+### macOS / Linux
 
 ```bash
+cd adp-orchestrator
+python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-WindowsでTokenを`.env`へ複製せずに起動するLauncherはPR #58で提供します。Windows資格情報マネージャーの汎用資格情報を正本にし、Tokenを子Python Processへだけ渡します。
+`.env`を使う場合もGit管理せず、権限を限定してください。`NOTION_TOKEN`と`GITHUB_TOKEN`は空欄でも起動できます。
 
 ## 設定
 
@@ -58,6 +66,20 @@ ADP_RUNTIME_HEARTBEAT_SECONDS=10
 Runtime HeartbeatはRuntime Leaseより短く設定します。アプリはDaemon Threadと各Slackイベント受付前の両方でOwner Leaseを更新します。
 
 ## 起動
+
+### Windows
+
+```powershell
+.\scripts\start-windows.ps1 `
+  -ControlChannelId C0123456789 `
+  -HumanRequestsChannelId C0123456790 `
+  -DailyChannelId C0123456791 `
+  -PythonCommand .\.venv\Scripts\python.exe
+```
+
+Windows Launcherは資格情報マネージャーからTokenを読み、子Python Processの環境変数だけへ渡します。Tokenを`.env`、コマンドライン引数、標準出力、Gitへ書きません。成功すると`Bolt app is running!`と表示されます。
+
+### macOS / Linux
 
 ```bash
 python -m adp_orchestrator.app
@@ -178,7 +200,9 @@ GitHub Actionsは、`adp-orchestrator/**`のPull Requestと対象Branch Pushで�
 - `python -m compileall -q src`
 - Full Test Suite
 
-最新headでは121 testsが成功しています。
+最新headでは132 testsが成功しています。
+
+Windows実機では2026-08-02に、資格情報読取、Socket Mode接続、`app_mention`受信、正式な`task_assigned`イベントの`accepted`返信まで確認しました。
 
 主な検証範囲:
 
@@ -194,6 +218,7 @@ GitHub Actionsは、`adp-orchestrator/**`のPull Requestと対象Branch Pushで�
 - OS Process LockとRuntime Owner Fence
 - Worker / Runtime Heartbeat
 - 古いattempt、誤Agent、stale Human Requestの拒否
+- Windows Credential API、Secret経路、`.env`非生成、秘密値非表示
 - Notion / GitHub transport errorの秘密情報非露出
 
 ## ディレクトリ
@@ -221,4 +246,5 @@ src/adp_orchestrator/
 - Notion実接続にはTokenとページ共有権限が必要です
 - GitHub Adapterは現在読み取り専用です
 - AI起動Adapterは現在No-opです
+- Windows Launcherの実Slack E2Eは確認済みですが、常時稼働環境ではありません
 - 常時稼働環境への移行はAI Handoff E2E成功後に判断します
