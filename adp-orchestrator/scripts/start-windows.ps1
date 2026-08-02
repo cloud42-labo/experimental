@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^[CG][A-Z0-9]+$')]
     [string]$DailyChannelId,
 
-    [ValidateRange(30, 86400)]
+    [ValidateRange(30, 2147483647)]
     [int]$LockLeaseSeconds = 3600,
 
     [ValidateNotNullOrEmpty()]
