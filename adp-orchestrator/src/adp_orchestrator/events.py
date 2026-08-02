@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
@@ -51,9 +53,23 @@ class HandoffEvent(BaseModel):
 
     @property
     def idempotency_key(self) -> str:
-        # A retry is a distinct semantic event. The Slack envelope event_id still
-        # deduplicates transport retries within the same attempt.
-        return (
-            f"{self.correlation_id}:{self.task_id}:"
-            f"{self.event_type}:attempt-{self.attempt}"
+        """Return an unambiguous semantic event key.
+
+        A retry attempt is a distinct semantic event, while Slack's signed
+        envelope ``event_id`` deduplicates transport retries within that attempt.
+        Canonical JSON prevents delimiter collisions in user-provided identifiers.
+        """
+
+        canonical = json.dumps(
+            {
+                "attempt": self.attempt,
+                "correlation_id": self.correlation_id,
+                "event_type": self.event_type,
+                "task_id": self.task_id,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
         )
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return f"v1:{digest}"
