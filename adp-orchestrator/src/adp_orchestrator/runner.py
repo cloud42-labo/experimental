@@ -109,8 +109,8 @@ def parse_runner_result(output: str) -> RunnerResult:
         status=status,
         summary=_safe_summary(payload.get("summary", "")),
         requires_human=requires_human,
-        github_url=(str(payload["github_url"]) if payload.get("github_url") else None),
-        notion_url=(str(payload["notion_url"]) if payload.get("notion_url") else None),
+        github_url=str(payload["github_url"]) if payload.get("github_url") else None,
+        notion_url=str(payload["notion_url"]) if payload.get("notion_url") else None,
     )
 
 
@@ -153,7 +153,6 @@ class LocalAgentRunner:
     def _post_event(
         self,
         handoff: AgentHandoff,
-        source: RunnerAgent,
         event_type: str,
         status: str,
         summary: str,
@@ -163,13 +162,14 @@ class LocalAgentRunner:
         notion_url: str | None = None,
     ) -> None:
         original = HandoffEvent.model_validate_json(handoff.event_json)
+        is_started = event_type == "work_started"
         payload: dict[str, object] = {
             "schema_version": "1.0",
             "event_id": f"runner-{uuid.uuid4().hex}",
             "task_id": original.task_id,
             "correlation_id": original.correlation_id,
-            "from_agent": source,
-            "to_agent": "human" if requires_human else "chris",
+            "from_agent": "chris" if is_started else self.config.agent,
+            "to_agent": self.config.agent if is_started else ("human" if requires_human else "chris"),
             "event_type": event_type,
             "status": status,
             "summary": summary,
@@ -181,6 +181,7 @@ class LocalAgentRunner:
             payload["github_url"] = github_url
         if notion_url:
             payload["notion_url"] = notion_url
+        HandoffEvent.model_validate(payload)
         self.slack_client.chat_postMessage(
             channel=handoff.channel_id,
             thread_ts=handoff.thread_ts,
@@ -201,7 +202,6 @@ class LocalAgentRunner:
         try:
             self._post_event(
                 handoff,
-                self.config.agent,
                 "work_started",
                 "running",
                 "Local runner started the assigned work.",
@@ -215,7 +215,6 @@ class LocalAgentRunner:
             if result.requires_human or result.status == "blocked":
                 self._post_event(
                     handoff,
-                    self.config.agent,
                     "human_required",
                     "blocked",
                     result.summary,
@@ -226,7 +225,6 @@ class LocalAgentRunner:
             else:
                 self._post_event(
                     handoff,
-                    self.config.agent,
                     "work_completed",
                     "done",
                     result.summary,
