@@ -30,12 +30,8 @@ _VALIDATION_ERROR_MESSAGE = (
 )
 _WRONG_CHANNEL_MESSAGE = "ADP task events are accepted only in #adp-control."
 _NOTION_ERROR_MESSAGE = (
-    "Notion update failed. The event claim was released and can be retried "
+    "Notion update failed. The persisted event will be retried automatically "
     "after the integration configuration is fixed."
-)
-_RUNTIME_ERROR_MESSAGE = (
-    "Orchestrator runtime lease is unavailable. Restart the local process "
-    "before retrying this event."
 )
 _WORKER_AGENTS = {"claude", "gemini", "codex"}
 _TERMINAL_EVENT_TYPES = {"work_completed", "failed", "human_required"}
@@ -72,6 +68,15 @@ def format_result(result: RouteResult) -> str:
         f"*Status:* `{result.status}`\n"
         f"*Target:* `{result.target_agent or '-'}`\n"
         f"{result.message}"
+    )
+
+
+def create_slack_app(settings: Settings) -> App:
+    """Delay Socket Mode acknowledgement until the listener durably accepts input."""
+
+    return App(
+        token=settings.slack_bot_token,
+        process_before_response=True,
     )
 
 
@@ -146,6 +151,8 @@ class DeferredDeliveryScheduler:
         self._wake_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._active_counts: dict[str, int] = {}
+        self._successful_keys: set[str] = set()
 
     @property
     def is_started(self) -> bool:
@@ -171,15 +178,56 @@ class DeferredDeliveryScheduler:
         handoff: HandoffEvent,
         channel: str,
         thread_ts: str | None,
+        mark_active: bool = False,
     ) -> None:
-        self.outbox.defer(
-            idempotency_key=handoff.idempotency_key,
-            event_json=handoff.model_dump_json(),
-            channel_id=channel,
-            thread_ts=thread_ts,
-            delay_seconds=self.retry_seconds,
-        )
+        key = handoff.idempotency_key
+        if mark_active:
+            with self._lock:
+                self._active_counts[key] = self._active_counts.get(key, 0) + 1
+        try:
+            self.outbox.defer(
+                idempotency_key=key,
+                event_json=handoff.model_dump_json(),
+                channel_id=channel,
+                thread_ts=thread_ts,
+                delay_seconds=self.retry_seconds,
+            )
+        except Exception:
+            if mark_active:
+                self.finish_direct(key, delivered=False, outbox_written=False)
+            raise
         self._wake_event.set()
+
+    def finish_direct(
+        self,
+        idempotency_key: str,
+        *,
+        delivered: bool,
+        outbox_written: bool = True,
+    ) -> None:
+        complete = False
+        reschedule = False
+        with self._lock:
+            count = self._active_counts.get(idempotency_key, 0)
+            if delivered:
+                self._successful_keys.add(idempotency_key)
+            if count <= 1:
+                self._active_counts.pop(idempotency_key, None)
+                complete = idempotency_key in self._successful_keys
+                self._successful_keys.discard(idempotency_key)
+                reschedule = not complete and outbox_written
+            else:
+                self._active_counts[idempotency_key] = count - 1
+
+        if complete:
+            self.outbox.complete(idempotency_key)
+        elif reschedule:
+            self.outbox.reschedule(idempotency_key, self.poll_seconds)
+        self._wake_event.set()
+
+    def _is_active(self, idempotency_key: str) -> bool:
+        with self._lock:
+            return self._active_counts.get(idempotency_key, 0) > 0
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
@@ -200,6 +248,12 @@ class DeferredDeliveryScheduler:
             self._wake_event.clear()
 
     def _process(self, delivery: DeferredDelivery) -> None:
+        if self._is_active(delivery.idempotency_key):
+            self.outbox.reschedule(
+                delivery.idempotency_key,
+                self.poll_seconds,
+            )
+            return
         try:
             self.runtime.ensure_active()
             handoff = HandoffEvent.model_validate_json(delivery.event_json)
@@ -228,12 +282,8 @@ class DeferredDeliveryScheduler:
             )
             self.outbox.complete(delivery.idempotency_key)
         except (ValidationError, ValueError):
-            # A persisted payload that no longer matches the contract cannot be
-            # delivered safely. Remove it rather than retrying forever.
             self.outbox.complete(delivery.idempotency_key)
         except Exception:
-            # Adapter and Slack failures roll back accepted routing state. The
-            # durable payload remains available for the next exact retry.
             self.outbox.reschedule(
                 delivery.idempotency_key,
                 self.retry_seconds,
@@ -250,7 +300,7 @@ class DeferredDeliveryScheduler:
 
 
 def build_app(settings: Settings) -> App:
-    app = App(token=settings.slack_bot_token)
+    app = create_slack_app(settings)
     store = IdempotencyStore(
         settings.adp_db_path,
         lock_lease_seconds=settings.adp_lock_lease_seconds,
@@ -320,19 +370,43 @@ def build_app(settings: Settings) -> App:
             return
 
         handoff: HandoffEvent | None = None
+        outbox_active = False
+        channel = str(event["channel"])
         try:
             runtime.ensure_active()
             payload = extract_event_payload(str(event.get("text", "")))
             payload = apply_envelope_event_id(payload, body)
             handoff = HandoffEvent.model_validate(payload)
+
+            # Bolt is configured to acknowledge only after this listener returns.
+            # Persist every valid event before routing or external side effects.
+            deferred_scheduler.defer(
+                handoff=handoff,
+                channel=channel,
+                thread_ts=thread_ts,
+                mark_active=True,
+            )
+            outbox_active = True
             result = service.handle(handoff)
         except (ValueError, json.JSONDecodeError, ValidationError):
             say(text=_VALIDATION_ERROR_MESSAGE, thread_ts=thread_ts)
             return
         except RuntimeLeaseError:
-            say(text=_RUNTIME_ERROR_MESSAGE, thread_ts=thread_ts)
-            return
+            if handoff is not None and outbox_active:
+                deferred_scheduler.finish_direct(
+                    handoff.idempotency_key,
+                    delivered=False,
+                )
+            # Do not return a successful Bolt response when no valid runtime can
+            # durably own the event. Slack may redeliver the envelope.
+            raise
         except NotionAdapterError:
+            if handoff is not None and outbox_active:
+                deferred_scheduler.finish_direct(
+                    handoff.idempotency_key,
+                    delivered=False,
+                )
+            runtime.ensure_active()
             say(text=_NOTION_ERROR_MESSAGE, thread_ts=thread_ts)
             task_id = handoff.task_id if handoff is not None else "unknown"
             client.chat_postMessage(
@@ -340,31 +414,50 @@ def build_app(settings: Settings) -> App:
                 text=(
                     f"Human Request for `{task_id}`\n"
                     "Notion integration failed. Check the integration token and "
-                    "page-sharing permission, then retry the Slack event."
+                    "page-sharing permission; the event remains queued."
                 ),
             )
             return
+        except Exception:
+            if handoff is not None and outbox_active:
+                deferred_scheduler.finish_direct(
+                    handoff.idempotency_key,
+                    delivered=False,
+                )
+            raise
 
         if result.kind == "deferred":
-            # Persist before acknowledging Slack, so a replacement restart cannot
-            # lose the only redelivery that arrived during the old Owner lease.
-            deferred_scheduler.defer(
-                handoff=handoff,
-                channel=str(event["channel"]),
-                thread_ts=thread_ts,
-            )
-            say(text=format_result(result), thread_ts=thread_ts)
+            try:
+                runtime.ensure_active()
+                say(text=format_result(result), thread_ts=thread_ts)
+            finally:
+                deferred_scheduler.finish_direct(
+                    handoff.idempotency_key,
+                    delivered=False,
+                )
             return
 
-        deliver_result(
-            handoff=handoff,
-            result=result,
-            thread_ts=thread_ts,
-            say=say,
-            client=client,
-            settings=settings,
-            service=service,
-        )
+        try:
+            deliver_result(
+                handoff=handoff,
+                result=result,
+                thread_ts=thread_ts,
+                say=say,
+                client=client,
+                settings=settings,
+                service=service,
+            )
+        except Exception:
+            deferred_scheduler.finish_direct(
+                handoff.idempotency_key,
+                delivered=False,
+            )
+            raise
+        else:
+            deferred_scheduler.finish_direct(
+                handoff.idempotency_key,
+                delivered=True,
+            )
 
     setattr(app, "_adp_deferred_scheduler", deferred_scheduler)
     setattr(app, "_adp_runtime_lease", runtime)
