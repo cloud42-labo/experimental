@@ -9,6 +9,8 @@ def test_expired_worker_lease_does_not_remove_terminal_reservation(
 ) -> None:
     db_path = tmp_path / "orchestrator.sqlite3"
     store = IdempotencyStore(db_path, lock_lease_seconds=1)
+    owner = "runtime-1"
+    store.register_runtime(owner, 60)
 
     assert store.claim_started_event(
         "start-1",
@@ -23,6 +25,7 @@ def test_expired_worker_lease_does_not_remove_terminal_reservation(
         "ADP-012",
         "claude",
         "run-1",
+        owner,
     ) == "accepted"
 
     with sqlite3.connect(db_path) as connection:
@@ -53,6 +56,7 @@ def test_expired_worker_lease_does_not_remove_terminal_reservation(
         "ADP-012",
         "claude",
         "run-1",
+        owner,
     ) is True
     assert store.claim_started_event(
         "start-2",
@@ -68,6 +72,8 @@ def test_terminal_rollback_restores_a_fresh_worker_lease(
 ) -> None:
     db_path = tmp_path / "orchestrator.sqlite3"
     store = IdempotencyStore(db_path, lock_lease_seconds=3600)
+    owner = "runtime-1"
+    store.register_runtime(owner, 60)
 
     assert store.claim_started_event(
         "start-1",
@@ -82,6 +88,7 @@ def test_terminal_rollback_restores_a_fresh_worker_lease(
         "ADP-012",
         "claude",
         "run-1",
+        owner,
     ) == "accepted"
 
     with sqlite3.connect(db_path) as connection:
@@ -100,6 +107,7 @@ def test_terminal_rollback_restores_a_fresh_worker_lease(
         "ADP-012",
         "claude",
         "run-1",
+        owner,
     ) is True
 
     with sqlite3.connect(db_path) as connection:
