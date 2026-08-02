@@ -22,7 +22,7 @@ from .runtime import RuntimeLease, RuntimeLeaseConfig, RuntimeLeaseError
 from .service import OrchestrationService
 
 _CODE_BLOCK = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
-_MENTION = re.compile(r"<@[A-Z0-9]+>")
+_LEADING_MENTION = re.compile(r"^\s*<@[A-Z0-9]+>\s*")
 _VALIDATION_ERROR_MESSAGE = (
     "Event validation failed. Check schema_version, required fields, and allowed values."
 )
@@ -38,7 +38,7 @@ _RUNTIME_ERROR_MESSAGE = (
 
 
 def extract_event_payload(text: str) -> dict[str, Any]:
-    cleaned = _MENTION.sub("", text).strip()
+    cleaned = _LEADING_MENTION.sub("", text, count=1).strip()
     match = _CODE_BLOCK.search(cleaned)
     candidate = match.group(1) if match else cleaned
     start = candidate.find("{")
