@@ -16,6 +16,8 @@ SlackをAI同士の自由会話に使うのではなく、タスク、結果、�
 - Python 3.12以上
 - Slack AppのBot Token (`xoxb-...`)
 - Slack App-Level Token (`xapp-...`、`connections:write`)
+- Notion更新を有効にする場合だけNotion Integration Token
+- private GitHubリポジトリを参照する場合だけGitHub Token
 
 ## セットアップ
 
@@ -39,7 +41,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-`.env`へTokenとチャンネルIDを設定します。`.env`はGit管理しません。
+`.env`へTokenとチャンネルIDを設定します。`.env`はGit管理しません。`NOTION_TOKEN`と`GITHUB_TOKEN`は空欄でも起動できます。
 
 ## 起動
 
@@ -61,6 +63,7 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
   "status": "ready",
   "summary": "Orchestrator MVPを実装する",
   "notion_url": "https://app.notion.com/p/<task-page-id>",
+  "github_url": "https://github.com/cloud42-labo/experimental/pull/57",
   "requires_human": false,
   "attempt": 1,
   "max_attempts": 3
@@ -75,11 +78,12 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
 
 - `TaskRepository`: Notionなどへタスク状態を記録する境界
 - `AgentActivator`: 次のAI作業をキューへ渡す境界
+- `GitHubReferenceClient`: Issue / Pull Requestを読み取る境界
 - MVP既定値は`NoopTaskRepository`と`NoopAgentActivator`
 
-`NotionTaskRepository`は実装済みですが、既定では有効にしていません。Notion Tokenと対象ページの共有権限を準備した後に明示的に注入します。更新対象は`Status`、`Result`、`Assigned Agent`、およびHuman Request時の`Blocker`・`Environment Help`です。
+`NOTION_TOKEN`が未設定ならTask更新はNo-opです。設定されている場合だけ`NotionTaskRepository`が自動的に有効になり、`Status`、`Result`、`Assigned Agent`、`Blocker`、`Environment Help`を更新します。外部更新が一時失敗した場合はイベントClaimとTaskロックを戻し、設定修正後に同じイベントを再試行できます。
 
-この構造により、実Tokenがない状態でもルーティングをテストでき、有料AI APIを無断で呼びません。
+`GitHubReferenceClient`は読み取り専用です。公開Issue / PRはTokenなし、privateリポジトリは`GITHUB_TOKEN`付きで参照できます。MVPではGitHubへの書き込みは行いません。
 
 ## テスト
 
@@ -87,7 +91,7 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
 pytest
 ```
 
-現在の純粋ロジック・モックHTTPテストは29件です。
+現在の純粋ロジック・モックHTTPテストは40件です。
 
 - イベント契約の検証
 - Slack Envelope event IDの優先
@@ -95,26 +99,29 @@ pytest
 - `task_assigned`から`work_started`への正常遷移
 - 同一Taskの二重Running防止
 - 失敗時のロック解放と再試行
+- 外部Adapter失敗後のイベントClaimロールバック
 - 3回失敗後のHuman Request化
 - Human Request対象の自動起動禁止
 - Tokenを例外へ含めない設定検証
-- Adapterの副作用境界
+- Notion Token有無によるNo-op / 実Adapter切替
 - Notion Update pageのリクエスト形式
-- Notion Status / Result / Blocker更新
-- Notion HTTPエラー時のToken・レスポンス本文非露出
+- Notion Status / Result / Blockerの設定と解除
+- GitHub Issue / PR URL解析とメタデータ取得
+- Notion / GitHub HTTPエラー時の秘密情報非露出
 
 ## ディレクトリ
 
 ```text
 src/adp_orchestrator/
-├── adapters.py      # Notion・AI起動の境界と安全なNo-op
-├── app.py           # Slack Socket Modeの入口
-├── config.py        # 環境変数検証
-├── events.py        # メッセージ契約
-├── idempotency.py   # SQLite処理履歴とTaskロック
-├── notion_adapter.py # Notion Page更新Adapter（既定は無効）
-├── router.py        # 状態遷移とルーティング
-└── service.py       # RouterとAdapterの調停
+├── adapters.py       # Notion・AI起動の境界と安全なNo-op
+├── app.py            # Slack Socket Modeの入口
+├── config.py         # 環境変数検証と任意Token
+├── events.py         # メッセージ契約
+├── github_adapter.py # GitHub Issue / PR読み取りAdapter
+├── idempotency.py    # SQLite処理履歴とTaskロック
+├── notion_adapter.py # Notion Page更新Adapter
+├── router.py         # 状態遷移とルーティング
+└── service.py        # RouterとAdapterの調停・失敗時Rollback
 ```
 
 ## 制約
@@ -122,6 +129,6 @@ src/adp_orchestrator/
 - PC停止中はイベントを処理しません
 - Slackの過去メッセージ再同期は未実装です
 - Notion Adapterの実接続にはTokenとページ共有権限が必要です
-- GitHubへの実書き込みAdapterは後続実装です
+- GitHub Adapterは現在読み取り専用です
 - 実Slack SDK接続はWorkspaceとToken準備後にE2E確認します
 - 本番運用や常時稼働環境への移行は、E2E成功後に判断します
