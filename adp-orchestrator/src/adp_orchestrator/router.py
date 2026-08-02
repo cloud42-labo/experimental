@@ -25,8 +25,9 @@ class EventRouter:
         self.store = store
 
     def _is_worker_terminal(self, event: HandoffEvent) -> bool:
-        return event.from_agent in _WORKER_AGENTS and (
-            event.event_type in _TERMINAL_EVENT_TYPES or event.requires_human
+        return (
+            event.from_agent in _WORKER_AGENTS
+            and event.event_type in _TERMINAL_EVENT_TYPES
         )
 
     def rollback(self, event: HandoffEvent) -> None:
