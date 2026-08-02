@@ -200,6 +200,8 @@ GitHub Actionsは、`adp-orchestrator/**`のPull Requestと対象Branch Pushで�
 - `python -m compileall -q src`
 - Full Test Suite
 
+最新headでは132 testsが成功しています。
+
 Windows実機では2026-08-02に、資格情報読取、Socket Mode接続、`app_mention`受信、正式な`task_assigned`イベントの`accepted`返信まで確認しました。
 
 主な検証範囲:
@@ -215,6 +217,7 @@ Windows実機では2026-08-02に、資格情報読取、Socket Mode接続、`app
 - Terminal配信完了まで後続Runを開始させない制御
 - OS Process LockとRuntime Owner Fence
 - Worker / Runtime Heartbeat
+- 古いattempt、誤Agent、stale Human Requestの拒否
 - Windows Credential API、Secret経路、`.env`非生成、秘密値非表示
 - Notion / GitHub transport errorの秘密情報非露出
 

@@ -23,6 +23,21 @@ def valid_payload() -> dict[str, object]:
     }
 
 
+def terminal_payload() -> dict[str, object]:
+    payload = valid_payload()
+    payload.update(
+        {
+            "event_id": "complete-1",
+            "from_agent": "claude",
+            "to_agent": "chris",
+            "event_type": "work_completed",
+            "status": "done",
+            "summary": "Completed the work",
+        }
+    )
+    return payload
+
+
 def test_run_id_and_event_key_are_stable_versioned_hashes() -> None:
     first = HandoffEvent.model_validate(valid_payload())
     second = HandoffEvent.model_validate(valid_payload())
@@ -91,6 +106,64 @@ def test_heartbeat_redelivery_has_same_key() -> None:
     assert first.idempotency_key == second.idempotency_key
 
 
+def test_terminal_redelivery_with_new_envelope_has_same_key() -> None:
+    first_payload = terminal_payload()
+    second_payload = dict(first_payload)
+    second_payload["event_id"] = "complete-redelivery"
+
+    first = HandoffEvent.model_validate(first_payload)
+    second = HandoffEvent.model_validate(second_payload)
+
+    assert first.run_id == second.run_id
+    assert first.idempotency_key == second.idempotency_key
+
+
+@pytest.mark.parametrize(
+    ("field", "changed_value"),
+    [
+        ("status", "review"),
+        ("summary", "Changed completion details"),
+        ("max_attempts", 4),
+        ("to_agent", "codex"),
+        ("github_url", "https://github.com/cloud42-labo/experimental/pull/58"),
+    ],
+)
+def test_terminal_outcome_changes_produce_distinct_keys(
+    field: str,
+    changed_value: object,
+) -> None:
+    first_payload = terminal_payload()
+    changed_payload = dict(first_payload)
+    changed_payload[field] = changed_value
+
+    first = HandoffEvent.model_validate(first_payload)
+    changed = HandoffEvent.model_validate(changed_payload)
+
+    assert first.run_id == changed.run_id
+    assert first.idempotency_key != changed.idempotency_key
+
+
+def test_failed_escalation_rule_is_bound_to_terminal_key() -> None:
+    first_payload = terminal_payload()
+    first_payload.update(
+        {
+            "event_type": "failed",
+            "status": "blocked",
+            "summary": "Attempt failed",
+            "attempt": 3,
+            "max_attempts": 3,
+        }
+    )
+    changed_payload = dict(first_payload)
+    changed_payload["max_attempts"] = 4
+
+    first = HandoffEvent.model_validate(first_payload)
+    changed = HandoffEvent.model_validate(changed_payload)
+
+    assert first.run_id == changed.run_id
+    assert first.idempotency_key != changed.idempotency_key
+
+
 def test_attempt_must_not_exceed_max_attempts() -> None:
     payload = valid_payload()
     payload["attempt"] = 4
@@ -135,16 +208,17 @@ def test_work_started_requires_worker_target() -> None:
         HandoffEvent.model_validate(payload)
 
 
-def test_worker_human_request_requires_explicit_event_type() -> None:
+@pytest.mark.parametrize("from_agent", ["chris", "human", "claude"])
+def test_work_started_cannot_require_human_action(from_agent: str) -> None:
     payload = valid_payload()
     payload.update(
         {
-            "from_agent": "claude",
+            "from_agent": from_agent,
             "event_type": "work_started",
             "status": "running",
             "requires_human": True,
         }
     )
 
-    with pytest.raises(ValidationError, match="must use the human_required event type"):
+    with pytest.raises(ValidationError, match="work_started cannot require human action"):
         HandoffEvent.model_validate(payload)

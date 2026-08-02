@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from adp_orchestrator.adapters import NoopTaskRepository
+from adp_orchestrator.adapters import NoopAgentActivator, NoopTaskRepository
 from adp_orchestrator.app import (
     apply_envelope_event_id,
     build_task_repository,
@@ -13,14 +13,20 @@ from adp_orchestrator.app import (
 )
 from adp_orchestrator.config import Settings
 from adp_orchestrator.events import HandoffEvent
+from adp_orchestrator.idempotency import IdempotencyStore
 from adp_orchestrator.notion_adapter import NotionTaskRepository
-from adp_orchestrator.router import RouteResult
+from adp_orchestrator.router import EventRouter, RouteResult
+from adp_orchestrator.service import OrchestrationService
 
 
 class RecordingService:
     def __init__(self) -> None:
         self.rolled_back: list[HandoffEvent] = []
         self.finalized: list[tuple[HandoffEvent, RouteResult]] = []
+        self.delivery_checks: list[tuple[HandoffEvent, RouteResult]] = []
+
+    def ensure_delivery(self, event: HandoffEvent, result: RouteResult) -> None:
+        self.delivery_checks.append((event, result))
 
     def rollback(self, event: HandoffEvent) -> None:
         self.rolled_back.append(event)
@@ -71,6 +77,30 @@ def handoff() -> HandoffEvent:
     )
 
 
+def worker_event(
+    *,
+    event_id: str,
+    event_type: str,
+    status: str,
+    summary: str,
+) -> HandoffEvent:
+    return HandoffEvent.model_validate(
+        {
+            "schema_version": "1.0",
+            "event_id": event_id,
+            "task_id": "ADP-012",
+            "correlation_id": "correlation-1",
+            "from_agent": "claude",
+            "to_agent": "chris",
+            "event_type": event_type,
+            "status": status,
+            "summary": summary,
+            "attempt": 1,
+            "max_attempts": 3,
+        }
+    )
+
+
 def test_extracts_json_after_slack_mention() -> None:
     text = '<@U123ABC> {"schema_version": "1.0", "task_id": "ADP-012"}'
     assert extract_event_payload(text)["task_id"] == "ADP-012"
@@ -79,6 +109,17 @@ def test_extracts_json_after_slack_mention() -> None:
 def test_extracts_json_code_block() -> None:
     text = '<@U123ABC> ```json\n{"event_id": "event-1"}\n```'
     assert extract_event_payload(text) == {"event_id": "event-1"}
+
+
+def test_preserves_mentions_inside_json_string_values() -> None:
+    text = (
+        '<@U_ORCHESTRATOR> {"event_id": "event-1", '
+        '"summary": "Ask <@U_APPROVER> to approve"}'
+    )
+
+    assert extract_event_payload(text)["summary"] == (
+        "Ask <@U_APPROVER> to approve"
+    )
 
 
 def test_slack_envelope_event_id_overrides_user_value() -> None:
@@ -158,6 +199,7 @@ def test_successful_delivery_finalizes_accepted_result(tmp_path: Path) -> None:
 
     assert service.finalized == [(event, result)]
     assert service.rolled_back == []
+    assert service.delivery_checks == [(event, result), (event, result)]
 
 
 def test_slack_thread_reply_failure_rolls_back_event(tmp_path: Path) -> None:
@@ -186,6 +228,7 @@ def test_slack_thread_reply_failure_rolls_back_event(tmp_path: Path) -> None:
 
     assert service.finalized == []
     assert service.rolled_back == [event]
+    assert service.delivery_checks == [(event, result)]
 
 
 def test_human_channel_failure_rolls_back_event(tmp_path: Path) -> None:
@@ -212,6 +255,7 @@ def test_human_channel_failure_rolls_back_event(tmp_path: Path) -> None:
 
     assert service.finalized == []
     assert service.rolled_back == [event]
+    assert service.delivery_checks == [(event, result), (event, result)]
 
 
 def test_finalize_failure_rolls_back_reserved_result(tmp_path: Path) -> None:
@@ -237,6 +281,7 @@ def test_finalize_failure_rolls_back_reserved_result(tmp_path: Path) -> None:
         )
 
     assert service.rolled_back == [event]
+    assert service.delivery_checks == [(event, result), (event, result)]
 
 
 def test_ignored_delivery_failure_does_not_remove_original_claim(
@@ -311,3 +356,82 @@ def test_conflict_delivery_failure_does_not_restore_rejected_run(
 
     assert service.finalized == []
     assert service.rolled_back == []
+
+
+def test_slack_failure_preserves_first_terminal_outcome_for_exact_retry(
+    tmp_path: Path,
+) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3")
+    owner = "runtime-test"
+    store.register_runtime(owner, 60)
+    service = OrchestrationService(
+        router=EventRouter(store, delivery_owner_id=owner),
+        task_repository=NoopTaskRepository(),
+        agent_activator=NoopAgentActivator(),
+    )
+    start = HandoffEvent.model_validate(
+        {
+            "schema_version": "1.0",
+            "event_id": "start-1",
+            "task_id": "ADP-012",
+            "correlation_id": "correlation-1",
+            "from_agent": "chris",
+            "to_agent": "claude",
+            "event_type": "work_started",
+            "status": "running",
+            "summary": "Start work",
+            "attempt": 1,
+            "max_attempts": 3,
+        }
+    )
+    assert service.handle(start).kind == "accepted"
+
+    completed = worker_event(
+        event_id="complete-1",
+        event_type="work_completed",
+        status="done",
+        summary="Completed",
+    )
+    completed_result = service.handle(completed)
+    assert completed_result.kind == "accepted"
+
+    with pytest.raises(RuntimeError, match="Slack reply failed"):
+        deliver_result(
+            handoff=completed,
+            result=completed_result,
+            thread_ts="123.45",
+            say=lambda **kwargs: (_ for _ in ()).throw(
+                RuntimeError("Slack reply failed")
+            ),
+            client=object(),
+            settings=settings(tmp_path),
+            service=service,
+        )
+
+    contradictory = worker_event(
+        event_id="failed-1",
+        event_type="failed",
+        status="blocked",
+        summary="Failed after completion",
+    )
+    assert service.handle(contradictory).kind == "conflict"
+
+    redelivery = worker_event(
+        event_id="complete-redelivery",
+        event_type="work_completed",
+        status="done",
+        summary="Completed",
+    )
+    redelivery_result = service.handle(redelivery)
+    assert redelivery_result.kind == "accepted"
+    deliver_result(
+        handoff=redelivery,
+        result=redelivery_result,
+        thread_ts="123.45",
+        say=lambda **kwargs: None,
+        client=object(),
+        settings=settings(tmp_path),
+        service=service,
+    )
+
+    assert store.current_lock("ADP-012") is None
