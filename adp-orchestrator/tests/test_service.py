@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from adp_orchestrator.events import HandoffEvent
 from adp_orchestrator.idempotency import IdempotencyStore
 from adp_orchestrator.router import EventRouter, RouteResult
@@ -12,6 +14,18 @@ class RecordingTaskRepository:
 
     def record(self, event: HandoffEvent, result: RouteResult) -> None:
         self.records.append((event, result))
+
+
+class FailsOnceTaskRepository(RecordingTaskRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    def record(self, event: HandoffEvent, result: RouteResult) -> None:
+        self.attempts += 1
+        if self.attempts == 1:
+            raise RuntimeError("temporary adapter failure")
+        super().record(event, result)
 
 
 class RecordingAgentActivator:
@@ -91,3 +105,23 @@ def test_human_request_is_recorded_but_never_auto_activated(tmp_path: Path) -> N
     assert result.kind == "human_required"
     assert len(tasks.records) == 1
     assert agents.records == []
+
+
+def test_adapter_failure_allows_same_event_to_retry(tmp_path: Path) -> None:
+    tasks = FailsOnceTaskRepository()
+    agents = RecordingAgentActivator()
+    subject = OrchestrationService(
+        router=EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3")),
+        task_repository=tasks,
+        agent_activator=agents,
+    )
+    event = make_event(event_type="work_started", status="running")
+
+    with pytest.raises(RuntimeError):
+        subject.handle(event)
+
+    result = subject.handle(event)
+
+    assert result.kind == "accepted"
+    assert result.status == "running"
+    assert len(tasks.records) == 1
