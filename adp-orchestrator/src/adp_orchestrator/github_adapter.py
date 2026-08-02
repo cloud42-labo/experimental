@@ -92,11 +92,17 @@ class GitHubReferenceClient:
                 f"Bearer {self.config.token.get_secret_value()}"
             )
 
-        response = self.client.get(
-            f"{_GITHUB_API_BASE}/repos/{parsed.owner}/"
-            f"{parsed.repository}/{endpoint_name}/{parsed.number}",
-            headers=headers,
-        )
+        try:
+            response = self.client.get(
+                f"{_GITHUB_API_BASE}/repos/{parsed.owner}/"
+                f"{parsed.repository}/{endpoint_name}/{parsed.number}",
+                headers=headers,
+            )
+        except httpx.RequestError as exc:
+            raise GitHubAdapterError(
+                "GitHub reference fetch transport failed"
+            ) from exc
+
         if response.is_error:
             raise GitHubAdapterError(
                 f"GitHub reference fetch failed with HTTP {response.status_code}"
