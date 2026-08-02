@@ -18,6 +18,7 @@ from .notion_adapter import (
     NotionTaskRepository,
 )
 from .router import EventRouter, RouteResult
+from .runtime import RuntimeLease, RuntimeLeaseConfig, RuntimeLeaseError
 from .service import OrchestrationService
 
 _CODE_BLOCK = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
@@ -29,6 +30,10 @@ _WRONG_CHANNEL_MESSAGE = "ADP task events are accepted only in #adp-control."
 _NOTION_ERROR_MESSAGE = (
     "Notion update failed. The event claim was released and can be retried "
     "after the integration configuration is fixed."
+)
+_RUNTIME_ERROR_MESSAGE = (
+    "Orchestrator runtime lease is unavailable. Restart the local process "
+    "before retrying this event."
 )
 
 
@@ -107,16 +112,31 @@ def deliver_result(
 
 def build_app(settings: Settings) -> App:
     app = App(token=settings.slack_bot_token)
-    service = OrchestrationService(
-        router=EventRouter(
-            IdempotencyStore(
-                settings.adp_db_path,
-                lock_lease_seconds=settings.adp_lock_lease_seconds,
-            )
-        ),
-        task_repository=build_task_repository(settings),
-        agent_activator=NoopAgentActivator(),
+    store = IdempotencyStore(
+        settings.adp_db_path,
+        lock_lease_seconds=settings.adp_lock_lease_seconds,
     )
+    runtime = RuntimeLease(
+        store,
+        RuntimeLeaseConfig(
+            lease_seconds=settings.adp_runtime_lease_seconds,
+            heartbeat_seconds=settings.adp_runtime_heartbeat_seconds,
+        ),
+    )
+    runtime.start()
+
+    try:
+        service = OrchestrationService(
+            router=EventRouter(
+                store,
+                delivery_owner_id=runtime.instance_id,
+            ),
+            task_repository=build_task_repository(settings),
+            agent_activator=NoopAgentActivator(),
+        )
+    except Exception:
+        runtime.stop()
+        raise
 
     @app.event("app_mention")
     def handle_mention(
@@ -132,12 +152,16 @@ def build_app(settings: Settings) -> App:
 
         handoff: HandoffEvent | None = None
         try:
+            runtime.ensure_active()
             payload = extract_event_payload(str(event.get("text", "")))
             payload = apply_envelope_event_id(payload, body)
             handoff = HandoffEvent.model_validate(payload)
             result = service.handle(handoff)
         except (ValueError, json.JSONDecodeError, ValidationError):
             say(text=_VALIDATION_ERROR_MESSAGE, thread_ts=thread_ts)
+            return
+        except RuntimeLeaseError:
+            say(text=_RUNTIME_ERROR_MESSAGE, thread_ts=thread_ts)
             return
         except NotionAdapterError:
             say(text=_NOTION_ERROR_MESSAGE, thread_ts=thread_ts)
@@ -162,13 +186,23 @@ def build_app(settings: Settings) -> App:
             service=service,
         )
 
+    setattr(app, "_adp_runtime_lease", runtime)
     return app
+
+
+def stop_app_runtime(app: App) -> None:
+    runtime = getattr(app, "_adp_runtime_lease", None)
+    if isinstance(runtime, RuntimeLease):
+        runtime.stop()
 
 
 def main() -> None:
     settings = Settings()
     app = build_app(settings)
-    SocketModeHandler(app, settings.slack_app_token).start()
+    try:
+        SocketModeHandler(app, settings.slack_app_token).start()
+    finally:
+        stop_app_runtime(app)
 
 
 if __name__ == "__main__":
