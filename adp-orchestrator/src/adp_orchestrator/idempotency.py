@@ -103,6 +103,52 @@ class IdempotencyStore:
             """
         )
 
+    def _delete_event_claim(
+        self,
+        connection: sqlite3.Connection,
+        event_id: str,
+        idempotency_key: str,
+    ) -> None:
+        connection.execute(
+            """
+            DELETE FROM processed_events
+            WHERE event_id = ? AND idempotency_key = ?
+            """,
+            (event_id, idempotency_key),
+        )
+
+    def _restore_task_if_latest(
+        self,
+        connection: sqlite3.Connection,
+        task_id: str,
+        expected_agent: str,
+        expected_run_id: str,
+    ) -> bool:
+        self._delete_expired_locks(connection)
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO task_locks(
+                task_id, agent, run_id, acquired_at, lease_expires_at
+            )
+            SELECT ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', ?)
+            WHERE EXISTS (
+                SELECT 1
+                FROM task_run_heads
+                WHERE task_id = ? AND agent = ? AND run_id = ?
+            )
+            """,
+            (
+                task_id,
+                expected_agent,
+                expected_run_id,
+                self._lease_modifier,
+                task_id,
+                expected_agent,
+                expected_run_id,
+            ),
+        )
+        return cursor.rowcount == 1
+
     def claim_event(self, event_id: str, idempotency_key: str) -> bool:
         try:
             with self._connect() as connection:
@@ -119,12 +165,47 @@ class IdempotencyStore:
 
     def release_event(self, event_id: str, idempotency_key: str) -> None:
         with self._connect() as connection:
+            self._delete_event_claim(connection, event_id, idempotency_key)
+
+    def rollback_started_event(
+        self,
+        event_id: str,
+        idempotency_key: str,
+        task_id: str,
+        expected_agent: str,
+        expected_run_id: str,
+    ) -> None:
+        """Atomically release one start claim and its exact acquired lock."""
+
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._delete_event_claim(connection, event_id, idempotency_key)
             connection.execute(
                 """
-                DELETE FROM processed_events
-                WHERE event_id = ? AND idempotency_key = ?
+                DELETE FROM task_locks
+                WHERE task_id = ? AND agent = ? AND run_id = ?
                 """,
-                (event_id, idempotency_key),
+                (task_id, expected_agent, expected_run_id),
+            )
+
+    def rollback_terminal_event(
+        self,
+        event_id: str,
+        idempotency_key: str,
+        task_id: str,
+        expected_agent: str,
+        expected_run_id: str,
+    ) -> bool:
+        """Atomically release a terminal claim and restore only the latest run."""
+
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._delete_event_claim(connection, event_id, idempotency_key)
+            return self._restore_task_if_latest(
+                connection,
+                task_id,
+                expected_agent,
+                expected_run_id,
             )
 
     def acquire_task(self, task_id: str, agent: str, run_id: str) -> bool:
@@ -164,30 +245,12 @@ class IdempotencyStore:
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            self._delete_expired_locks(connection)
-            cursor = connection.execute(
-                """
-                INSERT OR IGNORE INTO task_locks(
-                    task_id, agent, run_id, acquired_at, lease_expires_at
-                )
-                SELECT ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', ?)
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM task_run_heads
-                    WHERE task_id = ? AND agent = ? AND run_id = ?
-                )
-                """,
-                (
-                    task_id,
-                    expected_agent,
-                    expected_run_id,
-                    self._lease_modifier,
-                    task_id,
-                    expected_agent,
-                    expected_run_id,
-                ),
+            return self._restore_task_if_latest(
+                connection,
+                task_id,
+                expected_agent,
+                expected_run_id,
             )
-        return cursor.rowcount == 1
 
     def heartbeat_task(self, task_id: str, agent: str, run_id: str) -> bool:
         """Extend a live lease only for the exact Agent and attempt run."""
