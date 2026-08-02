@@ -19,14 +19,17 @@ class OrchestrationService:
         self.agent_activator = agent_activator
 
     def rollback(self, event: HandoffEvent) -> None:
-        """Release the event claim after a downstream delivery failure."""
-
         self.router.rollback(event)
 
     def handle(self, event: HandoffEvent) -> RouteResult:
         result = self.router.route(event)
 
         if result.kind in {"ignored", "conflict"}:
+            return result
+
+        # Heartbeats renew only the local lease. They do not rewrite Notion or
+        # enqueue work, which avoids status noise and external API load.
+        if event.event_type == "work_heartbeat":
             return result
 
         try:
