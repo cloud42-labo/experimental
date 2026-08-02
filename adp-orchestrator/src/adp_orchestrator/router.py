@@ -21,8 +21,15 @@ class RouteResult:
 
 
 class EventRouter:
-    def __init__(self, store: IdempotencyStore) -> None:
+    def __init__(
+        self,
+        store: IdempotencyStore,
+        delivery_owner_id: str,
+    ) -> None:
+        if not delivery_owner_id:
+            raise ValueError("delivery_owner_id is required")
         self.store = store
+        self.delivery_owner_id = delivery_owner_id
 
     def _is_worker_terminal(self, event: HandoffEvent) -> bool:
         return (
@@ -48,6 +55,7 @@ class EventRouter:
                 event.task_id,
                 event.from_agent,
                 event.run_id,
+                self.delivery_owner_id,
             )
         else:
             self.store.release_event(event.event_id, event.idempotency_key)
@@ -65,6 +73,7 @@ class EventRouter:
             event.task_id,
             event.from_agent,
             event.run_id,
+            self.delivery_owner_id,
         )
         if not finalized:
             raise RuntimeError("Terminal event finalization failed")
@@ -139,6 +148,7 @@ class EventRouter:
                 event.task_id,
                 event.from_agent,
                 event.run_id,
+                self.delivery_owner_id,
             )
             early_result = self._reservation_result(event, reservation)
             if early_result is not None:
