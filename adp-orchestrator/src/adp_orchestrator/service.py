@@ -21,7 +21,9 @@ class OrchestrationService:
     def handle(self, event: HandoffEvent) -> RouteResult:
         result = self.router.route(event)
 
-        if result.kind == "ignored":
+        # Duplicates and stale/conflicting events are reported to Slack but must
+        # not mutate Notion or activate another agent.
+        if result.kind in {"ignored", "conflict"}:
             return result
 
         try:
@@ -35,7 +37,7 @@ class OrchestrationService:
             if should_enqueue:
                 self.agent_activator.enqueue(event, result)
         except Exception:
-            # The page update is idempotent. Releasing the event claim lets a
+            # Property updates are idempotent. Releasing the claim lets a
             # transient adapter failure be retried instead of becoming permanent.
             self.router.rollback(event)
             raise
