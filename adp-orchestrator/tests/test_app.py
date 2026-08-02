@@ -2,7 +2,11 @@ import json
 
 import pytest
 
-from adp_orchestrator.app import extract_event_payload, format_result
+from adp_orchestrator.app import (
+    apply_envelope_event_id,
+    extract_event_payload,
+    format_result,
+)
 from adp_orchestrator.router import RouteResult
 
 
@@ -16,6 +20,21 @@ def test_extracts_json_code_block() -> None:
     text = '<@U123ABC> ```json\n{"event_id": "event-1"}\n```'
     payload = extract_event_payload(text)
     assert payload == {"event_id": "event-1"}
+
+
+def test_slack_envelope_event_id_overrides_user_value() -> None:
+    payload = {"event_id": "user-controlled"}
+    body = {"event_id": "Ev_signed_by_slack"}
+
+    enriched = apply_envelope_event_id(payload, body)
+
+    assert enriched["event_id"] == "Ev_signed_by_slack"
+    assert payload["event_id"] == "user-controlled"
+
+
+def test_missing_envelope_event_id_keeps_contract_value() -> None:
+    payload = {"event_id": "contract-event"}
+    assert apply_envelope_event_id(payload, {})["event_id"] == "contract-event"
 
 
 def test_rejects_text_without_json_object() -> None:
