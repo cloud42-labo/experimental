@@ -21,30 +21,41 @@ SlackをAI同士の自由会話に使うのではなく、タスク、結果、�
 
 ## セットアップ
 
-### Windows PowerShell
-
-```powershell
+```bash
 cd adp-orchestrator
 python -m venv .venv
+```
+
+Windows PowerShell:
+
+```powershell
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
 
-実Tokenは`.env`やPowerShell履歴へ貼り付けず、Windows資格情報マネージャーを正本にします。資格情報を子Processの環境変数だけへ渡す起動Scriptは後続タスク`ADP-012-F`で追加します。Script追加前は、実Slack E2EではなくPlaceholderを使うローカルテストだけを実行します。
-
-### macOS / Linux
+macOS / Linux:
 
 ```bash
-cd adp-orchestrator
-python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-`.env`を使う場合もGit管理せず、権限を限定してください。`NOTION_TOKEN`と`GITHUB_TOKEN`は空欄でも起動できます。
+WindowsでTokenを`.env`へ複製せずに起動するLauncherはスタックPR #58で提供します。Windows資格情報マネージャーの汎用資格情報を正本にし、Tokenを子Python Processへだけ渡します。
 
-`ADP_LOCK_LEASE_SECONDS`はTaskロックの有効期限で、既定値は3600秒です。クラッシュで終了イベントを送れなくても期限切れ後に別Runが再取得できます。長時間処理では`work_heartbeat`イベントを定期送信し、同一Agent・同一RunだけがLeaseを延長できます。
+## 設定
+
+```plain text
+ADP_LOCK_LEASE_SECONDS=3600
+ADP_RUNTIME_LEASE_SECONDS=60
+ADP_RUNTIME_HEARTBEAT_SECONDS=10
+```
+
+- `ADP_LOCK_LEASE_SECONDS`: Worker RunのLock Lease
+- `ADP_RUNTIME_LEASE_SECONDS`: Orchestrator Process OwnerのLease
+- `ADP_RUNTIME_HEARTBEAT_SECONDS`: Process Owner Heartbeat間隔
+
+Runtime HeartbeatはRuntime Leaseの3分の1以下にします。アプリはDaemon Threadと各Slackイベント受付前の両方でOwner Leaseを更新します。
 
 ## 起動
 
@@ -52,25 +63,50 @@ cp .env.example .env
 python -m adp_orchestrator.app
 ```
 
-Slackの`#adp-control`で `@ADP Orchestrator` に続けてJSONイベントを投稿します。実Slackイベントでは、JSON内の`event_id`よりSlack署名済みEnvelopeの`event_id`を優先します。
+Slackの`#adp-control`で`@ADP Orchestrator`に続けてJSONイベントを投稿します。実Slackイベントでは、JSON内の`event_id`よりSlack署名済みEnvelopeの`event_id`を優先します。先頭のOrchestrator mentionだけを除去し、`summary`などJSON文字列内のSlack mentionは保持します。
 
-### Runと冪等性
+## Runと冪等性
 
 1回の試行は`task_id + correlation_id + attempt`から生成する`run_id`で識別します。同じClaudeでもattempt 1とattempt 2は別Runです。
 
-イベントの冪等キーは`run_id + event_type`を正規化JSONにしてSHA-256化します。Heartbeatだけは同じRunで繰り返すため、Slack署名済み`event_id`も含めます。これにより、同一Heartbeatの再配信は排除しつつ、次のHeartbeatは受理できます。
+通常イベントの冪等キーは`run_id + event_type`をcanonical JSON化してSHA-256で生成します。Heartbeatだけは同じRunで繰り返せるよう、Slack署名済み`event_id`も含めます。
 
-### Task LockとTerminal配信予約
+Terminalイベントでは、次のOutcome定義をすべて冪等キーへ含めます。
 
-Taskロックは`work_started`で取得し、Agent名とRun IDの組合せで所有します。Event ClaimとLock取得は同一SQLite Transactionで実行するため、競合したStartはClaimを残さず、現行Run終了後に同じイベントを再送できます。
+- Source / Target Agent
+- event_type / status / summary
+- Notion URL / GitHub URL
+- requires_human
+- attempt / max_attempts
 
-`work_completed`、`failed`、Worker自身の`human_required`は、同じAgent・同じRunだけがTerminal配信を予約できます。予約時点ではLockを解放しません。Notion更新とSlack通知がすべて成功した後にだけLockを確定解放するため、配信途中に後続Runが開始することはありません。
+そのため、Slack Envelope IDだけが異なる完全一致の再配信は同じイベントとして扱い、status、summary、max_attemptsなどが変わった再投稿は矛盾する別Outcomeとして拒否します。
 
-Terminal配信に失敗した場合は、Terminal予約とEvent Claimだけを原子的に戻し、元のRun Lockは保持します。同じTerminalイベントを再送して配信をやり直せます。Start側の配信失敗は、Exact Runの非Terminal Lockを実際に削除できた場合だけClaimを戻すため、すでにTerminal処理へ進んだRunがStart再配信で復活することを防ぎます。
+## Task LockとTerminal配信予約
 
-古いattemptから遅れて届いた完了・失敗・Human Requestや、異なるAgentからのイベントはConflictとして拒否し、現行RunのロックやNotion状態を変更しません。
+Task Lockは`work_started`で取得し、Agent名とRun IDの組合せで所有します。Event ClaimとLock取得は同一SQLite Transactionで行います。競合したStartはClaimを残さず、現行Run終了後に同じイベントを再送できます。
 
-### Heartbeat
+`work_completed`、`failed`、Worker自身の`human_required`は、同じAgent・同じRunだけがTerminal配信を予約できます。最初に受理したTerminal Outcomeを固定し、予約時点ではTask Lockを解放しません。Notion更新とSlack通知がすべて成功した後にだけFinalizeしてLockを解放します。
+
+Terminal配信に失敗した場合は、配信OwnerとEvent Claimだけを戻し、元Run Lockと選択済みOutcomeを保持します。完全一致するTerminalイベントだけを再試行でき、矛盾する完了／失敗は受理しません。
+
+Start側の配信失敗は、Exact Runの非Terminal Lockを実際に削除できた場合だけClaimを戻します。すでにTerminal処理へ進んだRunがStart再配信で復活することを防ぎます。
+
+## Orchestrator Process OwnerとCrash復旧
+
+Terminal予約には、配信を担当するOrchestrator Processの`terminal_owner_id`を保存します。各Processは`runtime_instances`へ期限付きOwner Leaseを登録し、稼働中はHeartbeatを継続します。
+
+- 旧OwnerのLeaseが有効な間、別ProcessはTerminal予約を奪わない
+- 旧Ownerが生存中に届いた同一Terminal再配信は`deferred`としてProcess内Queueへ1件だけ保持する
+- QueueはRuntime Lease経過後に自動再試行する
+- 旧Ownerが先にFinalizeした場合、Deferred処理は安全に終了する
+- 旧OwnerのLeaseが失効した場合、同じRun・同じOutcomeだけを新Processへ移譲する
+- 異なるTerminal Outcomeへの変更はOwner失効後も拒否する
+- 旧Ownerによる遅延Finalize / RollbackはOwner条件で拒否する
+- 正常終了ではOwner Leaseを即時解除する
+
+Runtime Heartbeatが失敗したProcessは新しいSlackイベントを受け付けずFail Closedします。
+
+## Worker Heartbeat
 
 長時間処理では次のイベントを定期送信します。
 
@@ -90,7 +126,15 @@ Terminal配信に失敗した場合は、Terminal予約とEvent Claimだけを�
 }
 ```
 
-Heartbeatは非Terminal状態のExact RunだけがLeaseを延長でき、NotionやAI起動Adapterへ副作用を出しません。
+Worker Heartbeatは非Terminal状態のExact RunだけがTask Lock Leaseを延長でき、NotionやAI起動Adapterへ副作用を出しません。Orchestrator Process Owner Heartbeatとは別の仕組みです。
+
+## イベント契約の制約
+
+- `work_started`のTargetはClaude / Gemini / Codexのみ
+- `work_started`は`requires_human=true`を許可しない
+- `work_heartbeat`、`work_completed`、`failed`のSourceはWorker Agentのみ
+- WorkerのHuman Requestは`human_required`イベントを使う
+- `to_agent=human`は自動的に`requires_human=true`となる
 
 ## Adapter構造
 
@@ -99,37 +143,38 @@ Heartbeatは非Terminal状態のExact RunだけがLeaseを延長でき、Notion�
 - `GitHubReferenceClient`: Issue / Pull Requestを読み取る
 - 既定値は安全なNo-op Adapter
 
-`NOTION_TOKEN`設定時だけ`NotionTaskRepository`が有効になり、`Status`、`Result`、`Assigned Agent`、`Blocker`、`Environment Help`を更新します。Codexも正式なAssigned Agentとして扱います。HTTPエラーとDNS・接続・Timeoutなどのtransport errorは、Tokenやレスポンス本文を含まない安全なエラーへ変換し、元例外のContextも抑止します。
+`NOTION_TOKEN`設定時だけ`NotionTaskRepository`が有効になり、`Status`、`Result`、`Assigned Agent`、`Blocker`、`Environment Help`を更新します。Codexも正式なAssigned Agentとして扱います。
 
-Notion更新、AI起動、Slack返信・Human Request通知が一時失敗した場合は、イベント種別に応じた安全なrollbackを行います。Slack再送または再投稿で処理を継続できます。
-
-`GitHubReferenceClient`は読み取り専用です。公開Issue / PRはTokenなし、privateリポジトリは`GITHUB_TOKEN`付きで参照できます。
+Notion / GitHubのHTTP・DNS・接続・Timeoutエラーは、Tokenやレスポンス本文を含まない安全なAdapter Errorへ正規化し、元例外のContextも抑止します。
 
 ## テスト
 
 ```bash
-pytest
+pytest -q
 ```
 
-純粋ロジックとMockTransportによる回帰テストで、次を確認します。
+GitHub Actionsは、`adp-orchestrator/**`のPull Requestと対象Branch Pushで次を自動実行します。
 
-- attempt単位のRun IDと衝突しない冪等性
+- Python 3.12
+- Package / Dev dependenciesの導入
+- `python -m compileall -q src`
+- Full Test Suite
+
+最新headでは112 testsが成功しています。
+
+主な検証範囲:
+
+- Run IDと衝突しない冪等性
+- Terminal Outcome全項目の固定
 - Event ClaimとStart Lock取得の原子性
-- Terminal配信予約・成功時Finalize・失敗時Retry
+- Terminal配信予約・Finalize・Rollback・Exact Retry
 - Terminal配信完了まで後続Runを開始させない制御
 - Start再配信による完了Runの復活防止
-- 同一Runで繰り返せるHeartbeat
-- Agent + Run IDによるTask Lock所有権
-- 期限切れ回収、Heartbeat、旧DB移行
-- 同じAgentの古いattempt終了イベント拒否
-- stale Human Requestの拒否
-- Human Request対象の自動起動禁止
-- Notion Status / Result / Blockerの設定と解除
-- Codex担当のNotion反映
-- Notion / GitHub transport errorの安全な正規化と秘密情報非露出
-- GitHub Issue / PR URL解析とメタデータ取得
-
-最新のテスト件数と実行結果はPR本文に記録します。
+- Runtime Ownerの二重配信防止とCrash Recovery
+- Active Owner中に届いた再配信のDeferred自動再試行
+- Worker / Runtime Heartbeat
+- 古いattempt、誤Agent、stale Human Requestの拒否
+- Notion / GitHub transport errorの秘密情報非露出
 
 ## ディレクトリ
 
@@ -143,14 +188,16 @@ src/adp_orchestrator/
 ├── idempotency.py
 ├── notion_adapter.py
 ├── router.py
+├── runtime.py
 └── service.py
 ```
 
 ## 制約
 
 - PC停止中はイベントを処理しません
+- Deferred QueueはProcess内に保持します。新Process自体も再度停止した場合はSlackイベントの再投稿が必要です
 - Slackの過去メッセージ再同期は未実装です
 - Notion実接続にはTokenとページ共有権限が必要です
 - GitHub Adapterは現在読み取り専用です
-- 実Slack E2EはCredential Manager起動Script追加後に行います
-- 常時稼働環境への移行はE2E成功後に判断します
+- AI起動Adapterは現在No-opです
+- 常時稼働環境への移行はAI Handoff E2E成功後に判断します
