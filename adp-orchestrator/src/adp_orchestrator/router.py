@@ -22,6 +22,13 @@ class EventRouter:
     def __init__(self, store: IdempotencyStore) -> None:
         self.store = store
 
+    def rollback(self, event: HandoffEvent) -> None:
+        """Allow a safe retry when an external adapter failed."""
+
+        self.store.release_event(event.event_id, event.idempotency_key)
+        if event.event_type == "work_started":
+            self.store.release_task(event.task_id)
+
     def route(self, event: HandoffEvent) -> RouteResult:
         if not self.store.claim_event(event.event_id, event.idempotency_key):
             return RouteResult(
