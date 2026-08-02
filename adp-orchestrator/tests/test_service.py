@@ -1,0 +1,93 @@
+from pathlib import Path
+
+from adp_orchestrator.events import HandoffEvent
+from adp_orchestrator.idempotency import IdempotencyStore
+from adp_orchestrator.router import EventRouter, RouteResult
+from adp_orchestrator.service import OrchestrationService
+
+
+class RecordingTaskRepository:
+    def __init__(self) -> None:
+        self.records: list[tuple[HandoffEvent, RouteResult]] = []
+
+    def record(self, event: HandoffEvent, result: RouteResult) -> None:
+        self.records.append((event, result))
+
+
+class RecordingAgentActivator:
+    def __init__(self) -> None:
+        self.records: list[tuple[HandoffEvent, RouteResult]] = []
+
+    def enqueue(self, event: HandoffEvent, result: RouteResult) -> None:
+        self.records.append((event, result))
+
+
+def make_event(**overrides: object) -> HandoffEvent:
+    payload: dict[str, object] = {
+        "schema_version": "1.0",
+        "event_id": "event-1",
+        "task_id": "ADP-012",
+        "correlation_id": "correlation-1",
+        "from_agent": "chris",
+        "to_agent": "claude",
+        "event_type": "task_assigned",
+        "status": "ready",
+        "summary": "Implement the MVP",
+        "requires_human": False,
+        "attempt": 1,
+        "max_attempts": 3,
+    }
+    payload.update(overrides)
+    return HandoffEvent.model_validate(payload)
+
+
+def service(tmp_path: Path) -> tuple[
+    OrchestrationService, RecordingTaskRepository, RecordingAgentActivator
+]:
+    task_repository = RecordingTaskRepository()
+    agent_activator = RecordingAgentActivator()
+    subject = OrchestrationService(
+        router=EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3")),
+        task_repository=task_repository,
+        agent_activator=agent_activator,
+    )
+    return subject, task_repository, agent_activator
+
+
+def test_assignment_records_task_and_enqueues_agent(tmp_path: Path) -> None:
+    subject, tasks, agents = service(tmp_path)
+    event = make_event()
+
+    result = subject.handle(event)
+
+    assert result.kind == "accepted"
+    assert len(tasks.records) == 1
+    assert len(agents.records) == 1
+
+
+def test_duplicate_has_no_external_side_effects(tmp_path: Path) -> None:
+    subject, tasks, agents = service(tmp_path)
+    event = make_event()
+
+    subject.handle(event)
+    result = subject.handle(event)
+
+    assert result.kind == "ignored"
+    assert len(tasks.records) == 1
+    assert len(agents.records) == 1
+
+
+def test_human_request_is_recorded_but_never_auto_activated(tmp_path: Path) -> None:
+    subject, tasks, agents = service(tmp_path)
+    event = make_event(
+        event_type="human_required",
+        status="blocked",
+        to_agent="human",
+        requires_human=True,
+    )
+
+    result = subject.handle(event)
+
+    assert result.kind == "human_required"
+    assert len(tasks.records) == 1
+    assert agents.records == []
