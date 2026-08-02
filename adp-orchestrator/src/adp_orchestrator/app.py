@@ -282,7 +282,16 @@ class DeferredDeliveryScheduler:
                 )
                 return
             if result.kind == "conflict":
-                self.outbox.complete(delivery.idempotency_key)
+                if handoff.event_type == "work_started":
+                    # A preceding run can release its lock later. Preserve the
+                    # queued attempt instead of turning a transient conflict
+                    # into permanent loss.
+                    self.outbox.reschedule(
+                        delivery.idempotency_key,
+                        self.retry_seconds,
+                    )
+                else:
+                    self.outbox.complete(delivery.idempotency_key)
                 return
 
             deliver_result(
@@ -414,8 +423,6 @@ def build_app(settings: Settings) -> App:
                     handoff.idempotency_key,
                     delivered=False,
                 )
-            # Do not return a successful Bolt response when no valid runtime can
-            # durably own the event. Slack may redeliver the envelope.
             raise
         except NotionAdapterError:
             if handoff is not None and outbox_active:
