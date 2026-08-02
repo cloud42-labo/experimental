@@ -98,10 +98,12 @@ class GitHubReferenceClient:
                 f"{parsed.repository}/{endpoint_name}/{parsed.number}",
                 headers=headers,
             )
-        except httpx.RequestError as exc:
+        except httpx.RequestError:
+            # Suppress the original transport exception because its traceback can
+            # contain proxy credentials, URLs, or user-controlled diagnostics.
             raise GitHubAdapterError(
                 "GitHub reference fetch transport failed"
-            ) from exc
+            ) from None
 
         if response.is_error:
             raise GitHubAdapterError(
