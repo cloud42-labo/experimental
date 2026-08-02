@@ -28,6 +28,7 @@ EventStatus = Literal[
 AgentName = Literal["chris", "claude", "gemini", "human", "codex"]
 _WORKER_AGENTS = {"claude", "gemini", "codex"}
 _WORKER_SOURCE_EVENTS = {"work_heartbeat", "work_completed", "failed"}
+_TERMINAL_EVENT_TYPES = {"work_completed", "failed", "human_required"}
 
 
 class HandoffEvent(BaseModel):
@@ -93,14 +94,34 @@ class HandoffEvent(BaseModel):
         )
         return f"run-v1:{digest}"
 
+    def _terminal_outcome(self) -> dict[str, object]:
+        """Return every field that can change terminal side effects."""
+
+        return {
+            "schema_version": self.schema_version,
+            "task_id": self.task_id,
+            "correlation_id": self.correlation_id,
+            "from_agent": self.from_agent,
+            "to_agent": self.to_agent,
+            "event_type": self.event_type,
+            "status": self.status,
+            "summary": self.summary,
+            "notion_url": None if self.notion_url is None else str(self.notion_url),
+            "github_url": None if self.github_url is None else str(self.github_url),
+            "requires_human": self.requires_human,
+            "attempt": self.attempt,
+            "max_attempts": self.max_attempts,
+        }
+
     @property
     def idempotency_key(self) -> str:
         """Return an unambiguous semantic event key.
 
         Most event types occur once per run and are keyed by ``run_id`` and
         ``event_type``. Heartbeats are intentionally repeatable, so their signed
-        Slack envelope ``event_id`` is also part of the semantic key. A redelivery
-        of the same heartbeat is still deduplicated by both columns in SQLite.
+        Slack envelope ``event_id`` is also part of the semantic key. Terminal
+        events additionally include every outcome-defining field so an exact
+        delivery retry cannot change status, summary, links, or escalation rules.
         """
 
         payload: dict[str, object] = {
@@ -109,5 +130,7 @@ class HandoffEvent(BaseModel):
         }
         if self.event_type == "work_heartbeat":
             payload["heartbeat_event_id"] = self.event_id
+        if self.event_type in _TERMINAL_EVENT_TYPES:
+            payload["terminal_outcome"] = self._terminal_outcome()
         digest = self._canonical_hash(payload)
         return f"event-v1:{digest}"
