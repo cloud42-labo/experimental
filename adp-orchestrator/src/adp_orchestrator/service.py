@@ -34,10 +34,14 @@ class OrchestrationService:
         if self.delivery_guard is not None:
             self.delivery_guard(event, result)
 
-    def handle(self, event: HandoffEvent) -> RouteResult:
-        result = self.router.route(event)
-
+    def _apply_side_effects(
+        self,
+        event: HandoffEvent,
+        result: RouteResult,
+    ) -> RouteResult:
         if result.kind in {"ignored", "conflict", "deferred"}:
+            return result
+        if not result.apply_external_side_effects:
             return result
 
         # Heartbeats renew only the local lease. They do not rewrite Notion or
@@ -62,3 +66,14 @@ class OrchestrationService:
             raise
 
         return result
+
+    def handle(self, event: HandoffEvent) -> RouteResult:
+        return self._apply_side_effects(event, self.router.route(event))
+
+    def replay_claimed(self, event: HandoffEvent) -> RouteResult:
+        """Resume durable outbox work whose routing claim survived a crash."""
+
+        return self._apply_side_effects(
+            event,
+            self.router.replay_claimed(event),
+        )
