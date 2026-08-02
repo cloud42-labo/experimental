@@ -52,8 +52,6 @@ class IdempotencyStore:
         return True
 
     def release_event(self, event_id: str, idempotency_key: str) -> None:
-        """Release a claim when an external side effect failed and retry is safe."""
-
         with self._connect() as connection:
             connection.execute(
                 """
@@ -95,9 +93,19 @@ class IdempotencyStore:
             ).fetchone()
         return None if row is None else str(row[0])
 
-    def release_task(self, task_id: str) -> None:
+    def release_task(self, task_id: str, expected_agent: str) -> bool:
+        """Release only the lock owned by the expected agent.
+
+        This prevents a delayed completion or failure from an earlier agent from
+        deleting a lock that a newer agent currently owns.
+        """
+
         with self._connect() as connection:
-            connection.execute(
-                "DELETE FROM task_locks WHERE task_id = ?",
-                (task_id,),
+            cursor = connection.execute(
+                """
+                DELETE FROM task_locks
+                WHERE task_id = ? AND agent = ?
+                """,
+                (task_id, expected_agent),
             )
+        return cursor.rowcount == 1
