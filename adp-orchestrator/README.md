@@ -60,6 +60,7 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
   "event_type": "task_assigned",
   "status": "ready",
   "summary": "Orchestrator MVPを実装する",
+  "notion_url": "https://app.notion.com/p/<task-page-id>",
   "requires_human": false,
   "attempt": 1,
   "max_attempts": 3
@@ -76,7 +77,9 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
 - `AgentActivator`: 次のAI作業をキューへ渡す境界
 - MVP既定値は`NoopTaskRepository`と`NoopAgentActivator`
 
-このため、実Tokenがない状態でもルーティングをテストでき、有料AI APIを無断で呼びません。
+`NotionTaskRepository`は実装済みですが、既定では有効にしていません。Notion Tokenと対象ページの共有権限を準備した後に明示的に注入します。更新対象は`Status`、`Result`、`Assigned Agent`、およびHuman Request時の`Blocker`・`Environment Help`です。
+
+この構造により、実Tokenがない状態でもルーティングをテストでき、有料AI APIを無断で呼びません。
 
 ## テスト
 
@@ -84,7 +87,7 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けて、次のJSONを投稿
 pytest
 ```
 
-現在の純粋ロジックテストは23件です。
+現在の純粋ロジック・モックHTTPテストは29件です。
 
 - イベント契約の検証
 - Slack Envelope event IDの優先
@@ -96,6 +99,9 @@ pytest
 - Human Request対象の自動起動禁止
 - Tokenを例外へ含めない設定検証
 - Adapterの副作用境界
+- Notion Update pageのリクエスト形式
+- Notion Status / Result / Blocker更新
+- Notion HTTPエラー時のToken・レスポンス本文非露出
 
 ## ディレクトリ
 
@@ -106,6 +112,7 @@ src/adp_orchestrator/
 ├── config.py        # 環境変数検証
 ├── events.py        # メッセージ契約
 ├── idempotency.py   # SQLite処理履歴とTaskロック
+├── notion_adapter.py # Notion Page更新Adapter（既定は無効）
 ├── router.py        # 状態遷移とルーティング
 └── service.py       # RouterとAdapterの調停
 ```
@@ -114,6 +121,7 @@ src/adp_orchestrator/
 
 - PC停止中はイベントを処理しません
 - Slackの過去メッセージ再同期は未実装です
-- Notion/GitHubへの実書き込みAdapterは後続実装です
+- Notion Adapterの実接続にはTokenとページ共有権限が必要です
+- GitHubへの実書き込みAdapterは後続実装です
 - 実Slack SDK接続はWorkspaceとToken準備後にE2E確認します
 - 本番運用や常時稼働環境への移行は、E2E成功後に判断します
