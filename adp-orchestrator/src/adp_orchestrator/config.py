@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,11 +10,13 @@ class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables.
 
     Validation errors mention variable names but hide the supplied values.
+    Empty optional secret variables are treated as unset.
     """
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        env_ignore_empty=True,
         extra="ignore",
         hide_input_in_errors=True,
     )
@@ -25,6 +27,8 @@ class Settings(BaseSettings):
     adp_human_requests_channel_id: str
     adp_daily_channel_id: str
     adp_db_path: Path = Path(".adp/orchestrator.sqlite3")
+    notion_token: SecretStr | None = None
+    github_token: SecretStr | None = None
 
     @field_validator("slack_bot_token")
     @classmethod
