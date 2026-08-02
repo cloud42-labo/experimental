@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .events import HandoffEvent
-from .idempotency import IdempotencyStore, TaskLock
+from .idempotency import ClaimResult, IdempotencyStore, TaskLock
 
 RouteKind = Literal["ignored", "accepted", "human_required", "conflict"]
 _WORKER_AGENTS = {"claude", "gemini", "codex"}
+_TERMINAL_EVENT_TYPES = {"work_completed", "failed", "human_required"}
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,11 @@ class EventRouter:
     def __init__(self, store: IdempotencyStore) -> None:
         self.store = store
 
+    def _is_worker_terminal(self, event: HandoffEvent) -> bool:
+        return event.from_agent in _WORKER_AGENTS and (
+            event.event_type in _TERMINAL_EVENT_TYPES or event.requires_human
+        )
+
     def rollback(self, event: HandoffEvent) -> None:
         """Allow a safe retry when an external adapter or Slack delivery failed."""
 
@@ -34,18 +40,7 @@ class EventRouter:
                 event.to_agent,
                 event.run_id,
             )
-        elif event.event_type in {"work_completed", "failed"}:
-            self.store.rollback_terminal_event(
-                event.event_id,
-                event.idempotency_key,
-                event.task_id,
-                event.from_agent,
-                event.run_id,
-            )
-        elif (
-            event.event_type == "human_required"
-            and event.from_agent in _WORKER_AGENTS
-        ):
+        elif self._is_worker_terminal(event):
             self.store.rollback_terminal_event(
                 event.event_id,
                 event.idempotency_key,
@@ -55,6 +50,32 @@ class EventRouter:
             )
         else:
             self.store.release_event(event.event_id, event.idempotency_key)
+
+    def finalize(self, event: HandoffEvent, result: RouteResult) -> None:
+        """Commit a reserved terminal event after all external delivery succeeds."""
+
+        if result.kind not in {"accepted", "human_required"}:
+            return
+        if not self._is_worker_terminal(event):
+            return
+        finalized = self.store.finalize_terminal_event(
+            event.event_id,
+            event.idempotency_key,
+            event.task_id,
+            event.from_agent,
+            event.run_id,
+        )
+        if not finalized:
+            raise RuntimeError("Terminal event finalization failed")
+
+    def _ignored(self, event: HandoffEvent) -> RouteResult:
+        return RouteResult(
+            kind="ignored",
+            task_id=event.task_id,
+            status=event.status,
+            message="Duplicate event ignored.",
+            target_agent=event.to_agent,
+        )
 
     def _lock_conflict(
         self,
@@ -84,41 +105,47 @@ class EventRouter:
             target_agent=target_agent,
         )
 
-    def _release_worker_run(self, event: HandoffEvent) -> RouteResult | None:
-        """Atomically release only the exact worker run or return a retryable conflict."""
-
-        released = self.store.release_task(
-            event.task_id,
-            event.from_agent,
-            event.run_id,
-        )
-        if released:
+    def _reservation_result(
+        self,
+        event: HandoffEvent,
+        reservation: ClaimResult,
+    ) -> RouteResult | None:
+        if reservation == "accepted":
             return None
-
-        # The semantic key intentionally identifies the run and event type, not
-        # the sender. A spoofed or stale sender must not permanently claim that
-        # key and block the legitimate owner from publishing its terminal event.
-        self.store.release_event(event.event_id, event.idempotency_key)
+        if reservation == "duplicate":
+            return self._ignored(event)
         return self._lock_conflict(
             event,
             self.store.current_lock(event.task_id),
         )
 
     def route(self, event: HandoffEvent) -> RouteResult:
-        if not self.store.claim_event(event.event_id, event.idempotency_key):
-            return RouteResult(
-                kind="ignored",
-                task_id=event.task_id,
-                status=event.status,
-                message="Duplicate event ignored.",
-                target_agent=event.to_agent,
+        if event.event_type == "work_started":
+            reservation = self.store.claim_started_event(
+                event.event_id,
+                event.idempotency_key,
+                event.task_id,
+                event.to_agent,
+                event.run_id,
             )
+            early_result = self._reservation_result(event, reservation)
+            if early_result is not None:
+                return early_result
+        elif self._is_worker_terminal(event):
+            reservation = self.store.claim_terminal_event(
+                event.event_id,
+                event.idempotency_key,
+                event.task_id,
+                event.from_agent,
+                event.run_id,
+            )
+            early_result = self._reservation_result(event, reservation)
+            if early_result is not None:
+                return early_result
+        elif not self.store.claim_event(event.event_id, event.idempotency_key):
+            return self._ignored(event)
 
         if event.requires_human or event.event_type == "human_required":
-            if event.from_agent in _WORKER_AGENTS:
-                conflict = self._release_worker_run(event)
-                if conflict is not None:
-                    return conflict
             return RouteResult(
                 kind="human_required",
                 task_id=event.task_id,
@@ -126,11 +153,6 @@ class EventRouter:
                 message=f"Human action required: {event.summary}",
                 target_agent="human",
             )
-
-        if event.event_type in {"failed", "work_completed"}:
-            conflict = self._release_worker_run(event)
-            if conflict is not None:
-                return conflict
 
         if event.event_type == "failed" and event.attempt >= event.max_attempts:
             return RouteResult(
@@ -143,21 +165,6 @@ class EventRouter:
                 ),
                 target_agent="human",
             )
-
-        if event.event_type == "work_started":
-            acquired = self.store.acquire_task(
-                event.task_id,
-                event.to_agent,
-                event.run_id,
-            )
-            if not acquired:
-                # A start conflict is transient: once the current run ends, the
-                # exact same start event may be retried successfully.
-                self.store.release_event(event.event_id, event.idempotency_key)
-                return self._lock_conflict(
-                    event,
-                    self.store.current_lock(event.task_id),
-                )
 
         if event.event_type == "work_heartbeat":
             renewed = self.store.heartbeat_task(
