@@ -7,11 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Runtime configuration loaded from environment variables.
-
-    Validation errors mention variable names but hide the supplied values.
-    Empty optional secret variables are treated as unset.
-    """
+    """Runtime configuration loaded from environment variables."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -27,6 +23,7 @@ class Settings(BaseSettings):
     adp_human_requests_channel_id: str
     adp_daily_channel_id: str
     adp_db_path: Path = Path(".adp/orchestrator.sqlite3")
+    adp_lock_lease_seconds: int = 3600
     notion_token: SecretStr | None = None
     github_token: SecretStr | None = None
 
@@ -54,3 +51,10 @@ class Settings(BaseSettings):
         if not value.strip():
             raise ValueError("Slack channel ID must not be empty")
         return value.strip()
+
+    @field_validator("adp_lock_lease_seconds")
+    @classmethod
+    def validate_lock_lease_seconds(cls, value: int) -> int:
+        if value < 30:
+            raise ValueError("ADP_LOCK_LEASE_SECONDS must be at least 30")
+        return value
