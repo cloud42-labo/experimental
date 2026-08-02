@@ -105,6 +105,71 @@ def test_restore_rejects_run_superseded_even_after_successor_completes(
     assert store.current_lock("ADP-012") is None
 
 
+def test_atomic_start_rollback_releases_claim_and_exact_lock(
+    tmp_path: Path,
+) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.claim_event("event-1", "key-1") is True
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
+
+    store.rollback_started_event(
+        "event-1",
+        "key-1",
+        "ADP-012",
+        "claude",
+        "run-1",
+    )
+
+    assert store.current_lock("ADP-012") is None
+    assert store.claim_event("event-1", "key-1") is True
+
+
+def test_atomic_terminal_rollback_releases_claim_and_restores_latest_lock(
+    tmp_path: Path,
+) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
+    assert store.release_task("ADP-012", "claude", "run-1") is True
+    assert store.claim_event("event-1", "key-1") is True
+
+    restored = store.rollback_terminal_event(
+        "event-1",
+        "key-1",
+        "ADP-012",
+        "claude",
+        "run-1",
+    )
+
+    assert restored is True
+    lock = store.current_lock("ADP-012")
+    assert lock is not None
+    assert lock.run_id == "run-1"
+    assert store.claim_event("event-1", "key-1") is True
+
+
+def test_atomic_terminal_rollback_does_not_restore_superseded_run(
+    tmp_path: Path,
+) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
+    assert store.release_task("ADP-012", "claude", "run-1") is True
+    assert store.acquire_task("ADP-012", "gemini", "run-2") is True
+    assert store.release_task("ADP-012", "gemini", "run-2") is True
+    assert store.claim_event("event-1", "key-1") is True
+
+    restored = store.rollback_terminal_event(
+        "event-1",
+        "key-1",
+        "ADP-012",
+        "claude",
+        "run-1",
+    )
+
+    assert restored is False
+    assert store.current_lock("ADP-012") is None
+    assert store.claim_event("event-1", "key-1") is True
+
+
 def test_legacy_lock_without_run_or_lease_is_recovered(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.sqlite3"
     with sqlite3.connect(db_path) as connection:
