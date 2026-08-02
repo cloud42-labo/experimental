@@ -109,10 +109,12 @@ class NotionTaskRepository:
                 },
                 json={"properties": properties},
             )
-        except httpx.RequestError as exc:
-            # Never include exception text because it can contain a URL, headers,
-            # proxy details, or user-controlled transport diagnostics.
-            raise NotionAdapterError("Notion page update transport failed") from exc
+        except httpx.RequestError:
+            # Suppress the original transport exception because its traceback can
+            # contain proxy credentials, URLs, or user-controlled diagnostics.
+            raise NotionAdapterError(
+                "Notion page update transport failed"
+            ) from None
 
         if response.is_error:
             raise NotionAdapterError(
