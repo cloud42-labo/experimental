@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from typing import Literal
@@ -51,6 +52,20 @@ class EventRouter:
             event.from_agent in _WORKER_AGENTS
             and event.event_type in _TERMINAL_EVENT_TYPES
         )
+
+    def _has_selected_terminal_outcome(self, task_id: str) -> bool:
+        """Check the durable outcome marker even after delivery ownership rolls back."""
+
+        with sqlite3.connect(self.store.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT terminal_idempotency_key
+                FROM task_locks
+                WHERE task_id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+        return row is not None and row[0] is not None
 
     def rollback(self, event: HandoffEvent) -> None:
         """Allow a safe retry when an external adapter or Slack delivery failed."""
@@ -192,9 +207,12 @@ class EventRouter:
                     f"{event.summary}"
                 ),
                 target_agent=event.to_agent,
-                # A later terminal reservation means Notion has already moved
-                # beyond running. Recover only the missing Slack acknowledgement.
-                apply_external_side_effects=lock.terminal_event_id is None,
+                # A selected terminal outcome survives delivery rollback even
+                # when terminal_event_id and owner are cleared. Never rewrite
+                # that newer Notion state back to running.
+                apply_external_side_effects=(
+                    not self._has_selected_terminal_outcome(event.task_id)
+                ),
             )
 
         if event.event_type == "work_heartbeat":
@@ -203,7 +221,7 @@ class EventRouter:
                 lock is None
                 or lock.agent != event.from_agent
                 or lock.run_id != event.run_id
-                or lock.terminal_event_id is not None
+                or self._has_selected_terminal_outcome(event.task_id)
             ):
                 return self._lock_conflict(event, lock)
             return RouteResult(
