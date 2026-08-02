@@ -28,8 +28,9 @@ cd adp-orchestrator
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-Copy-Item .env.example .env
 ```
+
+実Tokenは`.env`やPowerShell履歴へ貼り付けず、Windows資格情報マネージャーを正本にします。資格情報を子Processの環境変数だけへ渡す起動Scriptは後続タスク`ADP-012-F`で追加します。Script追加前は、実Slack E2EではなくPlaceholderを使うローカルテストだけを実行します。
 
 ### macOS / Linux
 
@@ -41,7 +42,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-`.env`へTokenとチャンネルIDを設定します。`.env`はGit管理しません。`NOTION_TOKEN`と`GITHUB_TOKEN`は空欄でも起動できます。
+`.env`を使う場合もGit管理せず、権限を限定してください。`NOTION_TOKEN`と`GITHUB_TOKEN`は空欄でも起動できます。
 
 `ADP_LOCK_LEASE_SECONDS`はTaskロックの有効期限で、既定値は3600秒です。クラッシュで終了イベントを送れなくても期限切れ後に別Runが再取得できます。長時間処理では`work_heartbeat`イベントを定期送信し、同一Agent・同一RunだけがLeaseを延長できます。
 
@@ -59,11 +60,15 @@ Slackの`#adp-control`で `@ADP Orchestrator` に続けてJSONイベントを投
 
 イベントの冪等キーは`run_id + event_type`を正規化JSONにしてSHA-256化します。Heartbeatだけは同じRunで繰り返すため、Slack署名済み`event_id`も含めます。これにより、同一Heartbeatの再配信は排除しつつ、次のHeartbeatは受理できます。
 
-### Task Lock
+### Task LockとTerminal配信予約
 
-Taskロックは`work_started`で取得し、Agent名とRun IDの組合せで所有します。`work_completed`、`failed`、Worker自身の`human_required`は、同じAgent・同じRunだけが解除できます。
+Taskロックは`work_started`で取得し、Agent名とRun IDの組合せで所有します。Event ClaimとLock取得は同一SQLite Transactionで実行するため、競合したStartはClaimを残さず、現行Run終了後に同じイベントを再送できます。
 
-古いattemptから遅れて届いた完了・失敗・Human RequestはConflictとして拒否し、現行RunのロックやNotion状態を変更しません。`work_started`が競合した場合はevent claimを戻すため、現行Run終了後に同じStartイベントを再送できます。
+`work_completed`、`failed`、Worker自身の`human_required`は、同じAgent・同じRunだけがTerminal配信を予約できます。予約時点ではLockを解放しません。Notion更新とSlack通知がすべて成功した後にだけLockを確定解放するため、配信途中に後続Runが開始することはありません。
+
+Terminal配信に失敗した場合は、Terminal予約とEvent Claimだけを原子的に戻し、元のRun Lockは保持します。同じTerminalイベントを再送して配信をやり直せます。Start側の配信失敗は、Exact Runの非Terminal Lockを実際に削除できた場合だけClaimを戻すため、すでにTerminal処理へ進んだRunがStart再配信で復活することを防ぎます。
+
+古いattemptから遅れて届いた完了・失敗・Human Requestや、異なるAgentからのイベントはConflictとして拒否し、現行RunのロックやNotion状態を変更しません。
 
 ### Heartbeat
 
@@ -85,7 +90,7 @@ Taskロックは`work_started`で取得し、Agent名とRun IDの組合せで所
 }
 ```
 
-HeartbeatはローカルLeaseだけを更新し、NotionやAI起動Adapterへ副作用を出しません。
+Heartbeatは非Terminal状態のExact RunだけがLeaseを延長でき、NotionやAI起動Adapterへ副作用を出しません。
 
 ## Adapter構造
 
@@ -94,9 +99,9 @@ HeartbeatはローカルLeaseだけを更新し、NotionやAI起動Adapterへ副
 - `GitHubReferenceClient`: Issue / Pull Requestを読み取る
 - 既定値は安全なNo-op Adapter
 
-`NOTION_TOKEN`設定時だけ`NotionTaskRepository`が有効になり、`Status`、`Result`、`Assigned Agent`、`Blocker`、`Environment Help`を更新します。Codexも正式なAssigned Agentとして扱います。HTTPエラーとDNS・接続・Timeoutなどのtransport errorは、Tokenやレスポンス本文を含まない安全なエラーへ変換します。
+`NOTION_TOKEN`設定時だけ`NotionTaskRepository`が有効になり、`Status`、`Result`、`Assigned Agent`、`Blocker`、`Environment Help`を更新します。Codexも正式なAssigned Agentとして扱います。HTTPエラーとDNS・接続・Timeoutなどのtransport errorは、Tokenやレスポンス本文を含まない安全なエラーへ変換し、元例外のContextも抑止します。
 
-Notion更新、AI起動、Slack返信・Human Request通知が一時失敗した場合はevent claimを戻し、必要なTaskロックも解除または復元します。Slack再送または再投稿で処理を継続できます。
+Notion更新、AI起動、Slack返信・Human Request通知が一時失敗した場合は、イベント種別に応じた安全なrollbackを行います。Slack再送または再投稿で処理を継続できます。
 
 `GitHubReferenceClient`は読み取り専用です。公開Issue / PRはTokenなし、privateリポジトリは`GITHUB_TOKEN`付きで参照できます。
 
@@ -106,22 +111,25 @@ Notion更新、AI起動、Slack返信・Human Request通知が一時失敗した
 pytest
 ```
 
-純粋ロジック・モックHTTPテストは**64件**です。
+純粋ロジックとMockTransportによる回帰テストで、次を確認します。
 
 - attempt単位のRun IDと衝突しない冪等性
+- Event ClaimとStart Lock取得の原子性
+- Terminal配信予約・成功時Finalize・失敗時Retry
+- Terminal配信完了まで後続Runを開始させない制御
+- Start再配信による完了Runの復活防止
 - 同一Runで繰り返せるHeartbeat
 - Agent + Run IDによるTask Lock所有権
 - 期限切れ回収、Heartbeat、旧DB移行
 - 同じAgentの古いattempt終了イベント拒否
 - stale Human Requestの拒否
-- Start競合後の同一イベント再試行
-- 外部Adapter・Slack送信失敗後のRollback
 - Human Request対象の自動起動禁止
 - Notion Status / Result / Blockerの設定と解除
 - Codex担当のNotion反映
-- Notion transport errorの安全な正規化
+- Notion / GitHub transport errorの安全な正規化と秘密情報非露出
 - GitHub Issue / PR URL解析とメタデータ取得
-- Notion / GitHub HTTPエラー時の秘密情報非露出
+
+最新のテスト件数と実行結果はPR本文に記録します。
 
 ## ディレクトリ
 
@@ -144,5 +152,5 @@ src/adp_orchestrator/
 - Slackの過去メッセージ再同期は未実装です
 - Notion実接続にはTokenとページ共有権限が必要です
 - GitHub Adapterは現在読み取り専用です
-- 実Slack E2EはWorkspaceとToken準備後に行います
+- 実Slack E2EはCredential Manager起動Script追加後に行います
 - 常時稼働環境への移行はE2E成功後に判断します
