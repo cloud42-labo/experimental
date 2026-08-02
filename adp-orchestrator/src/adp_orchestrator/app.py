@@ -8,10 +8,12 @@ from pydantic import ValidationError
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
+from .adapters import NoopAgentActivator, NoopTaskRepository
 from .config import Settings
 from .events import HandoffEvent
 from .idempotency import IdempotencyStore
 from .router import EventRouter, RouteResult
+from .service import OrchestrationService
 
 _CODE_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 _MENTION = re.compile(r"<@[A-Z0-9]+>")
@@ -61,8 +63,11 @@ def format_result(result: RouteResult) -> str:
 
 def build_app(settings: Settings) -> App:
     app = App(token=settings.slack_bot_token)
-    store = IdempotencyStore(settings.adp_db_path)
-    router = EventRouter(store)
+    service = OrchestrationService(
+        router=EventRouter(IdempotencyStore(settings.adp_db_path)),
+        task_repository=NoopTaskRepository(),
+        agent_activator=NoopAgentActivator(),
+    )
 
     @app.event("app_mention")
     def handle_mention(
@@ -80,7 +85,7 @@ def build_app(settings: Settings) -> App:
             payload = extract_event_payload(str(event.get("text", "")))
             payload = apply_envelope_event_id(payload, body)
             handoff = HandoffEvent.model_validate(payload)
-            result = router.route(handoff)
+            result = service.handle(handoff)
         except (ValueError, json.JSONDecodeError, ValidationError):
             # Never echo the payload or exception because users can paste secrets.
             say(text=_VALIDATION_ERROR_MESSAGE, thread_ts=thread_ts)
