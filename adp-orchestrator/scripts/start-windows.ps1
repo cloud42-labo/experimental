@@ -82,7 +82,8 @@ public static class AdpCredentialReader
                 return String.Empty;
             }
 
-            byte[] secretBytes = new byte[credential.CredentialBlobSize];
+            int secretLength = checked((int)credential.CredentialBlobSize);
+            byte[] secretBytes = new byte[secretLength];
             Marshal.Copy(credential.CredentialBlob, secretBytes, 0, secretBytes.Length);
             return Encoding.Unicode.GetString(secretBytes).TrimEnd('\0');
         }
@@ -158,8 +159,8 @@ try {
 }
 finally {
     if ($null -ne $processInfo) {
-        $processInfo.EnvironmentVariables.Remove('SLACK_BOT_TOKEN')
-        $processInfo.EnvironmentVariables.Remove('SLACK_APP_TOKEN')
+        [void]$processInfo.EnvironmentVariables.Remove('SLACK_BOT_TOKEN')
+        [void]$processInfo.EnvironmentVariables.Remove('SLACK_APP_TOKEN')
     }
     $botToken = $null
     $appToken = $null
