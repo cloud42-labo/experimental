@@ -18,11 +18,14 @@ class OrchestrationService:
         self.task_repository = task_repository
         self.agent_activator = agent_activator
 
+    def rollback(self, event: HandoffEvent) -> None:
+        """Release the event claim after a downstream delivery failure."""
+
+        self.router.rollback(event)
+
     def handle(self, event: HandoffEvent) -> RouteResult:
         result = self.router.route(event)
 
-        # Duplicates and stale/conflicting events are reported to Slack but must
-        # not mutate Notion or activate another agent.
         if result.kind in {"ignored", "conflict"}:
             return result
 
@@ -37,9 +40,7 @@ class OrchestrationService:
             if should_enqueue:
                 self.agent_activator.enqueue(event, result)
         except Exception:
-            # Property updates are idempotent. Releasing the claim lets a
-            # transient adapter failure be retried instead of becoming permanent.
-            self.router.rollback(event)
+            self.rollback(event)
             raise
 
         return result
