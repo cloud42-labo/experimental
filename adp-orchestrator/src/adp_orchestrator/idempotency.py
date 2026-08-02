@@ -35,6 +35,26 @@ class IdempotencyStore:
                 """
             )
 
+    def claim_event(self, event_id: str, idempotency_key: str) -> bool:
+        """Atomically claim an event.
+
+        Returns ``False`` when either the Slack event ID or the ADP idempotency
+        key has already been claimed by another handler.
+        """
+
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO processed_events(event_id, idempotency_key)
+                    VALUES (?, ?)
+                    """,
+                    (event_id, idempotency_key),
+                )
+        except sqlite3.IntegrityError:
+            return False
+        return True
+
     def is_processed(self, event_id: str, idempotency_key: str) -> bool:
         with self._connect() as connection:
             row = connection.execute(
@@ -47,16 +67,6 @@ class IdempotencyStore:
                 (event_id, idempotency_key),
             ).fetchone()
         return row is not None
-
-    def mark_processed(self, event_id: str, idempotency_key: str) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO processed_events(event_id, idempotency_key)
-                VALUES (?, ?)
-                """,
-                (event_id, idempotency_key),
-            )
 
     def acquire_task(self, task_id: str, agent: str) -> bool:
         with self._connect() as connection:
