@@ -23,18 +23,21 @@ def valid_payload() -> dict[str, object]:
     }
 
 
-def test_idempotency_key_is_stable_versioned_hash() -> None:
+def test_run_id_and_event_key_are_stable_versioned_hashes() -> None:
     first = HandoffEvent.model_validate(valid_payload())
     second = HandoffEvent.model_validate(valid_payload())
+    assert first.run_id == second.run_id
     assert first.idempotency_key == second.idempotency_key
-    assert re.fullmatch(r"v1:[0-9a-f]{64}", first.idempotency_key)
+    assert re.fullmatch(r"run-v1:[0-9a-f]{64}", first.run_id)
+    assert re.fullmatch(r"event-v1:[0-9a-f]{64}", first.idempotency_key)
 
 
-def test_retry_attempt_has_distinct_idempotency_key() -> None:
+def test_retry_attempt_has_distinct_run_and_event_keys() -> None:
     first = HandoffEvent.model_validate(valid_payload())
     payload = valid_payload()
     payload["attempt"] = 2
     second = HandoffEvent.model_validate(payload)
+    assert first.run_id != second.run_id
     assert first.idempotency_key != second.idempotency_key
 
 
@@ -49,7 +52,43 @@ def test_colons_in_identifiers_cannot_collide() -> None:
     first = HandoffEvent.model_validate(first_payload)
     second = HandoffEvent.model_validate(second_payload)
 
+    assert first.run_id != second.run_id
     assert first.idempotency_key != second.idempotency_key
+
+
+def test_heartbeats_in_same_run_have_distinct_keys() -> None:
+    first_payload = valid_payload()
+    first_payload.update(
+        {
+            "event_type": "work_heartbeat",
+            "status": "running",
+            "from_agent": "claude",
+            "event_id": "heartbeat-1",
+        }
+    )
+    second_payload = dict(first_payload)
+    second_payload["event_id"] = "heartbeat-2"
+
+    first = HandoffEvent.model_validate(first_payload)
+    second = HandoffEvent.model_validate(second_payload)
+
+    assert first.run_id == second.run_id
+    assert first.idempotency_key != second.idempotency_key
+
+
+def test_heartbeat_redelivery_has_same_key() -> None:
+    payload = valid_payload()
+    payload.update(
+        {
+            "event_type": "work_heartbeat",
+            "status": "running",
+            "from_agent": "claude",
+            "event_id": "heartbeat-1",
+        }
+    )
+    first = HandoffEvent.model_validate(payload)
+    second = HandoffEvent.model_validate(payload)
+    assert first.idempotency_key == second.idempotency_key
 
 
 def test_attempt_must_not_exceed_max_attempts() -> None:
