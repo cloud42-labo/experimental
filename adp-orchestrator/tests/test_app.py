@@ -1,13 +1,30 @@
 import json
+from pathlib import Path
 
 import pytest
 
+from adp_orchestrator.adapters import NoopTaskRepository
 from adp_orchestrator.app import (
     apply_envelope_event_id,
+    build_task_repository,
     extract_event_payload,
     format_result,
 )
+from adp_orchestrator.config import Settings
+from adp_orchestrator.notion_adapter import NotionTaskRepository
 from adp_orchestrator.router import RouteResult
+
+
+def settings(tmp_path: Path, notion_token: str | None = None) -> Settings:
+    return Settings(
+        slack_bot_token="xoxb-valid-placeholder",
+        slack_app_token="xapp-valid-placeholder",
+        adp_control_channel_id="C_CONTROL",
+        adp_human_requests_channel_id="C_HUMAN",
+        adp_daily_channel_id="C_DAILY",
+        adp_db_path=tmp_path / "orchestrator.sqlite3",
+        notion_token=notion_token,
+    )
 
 
 def test_extracts_json_after_slack_mention() -> None:
@@ -63,3 +80,16 @@ def test_format_result_has_no_trailing_space_in_target() -> None:
     formatted = format_result(result)
     assert "*Target:* `claude`" in formatted
     assert "`claude `" not in formatted
+
+
+def test_without_notion_token_uses_noop_repository(tmp_path: Path) -> None:
+    repository = build_task_repository(settings(tmp_path))
+    assert isinstance(repository, NoopTaskRepository)
+
+
+def test_with_notion_token_enables_notion_repository(tmp_path: Path) -> None:
+    repository = build_task_repository(
+        settings(tmp_path, notion_token="notion_secret")
+    )
+    assert isinstance(repository, NotionTaskRepository)
+    repository.close()
