@@ -26,6 +26,8 @@ EventStatus = Literal[
 ]
 
 AgentName = Literal["chris", "claude", "gemini", "human", "codex"]
+_WORKER_AGENTS = {"claude", "gemini", "codex"}
+_WORKER_SOURCE_EVENTS = {"work_heartbeat", "work_completed", "failed"}
 
 
 class HandoffEvent(BaseModel):
@@ -45,11 +47,18 @@ class HandoffEvent(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=10)
 
     @model_validator(mode="after")
-    def validate_attempts(self) -> "HandoffEvent":
+    def validate_contract(self) -> "HandoffEvent":
         if self.attempt > self.max_attempts:
             raise ValueError("attempt must not exceed max_attempts")
         if self.to_agent == "human":
             self.requires_human = True
+        if self.event_type == "work_started" and self.to_agent not in _WORKER_AGENTS:
+            raise ValueError("work_started must target a worker agent")
+        if (
+            self.event_type in _WORKER_SOURCE_EVENTS
+            and self.from_agent not in _WORKER_AGENTS
+        ):
+            raise ValueError(f"{self.event_type} must originate from a worker agent")
         return self
 
     def _canonical_hash(self, payload: dict[str, object]) -> str:
