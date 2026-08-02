@@ -4,17 +4,20 @@ from pathlib import Path
 from adp_orchestrator.idempotency import IdempotencyStore
 
 
-def test_fresh_lock_blocks_second_agent(tmp_path: Path) -> None:
+def test_fresh_lock_blocks_second_run(tmp_path: Path) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
-    assert store.acquire_task("ADP-012", "claude") is True
-    assert store.acquire_task("ADP-012", "gemini") is False
-    assert store.current_agent("ADP-012") == "claude"
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
+    assert store.acquire_task("ADP-012", "claude", "run-2") is False
+    lock = store.current_lock("ADP-012")
+    assert lock is not None
+    assert lock.agent == "claude"
+    assert lock.run_id == "run-1"
 
 
 def test_expired_lock_is_reclaimed(tmp_path: Path) -> None:
     db_path = tmp_path / "orchestrator.sqlite3"
     store = IdempotencyStore(db_path, 3600)
-    assert store.acquire_task("ADP-012", "claude") is True
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
 
     with sqlite3.connect(db_path) as connection:
         connection.execute(
@@ -26,14 +29,17 @@ def test_expired_lock_is_reclaimed(tmp_path: Path) -> None:
             ("ADP-012",),
         )
 
-    assert store.acquire_task("ADP-012", "gemini") is True
-    assert store.current_agent("ADP-012") == "gemini"
+    assert store.acquire_task("ADP-012", "gemini", "run-2") is True
+    lock = store.current_lock("ADP-012")
+    assert lock is not None
+    assert lock.agent == "gemini"
+    assert lock.run_id == "run-2"
 
 
-def test_heartbeat_extends_owned_lock(tmp_path: Path) -> None:
+def test_heartbeat_extends_exact_run_lock(tmp_path: Path) -> None:
     db_path = tmp_path / "orchestrator.sqlite3"
     store = IdempotencyStore(db_path, 3600)
-    assert store.acquire_task("ADP-012", "claude") is True
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
 
     with sqlite3.connect(db_path) as connection:
         connection.execute(
@@ -45,7 +51,7 @@ def test_heartbeat_extends_owned_lock(tmp_path: Path) -> None:
             ("ADP-012",),
         )
 
-    assert store.heartbeat_task("ADP-012", "claude") is True
+    assert store.heartbeat_task("ADP-012", "claude", "run-1") is True
     with sqlite3.connect(db_path) as connection:
         extended = connection.execute(
             """
@@ -58,14 +64,23 @@ def test_heartbeat_extends_owned_lock(tmp_path: Path) -> None:
     assert extended == (1,)
 
 
-def test_heartbeat_cannot_take_over_another_agent_lock(tmp_path: Path) -> None:
+def test_heartbeat_cannot_extend_same_agent_different_run(tmp_path: Path) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
-    store.acquire_task("ADP-012", "claude")
-    assert store.heartbeat_task("ADP-012", "gemini") is False
-    assert store.current_agent("ADP-012") == "claude"
+    store.acquire_task("ADP-012", "claude", "run-1")
+    assert store.heartbeat_task("ADP-012", "claude", "run-2") is False
+    assert store.current_lock("ADP-012").run_id == "run-1"  # type: ignore[union-attr]
 
 
-def test_legacy_lock_without_lease_is_recovered_on_startup(tmp_path: Path) -> None:
+def test_release_requires_exact_agent_and_run(tmp_path: Path) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    store.acquire_task("ADP-012", "claude", "run-1")
+    assert store.release_task("ADP-012", "claude", "run-2") is False
+    assert store.release_task("ADP-012", "gemini", "run-1") is False
+    assert store.release_task("ADP-012", "claude", "run-1") is True
+    assert store.current_lock("ADP-012") is None
+
+
+def test_legacy_lock_without_run_or_lease_is_recovered(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.sqlite3"
     with sqlite3.connect(db_path) as connection:
         connection.executescript(
@@ -86,5 +101,5 @@ def test_legacy_lock_without_lease_is_recovered_on_startup(tmp_path: Path) -> No
 
     store = IdempotencyStore(db_path, 3600)
 
-    assert store.current_agent("ADP-012") is None
-    assert store.acquire_task("ADP-012", "gemini") is True
+    assert store.current_lock("ADP-012") is None
+    assert store.acquire_task("ADP-012", "gemini", "run-2") is True
