@@ -106,7 +106,12 @@ def deliver_result(
 def build_app(settings: Settings) -> App:
     app = App(token=settings.slack_bot_token)
     service = OrchestrationService(
-        router=EventRouter(IdempotencyStore(settings.adp_db_path)),
+        router=EventRouter(
+            IdempotencyStore(
+                settings.adp_db_path,
+                lock_lease_seconds=settings.adp_lock_lease_seconds,
+            )
+        ),
         task_repository=build_task_repository(settings),
         agent_activator=NoopAgentActivator(),
     )
