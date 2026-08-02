@@ -20,7 +20,7 @@ from .notion_adapter import (
 from .router import EventRouter, RouteResult
 from .service import OrchestrationService
 
-_CODE_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_CODE_BLOCK = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 _MENTION = re.compile(r"<@[A-Z0-9]+>")
 _VALIDATION_ERROR_MESSAGE = (
     "Event validation failed. Check schema_version, required fields, and allowed values."
