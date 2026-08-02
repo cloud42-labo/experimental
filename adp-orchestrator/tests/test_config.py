@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from adp_orchestrator.config import Settings
 
@@ -20,6 +20,21 @@ def base_settings(tmp_path: Path) -> dict[str, object]:
 def test_accepts_valid_configuration(tmp_path: Path) -> None:
     settings = Settings(**base_settings(tmp_path))
     assert settings.adp_db_path == tmp_path / "orchestrator.sqlite3"
+    assert settings.notion_token is None
+    assert settings.github_token is None
+
+
+def test_accepts_optional_secret_tokens(tmp_path: Path) -> None:
+    values = base_settings(tmp_path)
+    values["notion_token"] = SecretStr("notion_secret")
+    values["github_token"] = SecretStr("github_secret")
+
+    settings = Settings(**values)
+
+    assert settings.notion_token is not None
+    assert settings.notion_token.get_secret_value() == "notion_secret"
+    assert settings.github_token is not None
+    assert settings.github_token.get_secret_value() == "github_secret"
 
 
 def test_invalid_bot_token_value_is_hidden(tmp_path: Path) -> None:
