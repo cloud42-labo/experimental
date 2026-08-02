@@ -53,6 +53,13 @@ class IdempotencyStore:
                     acquired_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     lease_expires_at TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS task_run_heads (
+                    task_id TEXT PRIMARY KEY,
+                    agent TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             columns = {
@@ -75,6 +82,16 @@ class IdempotencyStore:
                 """
             )
             self._delete_expired_locks(connection)
+            # Preserve ownership history for live locks created before the
+            # task_run_heads table was introduced.
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO task_run_heads(task_id, agent, run_id)
+                SELECT task_id, agent, run_id
+                FROM task_locks
+                WHERE run_id IS NOT NULL
+                """
+            )
 
     def _delete_expired_locks(self, connection: sqlite3.Connection) -> None:
         connection.execute(
@@ -122,6 +139,53 @@ class IdempotencyStore:
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP, datetime('now', ?))
                 """,
                 (task_id, agent, run_id, self._lease_modifier),
+            )
+            if cursor.rowcount == 1:
+                connection.execute(
+                    """
+                    INSERT INTO task_run_heads(task_id, agent, run_id, started_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(task_id) DO UPDATE SET
+                        agent = excluded.agent,
+                        run_id = excluded.run_id,
+                        started_at = CURRENT_TIMESTAMP
+                    """,
+                    (task_id, agent, run_id),
+                )
+        return cursor.rowcount == 1
+
+    def restore_task_if_latest(
+        self,
+        task_id: str,
+        expected_agent: str,
+        expected_run_id: str,
+    ) -> bool:
+        """Restore a released lock only if no successor run has ever started."""
+
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._delete_expired_locks(connection)
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO task_locks(
+                    task_id, agent, run_id, acquired_at, lease_expires_at
+                )
+                SELECT ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', ?)
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM task_run_heads
+                    WHERE task_id = ? AND agent = ? AND run_id = ?
+                )
+                """,
+                (
+                    task_id,
+                    expected_agent,
+                    expected_run_id,
+                    self._lease_modifier,
+                    task_id,
+                    expected_agent,
+                    expected_run_id,
+                ),
             )
         return cursor.rowcount == 1
 
