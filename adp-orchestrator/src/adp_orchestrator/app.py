@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from typing import Any
 
 from pydantic import ValidationError
@@ -110,6 +111,148 @@ def deliver_result(
         raise
 
 
+class DeferredDeliveryScheduler:
+    """Retain one redelivery until a stale runtime owner can be reclaimed."""
+
+    def __init__(
+        self,
+        *,
+        runtime: RuntimeLease,
+        service: OrchestrationService,
+        settings: Settings,
+        retry_seconds: float,
+    ) -> None:
+        if retry_seconds <= 0:
+            raise ValueError("retry_seconds must be positive")
+        self.runtime = runtime
+        self.service = service
+        self.settings = settings
+        self.retry_seconds = retry_seconds
+        self._lock = threading.Lock()
+        self._timers: dict[str, threading.Timer] = {}
+        self._stopped = False
+
+    def schedule(
+        self,
+        *,
+        handoff: HandoffEvent,
+        channel: str,
+        thread_ts: str | None,
+        client: Any,
+    ) -> bool:
+        key = handoff.idempotency_key
+        with self._lock:
+            if self._stopped or key in self._timers:
+                return False
+            self._start_timer_locked(
+                key=key,
+                handoff=handoff,
+                channel=channel,
+                thread_ts=thread_ts,
+                client=client,
+            )
+            return True
+
+    def _start_timer_locked(
+        self,
+        *,
+        key: str,
+        handoff: HandoffEvent,
+        channel: str,
+        thread_ts: str | None,
+        client: Any,
+    ) -> None:
+        timer = threading.Timer(
+            self.retry_seconds,
+            self._run,
+            kwargs={
+                "key": key,
+                "handoff": handoff,
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "client": client,
+            },
+        )
+        timer.daemon = True
+        self._timers[key] = timer
+        timer.start()
+
+    def _finish_or_reschedule(
+        self,
+        *,
+        key: str,
+        handoff: HandoffEvent,
+        channel: str,
+        thread_ts: str | None,
+        client: Any,
+        reschedule: bool,
+    ) -> None:
+        with self._lock:
+            self._timers.pop(key, None)
+            if reschedule and not self._stopped:
+                self._start_timer_locked(
+                    key=key,
+                    handoff=handoff,
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    client=client,
+                )
+
+    def _run(
+        self,
+        *,
+        key: str,
+        handoff: HandoffEvent,
+        channel: str,
+        thread_ts: str | None,
+        client: Any,
+    ) -> None:
+        reschedule = False
+        try:
+            self.runtime.ensure_active()
+            result = self.service.handle(handoff)
+            if result.kind == "deferred":
+                reschedule = True
+            elif result.kind not in {"ignored", "conflict"}:
+                deliver_result(
+                    handoff=handoff,
+                    result=result,
+                    thread_ts=thread_ts,
+                    say=lambda **kwargs: client.chat_postMessage(
+                        channel=channel,
+                        **kwargs,
+                    ),
+                    client=client,
+                    settings=self.settings,
+                    service=self.service,
+                )
+        except RuntimeLeaseError:
+            # This process no longer owns a valid runtime lease. A restart is
+            # required; retaining timers in a failed process would be unsafe.
+            reschedule = False
+        except Exception:
+            # Accepted routing state is rolled back by service/deliver_result.
+            # Keep the one preserved Slack redelivery for a later exact retry.
+            reschedule = True
+        finally:
+            self._finish_or_reschedule(
+                key=key,
+                handoff=handoff,
+                channel=channel,
+                thread_ts=thread_ts,
+                client=client,
+                reschedule=reschedule,
+            )
+
+    def stop(self) -> None:
+        with self._lock:
+            self._stopped = True
+            timers = list(self._timers.values())
+            self._timers.clear()
+        for timer in timers:
+            timer.cancel()
+
+
 def build_app(settings: Settings) -> App:
     app = App(token=settings.slack_bot_token)
     store = IdempotencyStore(
@@ -133,6 +276,12 @@ def build_app(settings: Settings) -> App:
             ),
             task_repository=build_task_repository(settings),
             agent_activator=NoopAgentActivator(),
+        )
+        deferred_scheduler = DeferredDeliveryScheduler(
+            runtime=runtime,
+            service=service,
+            settings=settings,
+            retry_seconds=float(settings.adp_runtime_lease_seconds + 1),
         )
     except Exception:
         runtime.stop()
@@ -176,6 +325,16 @@ def build_app(settings: Settings) -> App:
             )
             return
 
+        if result.kind == "deferred":
+            deferred_scheduler.schedule(
+                handoff=handoff,
+                channel=str(event["channel"]),
+                thread_ts=thread_ts,
+                client=client,
+            )
+            say(text=format_result(result), thread_ts=thread_ts)
+            return
+
         deliver_result(
             handoff=handoff,
             result=result,
@@ -186,11 +345,15 @@ def build_app(settings: Settings) -> App:
             service=service,
         )
 
+    setattr(app, "_adp_deferred_scheduler", deferred_scheduler)
     setattr(app, "_adp_runtime_lease", runtime)
     return app
 
 
 def stop_app_runtime(app: App) -> None:
+    scheduler = getattr(app, "_adp_deferred_scheduler", None)
+    if isinstance(scheduler, DeferredDeliveryScheduler):
+        scheduler.stop()
     runtime = getattr(app, "_adp_runtime_lease", None)
     if isinstance(runtime, RuntimeLease):
         runtime.stop()
