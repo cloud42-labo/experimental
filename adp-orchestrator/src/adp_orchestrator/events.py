@@ -59,6 +59,14 @@ class HandoffEvent(BaseModel):
             and self.from_agent not in _WORKER_AGENTS
         ):
             raise ValueError(f"{self.event_type} must originate from a worker agent")
+        if (
+            self.from_agent in _WORKER_AGENTS
+            and self.requires_human
+            and self.event_type != "human_required"
+        ):
+            raise ValueError(
+                "worker human requests must use the human_required event type"
+            )
         return self
 
     def _canonical_hash(self, payload: dict[str, object]) -> str:
