@@ -24,14 +24,20 @@ class OrchestrationService:
         if result.kind == "ignored":
             return result
 
-        self.task_repository.record(event, result)
+        try:
+            self.task_repository.record(event, result)
 
-        should_enqueue = (
-            result.kind == "accepted"
-            and event.event_type in {"task_assigned", "review_requested"}
-            and result.target_agent not in {None, "human"}
-        )
-        if should_enqueue:
-            self.agent_activator.enqueue(event, result)
+            should_enqueue = (
+                result.kind == "accepted"
+                and event.event_type in {"task_assigned", "review_requested"}
+                and result.target_agent not in {None, "human"}
+            )
+            if should_enqueue:
+                self.agent_activator.enqueue(event, result)
+        except Exception:
+            # The page update is idempotent. Releasing the event claim lets a
+            # transient adapter failure be retried instead of becoming permanent.
+            self.router.rollback(event)
+            raise
 
         return result
