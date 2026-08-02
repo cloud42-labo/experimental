@@ -21,14 +21,23 @@ def test_accepts_valid_configuration(tmp_path: Path) -> None:
     settings = Settings(**base_settings(tmp_path))
     assert settings.adp_db_path == tmp_path / "orchestrator.sqlite3"
     assert settings.adp_lock_lease_seconds == 3600
+    assert settings.adp_runtime_lease_seconds == 60
+    assert settings.adp_runtime_heartbeat_seconds == 10
     assert settings.notion_token is None
     assert settings.github_token is None
 
 
-def test_accepts_custom_lock_lease(tmp_path: Path) -> None:
+def test_accepts_custom_lock_and_runtime_leases(tmp_path: Path) -> None:
     values = base_settings(tmp_path)
     values["adp_lock_lease_seconds"] = 7200
-    assert Settings(**values).adp_lock_lease_seconds == 7200
+    values["adp_runtime_lease_seconds"] = 90
+    values["adp_runtime_heartbeat_seconds"] = 30
+
+    settings = Settings(**values)
+
+    assert settings.adp_lock_lease_seconds == 7200
+    assert settings.adp_runtime_lease_seconds == 90
+    assert settings.adp_runtime_heartbeat_seconds == 30
 
 
 def test_rejects_too_short_lock_lease(tmp_path: Path) -> None:
@@ -37,6 +46,17 @@ def test_rejects_too_short_lock_lease(tmp_path: Path) -> None:
     with pytest.raises(ValidationError) as exc_info:
         Settings(**values)
     assert "ADP_LOCK_LEASE_SECONDS" in str(exc_info.value)
+
+
+def test_rejects_runtime_heartbeat_too_close_to_expiry(tmp_path: Path) -> None:
+    values = base_settings(tmp_path)
+    values["adp_runtime_lease_seconds"] = 60
+    values["adp_runtime_heartbeat_seconds"] = 21
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(**values)
+
+    assert "ADP_RUNTIME_HEARTBEAT_SECONDS" in str(exc_info.value)
 
 
 def test_accepts_optional_secret_tokens(tmp_path: Path) -> None:
