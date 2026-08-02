@@ -19,6 +19,8 @@ def test_launcher_exists_and_uses_windows_credential_api() -> None:
     assert 'EntryPoint = "CredReadW"' in text
     assert 'private static extern void CredFree' in text
     assert 'CredFree(credentialPointer);' in text
+    assert "int secretLength = checked((int)credential.CredentialBlobSize);" in text
+    assert "Array.Clear(secretBytes, 0, secretBytes.Length);" in text
 
 
 def test_launcher_reads_only_named_adp_credentials() -> None:
@@ -40,6 +42,20 @@ def test_launcher_passes_secrets_only_through_child_environment() -> None:
     assert "SLACK_APP_TOKEN=" not in text
 
 
+def test_launcher_matches_application_lease_validation() -> None:
+    text = launcher_text()
+
+    assert "[ValidateRange(30, 86400)]" in text
+
+
+def test_launcher_resolves_relative_python_path_from_project_root() -> None:
+    text = launcher_text()
+
+    assert "[System.IO.Path]::IsPathRooted($PythonCommand)" in text
+    assert "(Join-Path $projectRoot $PythonCommand)" in text
+    assert "$processInfo.FileName = $resolvedPythonCommand" in text
+
+
 def test_launcher_does_not_create_or_copy_dotenv() -> None:
     text = launcher_text().lower()
 
@@ -50,12 +66,13 @@ def test_launcher_does_not_create_or_copy_dotenv() -> None:
     assert "not written to .env" in text
 
 
-def test_launcher_clears_secret_references_in_finally() -> None:
+def test_launcher_clears_secret_references_and_process_in_finally() -> None:
     text = launcher_text()
 
     assert "$processInfo = $null" in text
     assert "$processInfo.EnvironmentVariables.Remove('SLACK_BOT_TOKEN')" in text
     assert "$processInfo.EnvironmentVariables.Remove('SLACK_APP_TOKEN')" in text
+    assert "$process.Dispose()" in text
     assert "$botToken = $null" in text
     assert "$appToken = $null" in text
 
