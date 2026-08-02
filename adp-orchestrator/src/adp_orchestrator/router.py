@@ -27,7 +27,36 @@ class EventRouter:
 
         self.store.release_event(event.event_id, event.idempotency_key)
         if event.event_type == "work_started":
-            self.store.release_task(event.task_id)
+            self.store.release_task(event.task_id, event.to_agent)
+        elif event.event_type in {"work_completed", "failed"}:
+            # Terminal routing releases the worker lock before adapter calls.
+            # Restore it only when no newer agent has acquired the task.
+            if self.store.current_agent(event.task_id) is None:
+                self.store.acquire_task(event.task_id, event.from_agent)
+
+    def _terminal_owner_conflict(
+        self, event: HandoffEvent
+    ) -> RouteResult | None:
+        current_agent = self.store.current_agent(event.task_id)
+        if current_agent == event.from_agent:
+            return None
+        if current_agent is None:
+            message = (
+                f"No active run is owned by {event.from_agent}; "
+                f"stale {event.event_type} was not accepted."
+            )
+        else:
+            message = (
+                f"Task is currently owned by {current_agent}; stale "
+                f"{event.event_type} from {event.from_agent} was not accepted."
+            )
+        return RouteResult(
+            kind="conflict",
+            task_id=event.task_id,
+            status="running" if current_agent is not None else "ready",
+            message=message,
+            target_agent=current_agent,
+        )
 
     def route(self, event: HandoffEvent) -> RouteResult:
         if not self.store.claim_event(event.event_id, event.idempotency_key):
@@ -40,7 +69,9 @@ class EventRouter:
             )
 
         if event.requires_human or event.event_type == "human_required":
-            self.store.release_task(event.task_id)
+            # A controller can request human help, but only the current worker can
+            # release its own lock.
+            self.store.release_task(event.task_id, event.from_agent)
             return RouteResult(
                 kind="human_required",
                 task_id=event.task_id,
@@ -49,19 +80,23 @@ class EventRouter:
                 target_agent="human",
             )
 
-        if event.event_type == "failed":
-            self.store.release_task(event.task_id)
-            if event.attempt >= event.max_attempts:
-                return RouteResult(
-                    kind="human_required",
-                    task_id=event.task_id,
-                    status="blocked",
-                    message=(
-                        f"Automatic attempts exhausted ({event.attempt}/"
-                        f"{event.max_attempts}). Human review required."
-                    ),
-                    target_agent="human",
-                )
+        if event.event_type in {"failed", "work_completed"}:
+            conflict = self._terminal_owner_conflict(event)
+            if conflict is not None:
+                return conflict
+            self.store.release_task(event.task_id, event.from_agent)
+
+        if event.event_type == "failed" and event.attempt >= event.max_attempts:
+            return RouteResult(
+                kind="human_required",
+                task_id=event.task_id,
+                status="blocked",
+                message=(
+                    f"Automatic attempts exhausted ({event.attempt}/"
+                    f"{event.max_attempts}). Human review required."
+                ),
+                target_agent="human",
+            )
 
         # Assignment announces the next agent but does not lock the task.
         # The lock starts only when work_started is received.
@@ -79,9 +114,6 @@ class EventRouter:
                     ),
                     target_agent=current_agent,
                 )
-
-        if event.event_type == "work_completed":
-            self.store.release_task(event.task_id)
 
         next_status = {
             "task_assigned": "ready",
