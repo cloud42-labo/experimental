@@ -123,12 +123,9 @@ class RuntimeLease:
             self._stop_event.set()
 
         if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=max(1.0, self.config.heartbeat_seconds + 1.0))
+            thread.join()
 
-        try:
-            self.store.unregister_runtime(self.instance_id)
-        finally:
-            self._stop_event.clear()
+        self.store.unregister_runtime(self.instance_id)
 
     def __enter__(self) -> "RuntimeLease":
         self.start()
