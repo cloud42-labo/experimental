@@ -21,6 +21,9 @@ class OrchestrationService:
     def rollback(self, event: HandoffEvent) -> None:
         self.router.rollback(event)
 
+    def finalize(self, event: HandoffEvent, result: RouteResult) -> None:
+        self.router.finalize(event, result)
+
     def handle(self, event: HandoffEvent) -> RouteResult:
         result = self.router.route(event)
 
