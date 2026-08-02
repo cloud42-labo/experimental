@@ -84,7 +84,7 @@ def deliver_result(
     settings: Settings,
     service: OrchestrationService,
 ) -> None:
-    """Deliver Slack output and roll back only accepted routing mutations."""
+    """Deliver Slack output, then finalize or roll back reserved routing state."""
 
     try:
         say(text=format_result(result), thread_ts=thread_ts)
@@ -97,6 +97,8 @@ def deliver_result(
                     f"Source thread: {thread_ts}"
                 ),
             )
+        if result.kind in {"accepted", "human_required"}:
+            service.finalize(handoff, result)
     except Exception:
         if result.kind in {"accepted", "human_required"}:
             service.rollback(handoff)
