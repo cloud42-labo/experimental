@@ -7,7 +7,13 @@ from typing import Literal
 from .events import HandoffEvent
 from .idempotency import ClaimResult, IdempotencyStore, TaskLock
 
-RouteKind = Literal["ignored", "accepted", "human_required", "conflict"]
+RouteKind = Literal[
+    "ignored",
+    "accepted",
+    "human_required",
+    "conflict",
+    "deferred",
+]
 _WORKER_AGENTS = {"claude", "gemini", "codex"}
 _TERMINAL_EVENT_TYPES = {"work_completed", "failed", "human_required"}
 _INLINE_RUNTIME_LEASE_SECONDS = 60
@@ -95,6 +101,18 @@ class EventRouter:
             target_agent=event.to_agent,
         )
 
+    def _deferred(self, event: HandoffEvent) -> RouteResult:
+        return RouteResult(
+            kind="deferred",
+            task_id=event.task_id,
+            status="running",
+            message=(
+                "Terminal delivery is waiting for the previous runtime owner "
+                "lease to expire. It will be retried automatically."
+            ),
+            target_agent=event.from_agent,
+        )
+
     def _lock_conflict(
         self,
         event: HandoffEvent,
@@ -132,6 +150,8 @@ class EventRouter:
             return None
         if reservation == "duplicate":
             return self._ignored(event)
+        if reservation == "deferred":
+            return self._deferred(event)
         return self._lock_conflict(
             event,
             self.store.current_lock(event.task_id),
