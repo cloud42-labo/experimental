@@ -204,3 +204,46 @@ def test_ignored_delivery_failure_does_not_remove_original_claim(
         )
 
     assert service.rolled_back == []
+
+
+def test_conflict_delivery_failure_does_not_restore_rejected_run(
+    tmp_path: Path,
+) -> None:
+    service = RecordingService()
+    event = HandoffEvent.model_validate(
+        {
+            "schema_version": "1.0",
+            "event_id": "stale-complete",
+            "task_id": "ADP-012",
+            "correlation_id": "correlation-1",
+            "from_agent": "claude",
+            "to_agent": "chris",
+            "event_type": "work_completed",
+            "status": "done",
+            "summary": "Stale completion",
+            "attempt": 1,
+            "max_attempts": 3,
+        }
+    )
+    result = RouteResult(
+        kind="conflict",
+        task_id=event.task_id,
+        status="ready",
+        message="No active run matches the stale completion.",
+        target_agent=None,
+    )
+
+    with pytest.raises(RuntimeError):
+        deliver_result(
+            handoff=event,
+            result=result,
+            thread_ts="123.45",
+            say=lambda **kwargs: (_ for _ in ()).throw(
+                RuntimeError("Slack reply failed")
+            ),
+            client=object(),
+            settings=settings(tmp_path),
+            service=service,  # type: ignore[arg-type]
+        )
+
+    assert service.rolled_back == []
