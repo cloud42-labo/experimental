@@ -75,15 +75,16 @@ def test_updates_select_and_rich_text_properties() -> None:
     assert request.headers["notion-version"] == "2026-03-11"
     assert request.headers["authorization"] == "Bearer secret_test_token"
     body = json.loads(request.content)
-    assert body["properties"]["Status"] == {
-        "select": {"name": "In Progress"}
-    }
-    assert body["properties"]["Assigned Agent"] == {
+    properties = body["properties"]
+    assert properties["Status"] == {"select": {"name": "In Progress"}}
+    assert properties["Assigned Agent"] == {
         "select": {"name": "Claude Opus"}
     }
-    assert body["properties"]["Result"]["rich_text"][0]["text"][
-        "content"
-    ] == "work_started accepted"
+    assert properties["Result"]["rich_text"][0]["text"]["content"] == (
+        "work_started accepted"
+    )
+    assert properties["Blocker"] == {"rich_text": []}
+    assert properties["Environment Help"] == {"checkbox": False}
 
 
 def test_human_request_sets_blocker_and_environment_help() -> None:
