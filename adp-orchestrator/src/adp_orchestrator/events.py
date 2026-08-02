@@ -76,12 +76,19 @@ class HandoffEvent(BaseModel):
 
     @property
     def idempotency_key(self) -> str:
-        """Return an unambiguous semantic event key for one run and event type."""
+        """Return an unambiguous semantic event key.
 
-        digest = self._canonical_hash(
-            {
-                "event_type": self.event_type,
-                "run_id": self.run_id,
-            }
-        )
+        Most event types occur once per run and are keyed by ``run_id`` and
+        ``event_type``. Heartbeats are intentionally repeatable, so their signed
+        Slack envelope ``event_id`` is also part of the semantic key. A redelivery
+        of the same heartbeat is still deduplicated by both columns in SQLite.
+        """
+
+        payload: dict[str, object] = {
+            "event_type": self.event_type,
+            "run_id": self.run_id,
+        }
+        if self.event_type == "work_heartbeat":
+            payload["heartbeat_event_id"] = self.event_id
+        digest = self._canonical_hash(payload)
         return f"event-v1:{digest}"
