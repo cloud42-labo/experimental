@@ -26,11 +26,18 @@ class EventRouter:
     def rollback(self, event: HandoffEvent) -> None:
         """Allow a safe retry when an external adapter or Slack delivery failed."""
 
-        self.store.release_event(event.event_id, event.idempotency_key)
         if event.event_type == "work_started":
-            self.store.release_task(event.task_id, event.to_agent, event.run_id)
+            self.store.rollback_started_event(
+                event.event_id,
+                event.idempotency_key,
+                event.task_id,
+                event.to_agent,
+                event.run_id,
+            )
         elif event.event_type in {"work_completed", "failed"}:
-            self.store.restore_task_if_latest(
+            self.store.rollback_terminal_event(
+                event.event_id,
+                event.idempotency_key,
                 event.task_id,
                 event.from_agent,
                 event.run_id,
@@ -39,11 +46,15 @@ class EventRouter:
             event.event_type == "human_required"
             and event.from_agent in _WORKER_AGENTS
         ):
-            self.store.restore_task_if_latest(
+            self.store.rollback_terminal_event(
+                event.event_id,
+                event.idempotency_key,
                 event.task_id,
                 event.from_agent,
                 event.run_id,
             )
+        else:
+            self.store.release_event(event.event_id, event.idempotency_key)
 
     def _lock_conflict(
         self,
