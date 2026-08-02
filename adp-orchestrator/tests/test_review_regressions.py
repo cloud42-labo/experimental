@@ -1,4 +1,5 @@
 import json
+import traceback
 from pathlib import Path
 
 import httpx
@@ -84,6 +85,40 @@ def test_terminal_event_conflicts_when_exact_release_loses_race(
     assert result.target_agent == "gemini"
 
 
+def test_wrong_worker_does_not_claim_real_owners_terminal_event(
+    tmp_path: Path,
+) -> None:
+    subject = EventRouter(IdempotencyStore(tmp_path / "orchestrator.sqlite3"))
+    start = make_event(
+        event_id="start-1",
+        event_type="work_started",
+        status="running",
+        to_agent="claude",
+        attempt=1,
+    )
+    assert subject.route(start).kind == "accepted"
+
+    wrong_owner = make_event(
+        event_id="wrong-complete",
+        from_agent="gemini",
+        to_agent="chris",
+        event_type="work_completed",
+        status="done",
+        attempt=1,
+    )
+    real_owner = make_event(
+        event_id="real-complete",
+        from_agent="claude",
+        to_agent="chris",
+        event_type="work_completed",
+        status="done",
+        attempt=1,
+    )
+
+    assert subject.route(wrong_owner).kind == "conflict"
+    assert subject.route(real_owner).kind == "accepted"
+
+
 def test_fenced_json_keeps_closing_braces_inside_strings() -> None:
     payload = {
         "event_id": "event-1",
@@ -112,5 +147,11 @@ def test_github_transport_error_does_not_expose_secret() -> None:
         client.fetch("https://github.com/cloud42-labo/experimental/pull/57")
 
     error_text = str(exc_info.value)
+    rendered_traceback = "".join(
+        traceback.format_exception(exc_info.type, exc_info.value, exc_info.tb)
+    )
     assert error_text == "GitHub reference fetch transport failed"
     assert secret not in error_text
+    assert secret not in rendered_traceback
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
