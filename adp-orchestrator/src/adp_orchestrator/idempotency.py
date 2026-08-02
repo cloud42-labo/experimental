@@ -176,12 +176,14 @@ class IdempotencyStore:
             )
 
     def _delete_expired_locks(self, connection: sqlite3.Connection) -> None:
+        # Once a terminal semantic key is selected it is an outbox record, not
+        # an ordinary worker lease. Keep it until exact-key delivery finalizes.
         connection.execute(
             """
             DELETE FROM task_locks
             WHERE run_id IS NULL
                OR (
-                    terminal_event_id IS NULL
+                    terminal_idempotency_key IS NULL
                     AND (
                         lease_expires_at IS NULL
                         OR datetime(lease_expires_at) <= CURRENT_TIMESTAMP
@@ -297,7 +299,7 @@ class IdempotencyStore:
         expected_run_id: str,
         delivery_owner_id: str,
     ) -> ClaimResult:
-        """Reserve or recover one terminal delivery for an exact live run."""
+        """Select, reserve, or recover one terminal outcome for an exact run."""
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -326,7 +328,7 @@ class IdempotencyStore:
             terminal_key = None if row[3] is None else str(row[3])
             terminal_owner = None if row[4] is None else str(row[4])
 
-            if terminal_event_id is None:
+            if terminal_key is None:
                 if not self._insert_event_claim(
                     connection,
                     event_id,
@@ -342,7 +344,7 @@ class IdempotencyStore:
                     WHERE task_id = ?
                       AND agent = ?
                       AND run_id = ?
-                      AND terminal_event_id IS NULL
+                      AND terminal_idempotency_key IS NULL
                     """,
                     (
                         event_id,
@@ -358,13 +360,49 @@ class IdempotencyStore:
                 self._delete_event_claim(connection, event_id, idempotency_key)
                 return "conflict"
 
+            # The first accepted terminal semantic key wins permanently for this
+            # run, even if external delivery later rolls back for exact retry.
             if terminal_key != idempotency_key:
                 return "conflict"
+
+            if terminal_event_id is None:
+                if not self._insert_event_claim(
+                    connection,
+                    event_id,
+                    idempotency_key,
+                ):
+                    return "duplicate"
+                cursor = connection.execute(
+                    """
+                    UPDATE task_locks
+                    SET terminal_event_id = ?,
+                        terminal_owner_id = ?
+                    WHERE task_id = ?
+                      AND agent = ?
+                      AND run_id = ?
+                      AND terminal_idempotency_key = ?
+                      AND terminal_event_id IS NULL
+                      AND terminal_owner_id IS NULL
+                    """,
+                    (
+                        event_id,
+                        delivery_owner_id,
+                        task_id,
+                        expected_agent,
+                        expected_run_id,
+                        idempotency_key,
+                    ),
+                )
+                if cursor.rowcount == 1:
+                    return "accepted"
+                self._delete_event_claim(connection, event_id, idempotency_key)
+                return "conflict"
+
             if self._runtime_is_active(connection, terminal_owner):
                 return "duplicate"
 
-            # The prior process stopped heartbeating. Preserve the accepted
-            # terminal event and transfer only its delivery ownership.
+            # The prior process stopped heartbeating. Preserve the selected
+            # outcome and transfer only its delivery ownership.
             self._insert_event_claim(connection, event_id, idempotency_key)
             cursor = connection.execute(
                 """
@@ -401,7 +439,7 @@ class IdempotencyStore:
         expected_agent: str,
         expected_run_id: str,
     ) -> bool:
-        """Roll back a start only while its exact non-terminal lock is live."""
+        """Roll back a start only while no terminal outcome was selected."""
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -411,7 +449,7 @@ class IdempotencyStore:
                 WHERE task_id = ?
                   AND agent = ?
                   AND run_id = ?
-                  AND terminal_event_id IS NULL
+                  AND terminal_idempotency_key IS NULL
                 """,
                 (task_id, expected_agent, expected_run_id),
             )
@@ -429,7 +467,7 @@ class IdempotencyStore:
         expected_run_id: str,
         delivery_owner_id: str,
     ) -> bool:
-        """Release this owner's terminal reservation while retaining the run."""
+        """Release delivery ownership but retain the selected terminal outcome."""
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -437,7 +475,6 @@ class IdempotencyStore:
                 """
                 UPDATE task_locks
                 SET terminal_event_id = NULL,
-                    terminal_idempotency_key = NULL,
                     terminal_owner_id = NULL,
                     lease_expires_at = datetime('now', ?)
                 WHERE task_id = ?
@@ -502,7 +539,7 @@ class IdempotencyStore:
             return self._acquire_task(connection, task_id, agent, run_id)
 
     def heartbeat_task(self, task_id: str, agent: str, run_id: str) -> bool:
-        """Extend a live lease only for the exact non-terminal attempt run."""
+        """Extend a live lease only before a terminal outcome is selected."""
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -514,7 +551,7 @@ class IdempotencyStore:
                 WHERE task_id = ?
                   AND agent = ?
                   AND run_id = ?
-                  AND terminal_event_id IS NULL
+                  AND terminal_idempotency_key IS NULL
                 """,
                 (self._lease_modifier, task_id, agent, run_id),
             )
@@ -556,7 +593,7 @@ class IdempotencyStore:
         expected_agent: str,
         expected_run_id: str,
     ) -> bool:
-        """Release only an exact non-terminal run lock."""
+        """Release only an exact run without a selected terminal outcome."""
 
         with self._connect() as connection:
             cursor = connection.execute(
@@ -565,7 +602,7 @@ class IdempotencyStore:
                 WHERE task_id = ?
                   AND agent = ?
                   AND run_id = ?
-                  AND terminal_event_id IS NULL
+                  AND terminal_idempotency_key IS NULL
                 """,
                 (task_id, expected_agent, expected_run_id),
             )
