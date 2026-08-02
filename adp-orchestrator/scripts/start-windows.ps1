@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^[CG][A-Z0-9]+$')]
     [string]$DailyChannelId,
 
-    [ValidateRange(1, 86400)]
+    [ValidateRange(30, 86400)]
     [int]$LockLeaseSeconds = 3600,
 
     [ValidateNotNullOrEmpty()]
@@ -84,8 +84,15 @@ public static class AdpCredentialReader
 
             int secretLength = checked((int)credential.CredentialBlobSize);
             byte[] secretBytes = new byte[secretLength];
-            Marshal.Copy(credential.CredentialBlob, secretBytes, 0, secretBytes.Length);
-            return Encoding.Unicode.GetString(secretBytes).TrimEnd('\0');
+            try
+            {
+                Marshal.Copy(credential.CredentialBlob, secretBytes, 0, secretBytes.Length);
+                return Encoding.Unicode.GetString(secretBytes).TrimEnd('\0');
+            }
+            finally
+            {
+                Array.Clear(secretBytes, 0, secretBytes.Length);
+            }
         }
         finally
         {
@@ -134,8 +141,18 @@ try {
     }
 
     $projectRoot = Split-Path -Parent $PSScriptRoot
+    $resolvedPythonCommand = $PythonCommand
+    if (
+        -not [System.IO.Path]::IsPathRooted($PythonCommand) -and
+        ($PythonCommand.Contains('\') -or $PythonCommand.Contains('/'))
+    ) {
+        $resolvedPythonCommand = [System.IO.Path]::GetFullPath(
+            (Join-Path $projectRoot $PythonCommand)
+        )
+    }
+
     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $processInfo.FileName = $PythonCommand
+    $processInfo.FileName = $resolvedPythonCommand
     $processInfo.Arguments = '-m adp_orchestrator.app'
     $processInfo.WorkingDirectory = $projectRoot
     $processInfo.UseShellExecute = $false
@@ -161,6 +178,9 @@ finally {
     if ($null -ne $processInfo) {
         [void]$processInfo.EnvironmentVariables.Remove('SLACK_BOT_TOKEN')
         [void]$processInfo.EnvironmentVariables.Remove('SLACK_APP_TOKEN')
+    }
+    if ($null -ne $process) {
+        $process.Dispose()
     }
     $botToken = $null
     $appToken = $null
