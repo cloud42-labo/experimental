@@ -46,7 +46,7 @@ def test_launcher_does_not_create_or_copy_dotenv() -> None:
     assert "copy-item" not in text
     assert "set-content" not in text
     assert "out-file" not in text
-    assert ".env" only in text
+    assert text.count(".env") == 1
     assert "not written to .env" in text
 
 
