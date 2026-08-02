@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator
 EventType = Literal[
     "task_assigned",
     "work_started",
+    "work_heartbeat",
     "work_completed",
     "review_requested",
     "human_required",
@@ -51,25 +52,36 @@ class HandoffEvent(BaseModel):
             self.requires_human = True
         return self
 
-    @property
-    def idempotency_key(self) -> str:
-        """Return an unambiguous semantic event key.
-
-        A retry attempt is a distinct semantic event, while Slack's signed
-        envelope ``event_id`` deduplicates transport retries within that attempt.
-        Canonical JSON prevents delimiter collisions in user-provided identifiers.
-        """
-
+    def _canonical_hash(self, payload: dict[str, object]) -> str:
         canonical = json.dumps(
-            {
-                "attempt": self.attempt,
-                "correlation_id": self.correlation_id,
-                "event_type": self.event_type,
-                "task_id": self.task_id,
-            },
+            payload,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
         )
-        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        return f"v1:{digest}"
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    @property
+    def run_id(self) -> str:
+        """Identify one attempt of a task independently of the assigned agent."""
+
+        digest = self._canonical_hash(
+            {
+                "attempt": self.attempt,
+                "correlation_id": self.correlation_id,
+                "task_id": self.task_id,
+            }
+        )
+        return f"run-v1:{digest}"
+
+    @property
+    def idempotency_key(self) -> str:
+        """Return an unambiguous semantic event key for one run and event type."""
+
+        digest = self._canonical_hash(
+            {
+                "event_type": self.event_type,
+                "run_id": self.run_id,
+            }
+        )
+        return f"event-v1:{digest}"
