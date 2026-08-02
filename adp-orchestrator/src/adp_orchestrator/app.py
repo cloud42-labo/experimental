@@ -8,10 +8,15 @@ from pydantic import ValidationError
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from .adapters import NoopAgentActivator, NoopTaskRepository
+from .adapters import NoopAgentActivator, NoopTaskRepository, TaskRepository
 from .config import Settings
 from .events import HandoffEvent
 from .idempotency import IdempotencyStore
+from .notion_adapter import (
+    NotionAdapterConfig,
+    NotionAdapterError,
+    NotionTaskRepository,
+)
 from .router import EventRouter, RouteResult
 from .service import OrchestrationService
 
@@ -21,6 +26,10 @@ _VALIDATION_ERROR_MESSAGE = (
     "Event validation failed. Check schema_version, required fields, and allowed values."
 )
 _WRONG_CHANNEL_MESSAGE = "ADP task events are accepted only in #adp-control."
+_NOTION_ERROR_MESSAGE = (
+    "Notion update failed. The event claim was released and can be retried "
+    "after the integration configuration is fixed."
+)
 
 
 def extract_event_payload(text: str) -> dict[str, Any]:
@@ -61,11 +70,19 @@ def format_result(result: RouteResult) -> str:
     )
 
 
+def build_task_repository(settings: Settings) -> TaskRepository:
+    if settings.notion_token is None:
+        return NoopTaskRepository()
+    return NotionTaskRepository(
+        NotionAdapterConfig(token=settings.notion_token)
+    )
+
+
 def build_app(settings: Settings) -> App:
     app = App(token=settings.slack_bot_token)
     service = OrchestrationService(
         router=EventRouter(IdempotencyStore(settings.adp_db_path)),
-        task_repository=NoopTaskRepository(),
+        task_repository=build_task_repository(settings),
         agent_activator=NoopAgentActivator(),
     )
 
@@ -81,6 +98,7 @@ def build_app(settings: Settings) -> App:
             say(text=_WRONG_CHANNEL_MESSAGE, thread_ts=thread_ts)
             return
 
+        handoff: HandoffEvent | None = None
         try:
             payload = extract_event_payload(str(event.get("text", "")))
             payload = apply_envelope_event_id(payload, body)
@@ -89,6 +107,18 @@ def build_app(settings: Settings) -> App:
         except (ValueError, json.JSONDecodeError, ValidationError):
             # Never echo the payload or exception because users can paste secrets.
             say(text=_VALIDATION_ERROR_MESSAGE, thread_ts=thread_ts)
+            return
+        except NotionAdapterError:
+            say(text=_NOTION_ERROR_MESSAGE, thread_ts=thread_ts)
+            task_id = handoff.task_id if handoff is not None else "unknown"
+            client.chat_postMessage(
+                channel=settings.adp_human_requests_channel_id,
+                text=(
+                    f"Human Request for `{task_id}`\n"
+                    "Notion integration failed. Check the integration token and "
+                    "page-sharing permission, then retry the Slack event."
+                ),
+            )
             return
 
         say(text=format_result(result), thread_ts=thread_ts)
