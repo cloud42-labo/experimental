@@ -76,7 +76,7 @@ class EventRouter:
         )
 
     def _release_worker_run(self, event: HandoffEvent) -> RouteResult | None:
-        """Atomically release only the exact worker run or return a conflict."""
+        """Atomically release only the exact worker run or return a retryable conflict."""
 
         released = self.store.release_task(
             event.task_id,
@@ -85,6 +85,11 @@ class EventRouter:
         )
         if released:
             return None
+
+        # The semantic key intentionally identifies the run and event type, not
+        # the sender. A spoofed or stale sender must not permanently claim that
+        # key and block the legitimate owner from publishing its terminal event.
+        self.store.release_event(event.event_id, event.idempotency_key)
         return self._lock_conflict(
             event,
             self.store.current_lock(event.task_id),
