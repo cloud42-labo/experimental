@@ -2,7 +2,10 @@ import threading
 import time
 from pathlib import Path
 
-from adp_orchestrator.app import DeferredDeliveryScheduler
+from adp_orchestrator.app import (
+    DeferredDeliveryScheduler,
+    direct_delivery_completes_outbox,
+)
 from adp_orchestrator.config import Settings
 from adp_orchestrator.events import HandoffEvent
 from adp_orchestrator.outbox import DeferredDeliveryOutbox
@@ -141,3 +144,39 @@ def test_successful_direct_delivery_removes_persisted_event(
     subject.finish_direct(handoff.idempotency_key, delivered=True)
 
     assert outbox.count() == 0
+
+
+def test_duplicate_or_conflict_reply_does_not_complete_owner_work() -> None:
+    accepted = RouteResult(
+        kind="accepted",
+        task_id="ADP-012",
+        status="ready",
+        message="accepted",
+        target_agent="claude",
+    )
+    human_required = RouteResult(
+        kind="human_required",
+        task_id="ADP-012",
+        status="blocked",
+        message="human required",
+        target_agent="human",
+    )
+    ignored = RouteResult(
+        kind="ignored",
+        task_id="ADP-012",
+        status="ready",
+        message="duplicate",
+        target_agent="claude",
+    )
+    conflict = RouteResult(
+        kind="conflict",
+        task_id="ADP-012",
+        status="running",
+        message="conflict",
+        target_agent="claude",
+    )
+
+    assert direct_delivery_completes_outbox(accepted) is True
+    assert direct_delivery_completes_outbox(human_required) is True
+    assert direct_delivery_completes_outbox(ignored) is False
+    assert direct_delivery_completes_outbox(conflict) is False
