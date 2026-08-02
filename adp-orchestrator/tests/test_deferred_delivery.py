@@ -138,9 +138,10 @@ def test_deferred_redelivery_is_persisted_and_retried_automatically(
         client=client,
         outbox=outbox,
     )
-    subject.start()
     event = terminal_event()
 
+    # Persist duplicate Slack deliveries before processing starts. They must
+    # collapse to one durable row and one delivery lifecycle.
     subject.defer(
         handoff=event,
         channel="C_CONTROL",
@@ -151,7 +152,9 @@ def test_deferred_redelivery_is_persisted_and_retried_automatically(
         channel="C_CONTROL",
         thread_ts="123.45",
     )
+    assert outbox.count() == 1
 
+    subject.start()
     assert service.finalized.wait(timeout=1.0) is True
     assert wait_until_empty(outbox) is True
     subject.stop()
