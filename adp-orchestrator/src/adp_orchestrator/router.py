@@ -26,6 +26,7 @@ class RouteResult:
     status: str
     message: str
     target_agent: str | None = None
+    apply_external_side_effects: bool = True
 
 
 class EventRouter:
@@ -99,6 +100,7 @@ class EventRouter:
             status=event.status,
             message="Duplicate event ignored.",
             target_agent=event.to_agent,
+            apply_external_side_effects=False,
         )
 
     def _deferred(self, event: HandoffEvent) -> RouteResult:
@@ -111,6 +113,7 @@ class EventRouter:
                 "lease to expire. It will be retried automatically."
             ),
             target_agent=event.from_agent,
+            apply_external_side_effects=False,
         )
 
     def _lock_conflict(
@@ -139,6 +142,7 @@ class EventRouter:
             status=status,
             message=message,
             target_agent=target_agent,
+            apply_external_side_effects=False,
         )
 
     def _reservation_result(
@@ -155,6 +159,89 @@ class EventRouter:
         return self._lock_conflict(
             event,
             self.store.current_lock(event.task_id),
+        )
+
+    def replay_claimed(self, event: HandoffEvent) -> RouteResult:
+        """Reconstruct unfinished non-terminal work retained by the durable outbox.
+
+        An outbox row proves that the prior handler did not complete external
+        delivery. The routing claim may nevertheless have committed before a
+        crash. Reconstruct the accepted result without claiming a second time.
+        """
+
+        if self._is_worker_terminal(event):
+            return self._lock_conflict(
+                event,
+                self.store.current_lock(event.task_id),
+            )
+
+        if event.event_type == "work_started":
+            lock = self.store.current_lock(event.task_id)
+            if (
+                lock is None
+                or lock.agent != event.to_agent
+                or lock.run_id != event.run_id
+            ):
+                return self._lock_conflict(event, lock)
+            return RouteResult(
+                kind="accepted",
+                task_id=event.task_id,
+                status="running",
+                message=(
+                    f"work_started recovered for {event.to_agent}: "
+                    f"{event.summary}"
+                ),
+                target_agent=event.to_agent,
+                # A later terminal reservation means Notion has already moved
+                # beyond running. Recover only the missing Slack acknowledgement.
+                apply_external_side_effects=lock.terminal_event_id is None,
+            )
+
+        if event.event_type == "work_heartbeat":
+            lock = self.store.current_lock(event.task_id)
+            if (
+                lock is None
+                or lock.agent != event.from_agent
+                or lock.run_id != event.run_id
+                or lock.terminal_event_id is not None
+            ):
+                return self._lock_conflict(event, lock)
+            return RouteResult(
+                kind="accepted",
+                task_id=event.task_id,
+                status="running",
+                message=(
+                    f"work_heartbeat recovered for {event.from_agent}: "
+                    f"{event.summary}"
+                ),
+                target_agent=event.from_agent,
+                apply_external_side_effects=False,
+            )
+
+        if event.requires_human or event.event_type == "human_required":
+            return RouteResult(
+                kind="human_required",
+                task_id=event.task_id,
+                status="blocked",
+                message=f"Human action required: {event.summary}",
+                target_agent="human",
+            )
+
+        next_status = {
+            "task_assigned": "ready",
+            "review_requested": "review",
+        }.get(event.event_type)
+        if next_status is None:
+            return self._lock_conflict(
+                event,
+                self.store.current_lock(event.task_id),
+            )
+        return RouteResult(
+            kind="accepted",
+            task_id=event.task_id,
+            status=next_status,
+            message=f"{event.event_type} recovered for {event.to_agent}: {event.summary}",
+            target_agent=event.to_agent,
         )
 
     def route(self, event: HandoffEvent) -> RouteResult:
@@ -225,6 +312,7 @@ class EventRouter:
                     f"{event.summary}"
                 ),
                 target_agent=event.from_agent,
+                apply_external_side_effects=False,
             )
 
         next_status = {
