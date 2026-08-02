@@ -74,13 +74,14 @@ def test_task_cannot_run_with_two_agents(tmp_path: Path) -> None:
     assert result.target_agent == "claude"
 
 
-def test_failed_event_releases_task_for_retry(tmp_path: Path) -> None:
+def test_failed_event_releases_owned_task_for_retry(tmp_path: Path) -> None:
     subject = router(tmp_path)
     subject.route(make_event(event_type="work_started", status="running"))
-    subject.route(
+    failed = subject.route(
         make_event(
             event_id="event-2",
-            correlation_id="correlation-2",
+            from_agent="claude",
+            to_agent="chris",
             event_type="failed",
             status="blocked",
             attempt=1,
@@ -88,35 +89,119 @@ def test_failed_event_releases_task_for_retry(tmp_path: Path) -> None:
     )
     retry = make_event(
         event_id="event-3",
-        correlation_id="correlation-3",
         event_type="work_started",
         status="running",
         to_agent="gemini",
+        attempt=2,
     )
 
     result = subject.route(retry)
 
+    assert failed.kind == "accepted"
     assert result.kind == "accepted"
     assert result.target_agent == "gemini"
 
 
-def test_failed_event_at_attempt_limit_requires_human(tmp_path: Path) -> None:
+def test_same_correlation_reaches_attempt_three_escalation(tmp_path: Path) -> None:
     subject = router(tmp_path)
-    event = make_event(
-        event_type="failed",
-        status="blocked",
-        attempt=3,
-        max_attempts=3,
-    )
 
-    result = subject.route(event)
+    for attempt, agent in [(1, "claude"), (2, "gemini")]:
+        subject.route(
+            make_event(
+                event_id=f"start-{attempt}",
+                event_type="work_started",
+                status="running",
+                to_agent=agent,
+                attempt=attempt,
+            )
+        )
+        result = subject.route(
+            make_event(
+                event_id=f"fail-{attempt}",
+                from_agent=agent,
+                to_agent="chris",
+                event_type="failed",
+                status="blocked",
+                attempt=attempt,
+            )
+        )
+        assert result.kind == "accepted"
+
+    subject.route(
+        make_event(
+            event_id="start-3",
+            event_type="work_started",
+            status="running",
+            to_agent="claude",
+            attempt=3,
+        )
+    )
+    result = subject.route(
+        make_event(
+            event_id="fail-3",
+            from_agent="claude",
+            to_agent="chris",
+            event_type="failed",
+            status="blocked",
+            attempt=3,
+            max_attempts=3,
+        )
+    )
 
     assert result.kind == "human_required"
     assert result.status == "blocked"
     assert result.target_agent == "human"
 
 
-def test_explicit_human_request_releases_task(tmp_path: Path) -> None:
+def test_stale_completion_cannot_release_new_agent_lock(tmp_path: Path) -> None:
+    subject = router(tmp_path)
+    subject.route(make_event(event_type="work_started", status="running"))
+    subject.route(
+        make_event(
+            event_id="fail-1",
+            from_agent="claude",
+            to_agent="chris",
+            event_type="failed",
+            status="blocked",
+        )
+    )
+    subject.route(
+        make_event(
+            event_id="start-2",
+            event_type="work_started",
+            status="running",
+            to_agent="gemini",
+            attempt=2,
+        )
+    )
+
+    stale = subject.route(
+        make_event(
+            event_id="late-complete",
+            from_agent="claude",
+            to_agent="chris",
+            event_type="work_completed",
+            status="done",
+            attempt=1,
+        )
+    )
+    third_start = subject.route(
+        make_event(
+            event_id="start-3",
+            event_type="work_started",
+            status="running",
+            to_agent="codex",
+            attempt=3,
+        )
+    )
+
+    assert stale.kind == "conflict"
+    assert stale.target_agent == "gemini"
+    assert third_start.kind == "conflict"
+    assert third_start.target_agent == "gemini"
+
+
+def test_human_request_from_controller_does_not_unlock_worker(tmp_path: Path) -> None:
     subject = router(tmp_path)
     subject.route(make_event(event_type="work_started", status="running"))
     human_event = make_event(
@@ -139,5 +224,5 @@ def test_explicit_human_request_releases_task(tmp_path: Path) -> None:
         )
     )
 
-    assert resumed.kind == "accepted"
-    assert resumed.target_agent == "gemini"
+    assert resumed.kind == "conflict"
+    assert resumed.target_agent == "claude"
