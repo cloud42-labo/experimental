@@ -140,7 +140,7 @@ def test_terminal_claim_reserves_exact_live_run(tmp_path: Path) -> None:
     assert store.release_task("ADP-012", "claude", "run-1") is False
 
 
-def test_active_terminal_owner_rejects_duplicate_delivery_takeover(
+def test_active_terminal_owner_defers_delivery_takeover(
     tmp_path: Path,
 ) -> None:
     store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
@@ -163,7 +163,7 @@ def test_active_terminal_owner_rejects_duplicate_delivery_takeover(
         "claude",
         "run-1",
         second_owner,
-    ) == "duplicate"
+    ) == "deferred"
     lock = store.current_lock("ADP-012")
     assert lock is not None
     assert lock.terminal_event_id == "complete-1"
