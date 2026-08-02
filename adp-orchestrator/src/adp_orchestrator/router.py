@@ -75,15 +75,20 @@ class EventRouter:
             target_agent=target_agent,
         )
 
-    def _require_worker_run(self, event: HandoffEvent) -> RouteResult | None:
-        lock = self.store.current_lock(event.task_id)
-        if (
-            lock is not None
-            and lock.agent == event.from_agent
-            and lock.run_id == event.run_id
-        ):
+    def _release_worker_run(self, event: HandoffEvent) -> RouteResult | None:
+        """Atomically release only the exact worker run or return a conflict."""
+
+        released = self.store.release_task(
+            event.task_id,
+            event.from_agent,
+            event.run_id,
+        )
+        if released:
             return None
-        return self._lock_conflict(event, lock)
+        return self._lock_conflict(
+            event,
+            self.store.current_lock(event.task_id),
+        )
 
     def route(self, event: HandoffEvent) -> RouteResult:
         if not self.store.claim_event(event.event_id, event.idempotency_key):
@@ -97,14 +102,9 @@ class EventRouter:
 
         if event.requires_human or event.event_type == "human_required":
             if event.from_agent in _WORKER_AGENTS:
-                conflict = self._require_worker_run(event)
+                conflict = self._release_worker_run(event)
                 if conflict is not None:
                     return conflict
-                self.store.release_task(
-                    event.task_id,
-                    event.from_agent,
-                    event.run_id,
-                )
             return RouteResult(
                 kind="human_required",
                 task_id=event.task_id,
@@ -114,14 +114,9 @@ class EventRouter:
             )
 
         if event.event_type in {"failed", "work_completed"}:
-            conflict = self._require_worker_run(event)
+            conflict = self._release_worker_run(event)
             if conflict is not None:
                 return conflict
-            self.store.release_task(
-                event.task_id,
-                event.from_agent,
-                event.run_id,
-            )
 
         if event.event_type == "failed" and event.attempt >= event.max_attempts:
             return RouteResult(
