@@ -103,3 +103,33 @@ def test_human_target_sets_requires_human() -> None:
     payload["to_agent"] = "human"
     event = HandoffEvent.model_validate(payload)
     assert event.requires_human is True
+
+
+@pytest.mark.parametrize("event_type", ["work_heartbeat", "work_completed", "failed"])
+def test_worker_lifecycle_events_require_worker_source(event_type: str) -> None:
+    payload = valid_payload()
+    payload.update(
+        {
+            "event_type": event_type,
+            "status": "running" if event_type == "work_heartbeat" else "done",
+            "from_agent": "chris",
+            "to_agent": "chris",
+        }
+    )
+
+    with pytest.raises(ValidationError, match="must originate from a worker agent"):
+        HandoffEvent.model_validate(payload)
+
+
+def test_work_started_requires_worker_target() -> None:
+    payload = valid_payload()
+    payload.update(
+        {
+            "event_type": "work_started",
+            "status": "running",
+            "to_agent": "human",
+        }
+    )
+
+    with pytest.raises(ValidationError, match="must target a worker agent"):
+        HandoffEvent.model_validate(payload)
