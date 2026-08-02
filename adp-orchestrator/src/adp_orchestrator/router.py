@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Literal
 
@@ -9,6 +10,7 @@ from .idempotency import ClaimResult, IdempotencyStore, TaskLock
 RouteKind = Literal["ignored", "accepted", "human_required", "conflict"]
 _WORKER_AGENTS = {"claude", "gemini", "codex"}
 _TERMINAL_EVENT_TYPES = {"work_completed", "failed", "human_required"}
+_INLINE_RUNTIME_LEASE_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -24,11 +26,17 @@ class EventRouter:
     def __init__(
         self,
         store: IdempotencyStore,
-        delivery_owner_id: str,
+        delivery_owner_id: str | None = None,
     ) -> None:
-        if not delivery_owner_id:
-            raise ValueError("delivery_owner_id is required")
         self.store = store
+        if delivery_owner_id is None:
+            delivery_owner_id = f"inline-runtime-{uuid.uuid4().hex}"
+            self.store.register_runtime(
+                delivery_owner_id,
+                _INLINE_RUNTIME_LEASE_SECONDS,
+            )
+        if not delivery_owner_id:
+            raise ValueError("delivery_owner_id must not be empty")
         self.delivery_owner_id = delivery_owner_id
 
     def _is_worker_terminal(self, event: HandoffEvent) -> bool:
