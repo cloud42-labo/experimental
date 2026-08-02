@@ -1,4 +1,5 @@
 import json
+import traceback
 
 import httpx
 import pytest
@@ -203,6 +204,12 @@ def test_transport_error_is_normalized_without_secret_details() -> None:
         repository.record(event(), result)
 
     error_text = str(exc_info.value)
+    rendered_traceback = "".join(
+        traceback.format_exception(exc_info.type, exc_info.value, exc_info.tb)
+    )
     assert error_text == "Notion page update transport failed"
     assert secret not in error_text
     assert "connection failed" not in error_text
+    assert secret not in rendered_traceback
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
