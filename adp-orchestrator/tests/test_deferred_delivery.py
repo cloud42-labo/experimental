@@ -1,4 +1,5 @@
 import threading
+import time
 from pathlib import Path
 
 from adp_orchestrator.app import DeferredDeliveryScheduler
@@ -116,6 +117,15 @@ def scheduler(
     )
 
 
+def wait_until_empty(outbox: DeferredDeliveryOutbox, timeout: float = 1.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if outbox.count() == 0:
+            return True
+        time.sleep(0.01)
+    return outbox.count() == 0
+
+
 def test_deferred_redelivery_is_persisted_and_retried_automatically(
     tmp_path: Path,
 ) -> None:
@@ -143,11 +153,11 @@ def test_deferred_redelivery_is_persisted_and_retried_automatically(
     )
 
     assert service.finalized.wait(timeout=1.0) is True
+    assert wait_until_empty(outbox) is True
     subject.stop()
 
     assert service.calls == 2
     assert service.rolled_back == []
-    assert outbox.count() == 0
     assert len(client.messages) == 1
     assert client.messages[0]["channel"] == "C_CONTROL"
     assert client.messages[0]["thread_ts"] == "123.45"
@@ -178,9 +188,9 @@ def test_new_scheduler_resumes_delivery_persisted_before_restart(
     replacement.start()
 
     assert service.finalized.wait(timeout=1.0) is True
+    assert wait_until_empty(outbox) is True
     replacement.stop()
 
-    assert outbox.count() == 0
     assert service.calls == 1
     assert len(client.messages) == 1
     assert "Persisted delivery accepted" in str(client.messages[0]["text"])
