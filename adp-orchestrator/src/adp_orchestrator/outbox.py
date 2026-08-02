@@ -75,10 +75,7 @@ class DeferredDeliveryOutbox:
                     event_json = excluded.event_json,
                     channel_id = excluded.channel_id,
                     thread_ts = excluded.thread_ts,
-                    available_at = MIN(
-                        deferred_deliveries.available_at,
-                        excluded.available_at
-                    ),
+                    available_at = deferred_deliveries.available_at,
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 (
