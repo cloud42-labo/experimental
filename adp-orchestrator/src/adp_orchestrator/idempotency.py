@@ -36,11 +36,7 @@ class IdempotencyStore:
             )
 
     def claim_event(self, event_id: str, idempotency_key: str) -> bool:
-        """Atomically claim an event.
-
-        Returns ``False`` when either the Slack event ID or the ADP idempotency
-        key has already been claimed by another handler.
-        """
+        """Atomically claim an event before processing side effects."""
 
         try:
             with self._connect() as connection:
@@ -54,6 +50,18 @@ class IdempotencyStore:
         except sqlite3.IntegrityError:
             return False
         return True
+
+    def release_event(self, event_id: str, idempotency_key: str) -> None:
+        """Release a claim when an external side effect failed and retry is safe."""
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                DELETE FROM processed_events
+                WHERE event_id = ? AND idempotency_key = ?
+                """,
+                (event_id, idempotency_key),
+            )
 
     def is_processed(self, event_id: str, idempotency_key: str) -> bool:
         with self._connect() as connection:
