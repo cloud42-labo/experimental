@@ -54,6 +54,8 @@ class HandoffEvent(BaseModel):
             self.requires_human = True
         if self.event_type == "work_started" and self.to_agent not in _WORKER_AGENTS:
             raise ValueError("work_started must target a worker agent")
+        if self.event_type == "work_started" and self.requires_human:
+            raise ValueError("work_started cannot require human action")
         if (
             self.event_type in _WORKER_SOURCE_EVENTS
             and self.from_agent not in _WORKER_AGENTS
