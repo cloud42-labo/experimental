@@ -97,6 +97,9 @@ class NotionTaskRepository:
         if result.status == "blocked" or result.kind == "human_required":
             properties["Blocker"] = _rich_text(result.message)
             properties["Environment Help"] = {"checkbox": True}
+        else:
+            properties["Blocker"] = {"rich_text": []}
+            properties["Environment Help"] = {"checkbox": False}
 
         response = self.client.patch(
             f"{_NOTION_API_BASE}/pages/{page_id}",
