@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from .agent_queue import SQLiteAgentQueue
 from .events import HandoffEvent
 from .router import RouteResult
 
@@ -25,8 +26,9 @@ class NoopTaskRepository:
         del event, result
 
 
-class NoopAgentActivator:
-    """Safe MVP default: records no external AI invocation or cost."""
+class NoopAgentActivator(SQLiteAgentQueue):
+    """Backward-compatible name for the local durable handoff queue.
 
-    def enqueue(self, event: HandoffEvent, result: RouteResult) -> None:
-        del event, result
+    The class still never invokes an AI API. It only persists work for a local
+    Claude, Codex, or Gemini runner to claim later.
+    """
