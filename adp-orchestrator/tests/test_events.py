@@ -133,3 +133,18 @@ def test_work_started_requires_worker_target() -> None:
 
     with pytest.raises(ValidationError, match="must target a worker agent"):
         HandoffEvent.model_validate(payload)
+
+
+def test_worker_human_request_requires_explicit_event_type() -> None:
+    payload = valid_payload()
+    payload.update(
+        {
+            "from_agent": "claude",
+            "event_type": "work_started",
+            "status": "running",
+            "requires_human": True,
+        }
+    )
+
+    with pytest.raises(ValidationError, match="must use the human_required event type"):
+        HandoffEvent.model_validate(payload)
