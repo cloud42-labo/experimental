@@ -80,6 +80,31 @@ def test_release_requires_exact_agent_and_run(tmp_path: Path) -> None:
     assert store.current_lock("ADP-012") is None
 
 
+def test_restore_released_latest_run(tmp_path: Path) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
+    assert store.release_task("ADP-012", "claude", "run-1") is True
+
+    assert store.restore_task_if_latest("ADP-012", "claude", "run-1") is True
+    lock = store.current_lock("ADP-012")
+    assert lock is not None
+    assert lock.agent == "claude"
+    assert lock.run_id == "run-1"
+
+
+def test_restore_rejects_run_superseded_even_after_successor_completes(
+    tmp_path: Path,
+) -> None:
+    store = IdempotencyStore(tmp_path / "orchestrator.sqlite3", 3600)
+    assert store.acquire_task("ADP-012", "claude", "run-1") is True
+    assert store.release_task("ADP-012", "claude", "run-1") is True
+    assert store.acquire_task("ADP-012", "gemini", "run-2") is True
+    assert store.release_task("ADP-012", "gemini", "run-2") is True
+
+    assert store.restore_task_if_latest("ADP-012", "claude", "run-1") is False
+    assert store.current_lock("ADP-012") is None
+
+
 def test_legacy_lock_without_run_or_lease_is_recovered(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.sqlite3"
     with sqlite3.connect(db_path) as connection:
