@@ -70,7 +70,7 @@ workflow_id: <thread_ts>
 task_id: <stable task id>
 from_agent: <owner|chris|claude|gemini|codex>
 to_agent: <agent or none>
-status: <planned|working|review|blocked|failed|done|human_required>
+status: <planned|working|review|blocked|failed|done|human_required|completed|failed_limit|loop_detected|cancelled|capability_failure>
 summary: <short description>
 result_links:
   - <Notion/GitHub/other evidence URL>
@@ -78,6 +78,8 @@ attempt: <integer starting at 1>
 next_action: <explicit next action>
 requires_human: <true|false>
 ```
+
+The last five `status` values (`completed`, `failed_limit`, `loop_detected`, `cancelled`, `capability_failure`) are the lowercase form of the terminal tags Chris posts under "Stop conditions" (`COMPLETED`, `FAILED_LIMIT`, `LOOP_DETECTED`, `CANCELLED`, `CAPABILITY_FAILURE`); a terminal Slack message uses one of them so a consumer can read the stop reason directly from the contract instead of inferring it from `done`/`human_required`.
 
 Natural-language Slack messages may be used, but these fields must be inferable and should be included explicitly for multi-turn work.
 
@@ -88,15 +90,16 @@ Natural-language Slack messages may be used, but these fields must be inferable 
 1. The first dispatch of the task, to any agent, starts at `attempt: 1`.
 2. `planned`, `working`, and progress updates for that dispatch retain the same attempt number.
 3. Slack delivery retries, duplicate event delivery, reconnects, and transport failures do not increment the attempt.
-4. An attempt is unsuccessful when either:
+4. An attempt is unsuccessful when any of the following (this list is exhaustive — no other event increments `attempt`):
    - the assigned agent returns `failed`; or
-   - the assigned agent returns `done` or `review`, but Chris rejects the evidence because the stated acceptance criteria are not met.
+   - the assigned agent returns `done` or `review`, but Chris rejects the evidence because the stated acceptance criteria are not met; or
+   - the assigned agent returns `blocked` and Chris determines the blocker cannot be resolved, closing that dispatch as rejected.
 5. When Chris redispatches the same task after an unsuccessful attempt, the attempt increments by one, regardless of whether the redispatch goes to the same agent or a different agent. Reassigning to a different agent does not reset or start a separate counter.
-6. A `blocked` result does not increment the attempt counter, because it is not one of the unsuccessful predicates in rule 4. When Chris resolves the blocker, the resumed dispatch keeps the same attempt number that was active when the block occurred — it is not a new dispatch of the next attempt. A blocker consumes an attempt only if it is separately reclassified as unsuccessful (e.g. the agent reports it as `failed`, or Chris cannot resolve it and closes that attempt as rejected). If the blocker cannot be resolved, Chris stops with `HUMAN_REQUEST` or `CAPABILITY_FAILURE` without incrementing the attempt.
+6. A `blocked` result does not by itself make the current attempt unsuccessful, because "blocked" alone is not one of the three predicates in rule 4. When Chris resolves the blocker, the resumed dispatch keeps the same attempt number that was active when the block occurred — it is not a new dispatch of the next attempt, and nothing increments. Only when Chris cannot resolve the blocker and closes the dispatch as rejected (third predicate in rule 4) does the current attempt become unsuccessful; that closure marks the current attempt number itself as unsuccessful (per rule 5's counting), and Chris stops with `HUMAN_REQUEST` or `CAPABILITY_FAILURE` at that point instead of redispatching to a new attempt number.
 7. `human_required` stops the workflow immediately and does not consume another attempt.
 8. After three unsuccessful attempts on the task, regardless of agent mix, Chris must stop with `FAILED_LIMIT`; a fourth execution attempt on that task is not permitted without the owner explicitly changing the goal or acceptance scope.
 9. A material change to the goal or acceptance scope creates a new task or workflow rather than resetting the counter silently.
-10. For parallel dispatch (see Graph patterns → Parallel and merge), each branch must use a distinct `task_id` (for example `<task_id>-claude`, `<task_id>-gemini`) so branch outcomes never share one counter and a branch's own attempt lifecycle follows rules 1-8 independently. The parent task has its own separate attempt counter that increments only when Chris evaluates the synthesized merge result against acceptance criteria and rejects it; an individual branch failing, by itself, does not increment the parent's counter. `FAILED_LIMIT` on a branch stops dispatch to that branch only, not the whole parallel task, unless the merge condition can no longer be satisfied.
+10. For parallel dispatch (see Graph patterns → Parallel and merge), each branch must use a distinct `task_id` (for example `<task_id>-claude`, `<task_id>-gemini`) so branch outcomes never share one counter and a branch's own attempt lifecycle follows rules 1-8 independently. The parent task has its own separate attempt counter, with its own execution boundary: a parent attempt begins when Chris issues the parallel dispatch and ends when Chris evaluates the synthesized merge against acceptance criteria — that evaluation, not any individual branch result, is the parent's execution outcome for rule 4. Rejecting the synthesized merge is therefore equivalent to a rejected `done`/`review` under rule 4 and increments the parent's counter; an individual branch failing, by itself, does not. When the parent's counter increments on a rejected merge, Chris redispatches only the branches whose evidence was rejected, giving each a fresh attempt under the same branch `task_id` (rules 1-8 apply per branch as normal); branches whose evidence was already accepted are not redispatched, and their accepted evidence carries forward unchanged into the next merge evaluation. `FAILED_LIMIT` on one branch's own counter stops dispatch to that branch only, not the whole parallel task, unless the merge condition can no longer be satisfied without it, in which case Chris stops the parent task with `FAILED_LIMIT` or `HUMAN_REQUEST`.
 
 ## Notion persistence requirements
 
