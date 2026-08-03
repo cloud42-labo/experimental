@@ -183,6 +183,8 @@ When stopped, Chris posts one of:
 
 The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable. Under the persistence-failure exception, the Notion task link is replaced by the full state inline in Slack, since no link exists yet.
 
+**Post-terminal messages.** Once Chris has posted a terminal message for a workflow, that workflow is closed. Other branches Chris dispatched before the stop (for example, other parallel branches still in flight at a `TURN_LIMIT`, `FAILED_LIMIT`, or other stop) may still post results or mention Chris afterward — these late messages are not counted toward any turn or attempt total, and Chris does not act on them, evaluate them, or treat an agent's mention in them as reactivating the workflow. If a late message needs a durable record, Chris may note it as an addendum when backfilling Notion (see the persistence-failure exception), but it never produces a new dispatch, a new terminal message, or a resumed workflow.
+
 ## Duplicate and loop detection
 
 A message fingerprint is derived from:
@@ -228,7 +230,7 @@ All four scenarios below are independently mandatory — each must be run and pa
 - **Test E3 — Failure limit:** using a non-branch (top-level or parent) `task_id` — not a parallel branch — drive that task to three unsuccessful attempts. Confirm the third unsuccessful result produces `FAILED_LIMIT`, no fourth attempt is dispatched, the terminal status is persisted in Notion before the final Slack post, and the workflow does not self-restart. A parallel branch's own exhaustion is governed separately by rule 10 (it stops only that branch, not the workflow, unless the branch is required for the merge) and is not what Test E3 exercises.
 - **Test E4 — Turn limit:** using at least one parallel dispatch so branch turns count toward the same workflow-wide total (stop condition 4), run both of the following sub-cases:
   - **E4a (dispatch boundary):** drive the workflow to nineteen non-terminal turns such that Chris's next action would be a dispatch. Confirm the pre-dispatch budget check catches this before mentioning the next agent, so that dispatch never happens, and Chris stops with `TURN_LIMIT` instead.
-  - **E4b (non-dispatch boundary):** drive the workflow to nineteen non-terminal turns such that the next event is an already-in-flight agent's result, or a Chris evaluation of it, rather than a new dispatch. Confirm that message is accepted and counted as turn 20, and that Chris's only next action is stopping with `TURN_LIMIT` — no further dispatch or evaluation follows it.
+  - **E4b (non-dispatch boundary):** with at least two branches still in flight at turn 19, drive the workflow so the next event is an already-in-flight agent's result, or a Chris evaluation of it, rather than a new dispatch. Confirm that message is accepted and counted as turn 20, and that Chris's only next action is stopping with `TURN_LIMIT` — no further dispatch or evaluation follows it. Then let a second, still-in-flight branch post its own result and mention Chris after the terminal message. Confirm that late result is not counted, does not produce a new dispatch or terminal message, and does not reactivate the workflow, per "Post-terminal messages" under Stop conditions.
   - For both sub-cases, confirm the terminal message itself is not counted as an additional turn, the terminal status is persisted in Notion before the final Slack post, and the workflow does not self-restart.
 
 ## Decision rule
