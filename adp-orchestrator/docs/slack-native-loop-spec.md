@@ -166,7 +166,7 @@ A workflow stops when any condition is true:
 1. Acceptance criteria are satisfied, evidence is recorded, and the terminal state is persisted in Notion.
 2. Human judgment, credentials, permissions, billing, or physical-device work is required.
 3. The same task reaches three unsuccessful attempts as defined in the attempt lifecycle. For a task dispatched under a distinct branch `task_id` inside a parallel dispatch (rule 10), this condition stops that branch's own dispatch only, per rule 10 — it stops the whole workflow only when it is the parent task's own counter (not a branch's) that reaches three, or when a branch's exhaustion means the merge condition can no longer be satisfied at all, per rule 10's closing clause.
-4. The workflow reaches twenty agent turns. A turn is counted each time Chris or an agent posts a message carrying the minimum message contract — a dispatch, an evidence result, or a Chris evaluation/instruction — to the workflow thread; owner messages, Slack delivery retries or duplicate deliveries (attempt-lifecycle rule 3), and non-contract natural-language chatter do not count. The count is cumulative across the whole workflow, including the parent and every parallel branch (rule 10), and is not reset by attempt increments. When the twentieth turn is reached without another stop condition already applying, Chris stops with `TURN_LIMIT`.
+4. The workflow reaches twenty agent turns. A turn is counted each time Chris or an agent posts a non-terminal message carrying the minimum message contract — a dispatch, an evidence result, or a Chris evaluation/instruction — to the workflow thread; owner messages, Slack delivery retries or duplicate deliveries (attempt-lifecycle rule 3), non-contract natural-language chatter, and the terminal Slack message itself (whichever stop tag it carries) do not count. The count is cumulative across the whole workflow, including the parent and every parallel branch (rule 10), and is not reset by attempt increments. When the twentieth non-terminal turn is reached without another stop condition already applying, Chris stops with `TURN_LIMIT` — that stop message is turn 20's notification, not turn 21, since terminal messages are excluded from the budget.
 5. The same instruction-result pair is repeated twice without new evidence.
 6. Required access or capability is unavailable.
 7. The owner explicitly stops or changes the goal.
@@ -221,11 +221,12 @@ Chris must not reissue an instruction when the same fingerprint already has a te
 
 ### Test E: Stop control
 
-All three scenarios below are independently mandatory — each must be run and pass on its own; passing only one does not satisfy Test E.
+All four scenarios below are independently mandatory — each must be run and pass on its own; passing only some does not satisfy Test E.
 
 - **Test E1 — Human Request:** trigger a Human Request. Confirm the terminal status is persisted in Notion before the final Slack post, and that the workflow stops and does not self-restart.
 - **Test E2 — Loop detection:** repeat the same instruction-result pair twice without new evidence. Confirm Chris detects it and stops with `LOOP_DETECTED`, persisted in Notion before the final Slack post, without self-restarting.
 - **Test E3 — Failure limit:** using a non-branch (top-level or parent) `task_id` — not a parallel branch — drive that task to three unsuccessful attempts. Confirm the third unsuccessful result produces `FAILED_LIMIT`, no fourth attempt is dispatched, the terminal status is persisted in Notion before the final Slack post, and the workflow does not self-restart. A parallel branch's own exhaustion is governed separately by rule 10 (it stops only that branch, not the workflow, unless the branch is required for the merge) and is not what Test E3 exercises.
+- **Test E4 — Turn limit:** using at least one parallel dispatch so branch turns count toward the same workflow-wide total (stop condition 4), drive the workflow to twenty non-terminal turns. Confirm Chris stops with `TURN_LIMIT` on the twentieth non-terminal turn without dispatching further work, that the terminal message itself is not counted as an additional turn, that the terminal status is persisted in Notion before the final Slack post, and that the workflow does not self-restart.
 
 ## Decision rule
 
