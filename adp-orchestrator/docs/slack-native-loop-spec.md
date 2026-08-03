@@ -165,7 +165,7 @@ A workflow stops when any condition is true:
 
 1. Acceptance criteria are satisfied, evidence is recorded, and the terminal state is persisted in Notion.
 2. Human judgment, credentials, permissions, billing, or physical-device work is required.
-3. The same task reaches three unsuccessful attempts as defined in the attempt lifecycle.
+3. The same task reaches three unsuccessful attempts as defined in the attempt lifecycle. For a task dispatched under a distinct branch `task_id` inside a parallel dispatch (rule 10), this condition stops that branch's own dispatch only, per rule 10 — it stops the whole workflow only when it is the parent task's own counter (not a branch's) that reaches three, or when a branch's exhaustion means the merge condition can no longer be satisfied at all, per rule 10's closing clause.
 4. The workflow reaches twenty agent turns.
 5. The same instruction-result pair is repeated twice without new evidence.
 6. Required access or capability is unavailable.
