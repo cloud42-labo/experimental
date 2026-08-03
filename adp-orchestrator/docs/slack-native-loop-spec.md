@@ -70,7 +70,7 @@ workflow_id: <thread_ts>
 task_id: <stable task id>
 from_agent: <owner|chris|claude|gemini|codex>
 to_agent: <agent or none>
-status: <planned|working|review|blocked|failed|done|human_required|completed|failed_limit|loop_detected|cancelled|capability_failure>
+status: <planned|working|review|blocked|failed|done|human_required|completed|failed_limit|loop_detected|cancelled|capability_failure|turn_limit>
 summary: <short description>
 result_links:
   - <Notion/GitHub/other evidence URL>
@@ -79,7 +79,7 @@ next_action: <explicit next action>
 requires_human: <true|false>
 ```
 
-A terminal Slack message (see "Stop conditions") maps each of the six stop tags directly onto a `status` value, with no inference needed: `COMPLETED` → `completed`, `FAILED_LIMIT` → `failed_limit`, `LOOP_DETECTED` → `loop_detected`, `CANCELLED` → `cancelled`, `CAPABILITY_FAILURE` → `capability_failure`, and `HUMAN_REQUEST` → the existing `human_required` value already in the enum above (no separate `human_request` value is added, since `human_required` already covers it).
+A terminal Slack message (see "Stop conditions") maps each of the seven stop tags directly onto a `status` value, with no inference needed: `COMPLETED` → `completed`, `FAILED_LIMIT` → `failed_limit`, `LOOP_DETECTED` → `loop_detected`, `CANCELLED` → `cancelled`, `CAPABILITY_FAILURE` → `capability_failure`, `TURN_LIMIT` → `turn_limit`, and `HUMAN_REQUEST` → the existing `human_required` value already in the enum above (no separate `human_request` value is added, since `human_required` already covers it).
 
 Natural-language Slack messages may be used, but these fields must be inferable and should be included explicitly for multi-turn work.
 
@@ -166,7 +166,7 @@ A workflow stops when any condition is true:
 1. Acceptance criteria are satisfied, evidence is recorded, and the terminal state is persisted in Notion.
 2. Human judgment, credentials, permissions, billing, or physical-device work is required.
 3. The same task reaches three unsuccessful attempts as defined in the attempt lifecycle. For a task dispatched under a distinct branch `task_id` inside a parallel dispatch (rule 10), this condition stops that branch's own dispatch only, per rule 10 — it stops the whole workflow only when it is the parent task's own counter (not a branch's) that reaches three, or when a branch's exhaustion means the merge condition can no longer be satisfied at all, per rule 10's closing clause.
-4. The workflow reaches twenty agent turns.
+4. The workflow reaches twenty agent turns. A turn is counted each time Chris or an agent posts a message carrying the minimum message contract — a dispatch, an evidence result, or a Chris evaluation/instruction — to the workflow thread; owner messages, Slack delivery retries or duplicate deliveries (attempt-lifecycle rule 3), and non-contract natural-language chatter do not count. The count is cumulative across the whole workflow, including the parent and every parallel branch (rule 10), and is not reset by attempt increments. When the twentieth turn is reached without another stop condition already applying, Chris stops with `TURN_LIMIT`.
 5. The same instruction-result pair is repeated twice without new evidence.
 6. Required access or capability is unavailable.
 7. The owner explicitly stops or changes the goal.
@@ -179,6 +179,7 @@ When stopped, Chris posts one of:
 - `LOOP_DETECTED`
 - `CANCELLED`
 - `CAPABILITY_FAILURE` — required access, permissions, or a dependency (including Notion itself, per the persistence-failure exception above) is unavailable and blocks continuation.
+- `TURN_LIMIT` — the workflow reached twenty turns as defined in stop condition 4, without another stop condition applying first.
 
 The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable. Under the persistence-failure exception, the Notion task link is replaced by the full state inline in Slack, since no link exists yet.
 
