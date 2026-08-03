@@ -22,6 +22,7 @@ Owner -> @Chris -> @Claude/@Gemini/@Codex -> @Chris -> next action or stop
 4. One Slack thread represents one workflow.
 5. Chris alone decides the next agent and whether the workflow is complete.
 6. Native Slack agents are preferred. A local runner, Google Cloud runtime, or external AI API is not introduced unless native Bot-to-Bot triggering fails.
+7. Slack messages do not replace required Notion state. Chris must persist the initial plan, material state transitions, blockers, Human Requests, and terminal outcome in Notion.
 
 ## Roles
 
@@ -35,6 +36,7 @@ Owner -> @Chris -> @Claude/@Gemini/@Codex -> @Chris -> next action or stop
 - Receives the owner's initial mention.
 - Reads relevant Notion and GitHub state.
 - Converts the goal into tasks and acceptance criteria.
+- Persists the plan and material workflow state in Notion.
 - Selects the next agent.
 - Evaluates returned evidence.
 - Issues correction, review, merge, next-stage, completion, or Human Request instructions.
@@ -68,7 +70,7 @@ workflow_id: <thread_ts>
 task_id: <stable task id>
 from_agent: <owner|chris|claude|gemini|codex>
 to_agent: <agent or none>
-status: <planned|working|review|blocked|done|human_required>
+status: <planned|working|review|blocked|failed|done|human_required>
 summary: <short description>
 result_links:
   - <Notion/GitHub/other evidence URL>
@@ -79,21 +81,47 @@ requires_human: <true|false>
 
 Natural-language Slack messages may be used, but these fields must be inferable and should be included explicitly for multi-turn work.
 
+## Attempt lifecycle
+
+`attempt` counts logical execution attempts for the same `workflow_id + task_id + assigned agent + acceptance scope`.
+
+1. The first dispatch starts at `attempt: 1`.
+2. `planned`, `working`, and progress updates for that dispatch retain the same attempt number.
+3. Slack delivery retries, duplicate event delivery, reconnects, and transport failures do not increment the attempt.
+4. An attempt is unsuccessful when either:
+   - the assigned agent returns `failed`; or
+   - the assigned agent returns `done` or `review`, but Chris rejects the evidence because the stated acceptance criteria are not met.
+5. When Chris redispatches the same task after an unsuccessful attempt, the attempt increments by one.
+6. A `blocked` result does not increment automatically. Chris either resolves the blocker and redispatches with the next attempt, or stops with `HUMAN_REQUEST` or capability failure.
+7. `human_required` stops the workflow immediately and does not consume another attempt.
+8. After three unsuccessful attempts, Chris must stop with `FAILED_LIMIT`; a fourth execution attempt is not permitted without the owner explicitly changing the goal or acceptance scope.
+9. A material change to the goal or acceptance scope creates a new task or workflow rather than resetting the counter silently.
+
+## Notion persistence requirements
+
+Chris must keep Notion synchronized at these control points:
+
+1. Before the first agent dispatch: create or update the task with the goal, acceptance criteria, plan, assigned agent, and `In Progress` status.
+2. At each material transition: record assignment changes, accepted evidence, rejected evidence, blockers, correction requests, and Human Requests.
+3. Before posting a terminal Slack message: persist the terminal status, result summary, evidence links, unresolved items, and next human action when applicable.
+4. If the Notion update fails, do not declare `COMPLETED`. Stop as `HUMAN_REQUEST` or capability failure with the persistence error summarized without exposing secrets.
+
 ## Standard loop
 
 1. Owner mentions Chris with a goal.
-2. Chris confirms the goal by writing acceptance criteria and a plan in the same thread.
+2. Chris defines acceptance criteria and a plan, persists them in Notion, and summarizes them in the same Slack thread.
 3. Chris mentions one or more next agents.
 4. Each agent performs work and returns evidence in the same thread while mentioning Chris.
-5. Chris evaluates the evidence against the acceptance criteria.
+5. Chris evaluates the evidence against the acceptance criteria and records the material result or transition in Notion.
 6. Chris chooses one action:
    - assign the next task;
-   - request correction;
+   - request correction with the next attempt number;
    - request review;
    - approve completion;
    - create a Human Request;
    - stop due to loop protection.
-7. Repeat until stopped.
+7. Before any terminal Slack message, Chris writes the final status and evidence to Notion.
+8. Repeat until stopped.
 
 ## Graph patterns
 
@@ -116,16 +144,17 @@ Chris must state the expected responses and the merge condition before parallel 
 ### Correction loop
 
 ```text
-Chris -> Claude -> Chris evaluates -> Claude correction -> Chris evaluates -> Done
+Chris -> Claude attempt 1 -> Chris rejects evidence
+      -> Claude attempt 2 -> Chris accepts evidence -> Done
 ```
 
 ## Stop conditions
 
 A workflow stops when any condition is true:
 
-1. Acceptance criteria are satisfied and evidence is recorded.
+1. Acceptance criteria are satisfied, evidence is recorded, and the terminal state is persisted in Notion.
 2. Human judgment, credentials, permissions, billing, or physical-device work is required.
-3. The same task reaches three failed attempts.
+3. The same task reaches three unsuccessful attempts as defined in the attempt lifecycle.
 4. The workflow reaches twenty agent turns.
 5. The same instruction-result pair is repeated twice without new evidence.
 6. Required access or capability is unavailable.
@@ -139,7 +168,7 @@ When stopped, Chris posts one of:
 - `LOOP_DETECTED`
 - `CANCELLED`
 
-The final message must include achieved results, unresolved items, evidence links, and the next human action when applicable.
+The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable.
 
 ## Duplicate and loop detection
 
@@ -157,6 +186,7 @@ Chris must not reissue an instruction when the same fingerprint already has a te
 
 - Owner mentions Chris in `#adp-control`.
 - Chris replies in the same thread.
+- Chris creates or updates the corresponding Notion task before dispatching work.
 
 ### Test B: Chris to Claude
 
@@ -167,16 +197,22 @@ Chris must not reissue an instruction when the same fingerprint already has a te
 
 - Claude returns a result and mentions Chris.
 - Chris resumes without a new human message.
+- Chris records the result or next transition in Notion.
 
 ### Test D: Correction loop
 
-- Chris requests one correction.
+- Chris rejects the first result and records it as unsuccessful `attempt: 1`.
+- Chris requests one correction as `attempt: 2`.
 - Claude returns the correction.
-- Chris closes the workflow.
+- Chris persists the accepted result and closes the workflow.
 
 ### Test E: Stop control
 
-- Trigger Human Request, repeated result, or maximum-attempt condition.
+- Trigger one of the following:
+  - a Human Request;
+  - the same instruction-result pair twice without new evidence; or
+  - three unsuccessful attempts, where the third unsuccessful result produces `FAILED_LIMIT` and no fourth attempt is dispatched.
+- Confirm the terminal status is persisted in Notion before the final Slack post.
 - Confirm the workflow stops and does not self-restart.
 
 ## Decision rule
