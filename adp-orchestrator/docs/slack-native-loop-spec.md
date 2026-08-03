@@ -181,6 +181,17 @@ When stopped, Chris posts one of:
 - `CAPABILITY_FAILURE` — required access, permissions, or a dependency (including Notion itself, per the persistence-failure exception above) is unavailable and blocks continuation.
 - `TURN_LIMIT` — the workflow reached twenty turns as defined in stop condition 4, without another stop condition applying first.
 
+**Precedence for simultaneous stop conditions.** When a single event (one counted turn, one evaluated result) satisfies more than one stop condition at once — for example, a message that is both the twentieth counted turn and an agent's third unsuccessful attempt — Chris resolves it using this fixed order, top to bottom, and posts only the first tag that applies:
+
+1. `COMPLETED` — if that same event also satisfies the acceptance criteria, success is reported over any limit the same event happens to reach.
+2. `HUMAN_REQUEST`
+3. `CAPABILITY_FAILURE`
+4. `FAILED_LIMIT` (task-level, per rule 8, or parent-level, per rule 10)
+5. `LOOP_DETECTED`
+6. `TURN_LIMIT`
+
+`CANCELLED` is not part of this precedence order: it is always the owner's explicit, out-of-band action and does not compete with a condition reached by the same in-thread event. This order means, for example, that a message which is simultaneously turn 20 and a third unsuccessful attempt is reported as `FAILED_LIMIT`, not `TURN_LIMIT`, because `FAILED_LIMIT` outranks it.
+
 The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable. Under the persistence-failure exception, the Notion task link is replaced by the full state inline in Slack, since no link exists yet.
 
 **Post-terminal messages.** A workflow enters the stopping state the instant any stop condition is met — for example, the moment turn 20 is counted, or the moment Chris determines a Human Request, failure limit, or capability failure applies — not only once the terminal Slack message has actually been posted; persisting to Notion and posting the terminal message both happen after entry into this state, and that window is not instantaneous. From the moment a workflow enters the stopping state, any other message that arrives — including results and mentions from other branches Chris dispatched before the stop, whether they arrive before or after the terminal Slack post — is not counted toward any turn or attempt total, and Chris does not act on it, evaluate it, or treat an agent's mention in it as reactivating the workflow. If such a message needs a durable record, Chris may note it as an addendum when backfilling Notion (see the persistence-failure exception), but it never produces a new dispatch, a new terminal message, or a resumed workflow. The one exception is the owner's explicit re-mention requested by the persistence-failure exception itself: after a `CAPABILITY_FAILURE`/`HUMAN_REQUEST` stop caused by a Notion write failure, that specific re-mention is exempt from this suppression and invokes only the narrow backfill path — writing the already-decided terminal record to Notion and posting a closure confirmation — never a new dispatch, evaluation, or reopened workflow. Any other message in that thread, including an in-flight branch's late result, remains suppressed exactly as described above.
