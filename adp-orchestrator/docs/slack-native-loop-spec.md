@@ -92,10 +92,11 @@ Natural-language Slack messages may be used, but these fields must be inferable 
    - the assigned agent returns `failed`; or
    - the assigned agent returns `done` or `review`, but Chris rejects the evidence because the stated acceptance criteria are not met.
 5. When Chris redispatches the same task after an unsuccessful attempt, the attempt increments by one, regardless of whether the redispatch goes to the same agent or a different agent. Reassigning to a different agent does not reset or start a separate counter.
-6. A `blocked` result does not increment automatically. Chris either resolves the blocker and redispatches with the next attempt, or stops with `HUMAN_REQUEST` or `CAPABILITY_FAILURE`.
+6. A `blocked` result does not increment the attempt counter, because it is not one of the unsuccessful predicates in rule 4. When Chris resolves the blocker, the resumed dispatch keeps the same attempt number that was active when the block occurred — it is not a new dispatch of the next attempt. A blocker consumes an attempt only if it is separately reclassified as unsuccessful (e.g. the agent reports it as `failed`, or Chris cannot resolve it and closes that attempt as rejected). If the blocker cannot be resolved, Chris stops with `HUMAN_REQUEST` or `CAPABILITY_FAILURE` without incrementing the attempt.
 7. `human_required` stops the workflow immediately and does not consume another attempt.
 8. After three unsuccessful attempts on the task, regardless of agent mix, Chris must stop with `FAILED_LIMIT`; a fourth execution attempt on that task is not permitted without the owner explicitly changing the goal or acceptance scope.
 9. A material change to the goal or acceptance scope creates a new task or workflow rather than resetting the counter silently.
+10. For parallel dispatch (see Graph patterns → Parallel and merge), each branch must use a distinct `task_id` (for example `<task_id>-claude`, `<task_id>-gemini`) so branch outcomes never share one counter and a branch's own attempt lifecycle follows rules 1-8 independently. The parent task has its own separate attempt counter that increments only when Chris evaluates the synthesized merge result against acceptance criteria and rejects it; an individual branch failing, by itself, does not increment the parent's counter. `FAILED_LIMIT` on a branch stops dispatch to that branch only, not the whole parallel task, unless the merge condition can no longer be satisfied.
 
 ## Notion persistence requirements
 
@@ -104,12 +105,13 @@ Chris must keep Notion synchronized at these control points:
 1. Before the first agent dispatch: create or update the task with the goal, acceptance criteria, plan, assigned agent, and `In Progress` status.
 2. At each material transition: record assignment changes, accepted evidence, rejected evidence, blockers, correction requests, and Human Requests.
 3. Before posting a terminal Slack message: persist the terminal status, result summary, evidence links, unresolved items, and next human action when applicable.
-4. If the Notion update fails for a reason unrelated to Notion's own availability, do not declare `COMPLETED`. Stop as `HUMAN_REQUEST` or `CAPABILITY_FAILURE` with the persistence error summarized without exposing secrets.
-5. **Notion-outage exception.** If Notion itself is unreachable at the terminal step, persistence is impossible for any status, including `HUMAN_REQUEST`. In that case Chris:
-   - posts the terminal Slack message anyway, using `CAPABILITY_FAILURE`, explicitly labeled `notion_unavailable: true`, so the workflow still has a valid stop path;
-   - includes in that message everything that would normally go to Notion (goal, evidence links, unresolved items, next human action);
-   - retries the Notion write out of band once Notion recovers, backfilling the terminal record before the task is considered closed;
-   - does not use this exception for any failure other than Notion being unreachable — a rejected write, validation error, or permissions error is not an outage and follows rule 4.
+4. If the terminal Notion write fails for any reason — unreachable, timed out, rejected for permissions, or rejected for validation — do not declare `COMPLETED`, and do not let the failed write block the owner-facing stop message. Rule 5 defines the fallback that applies in every one of these cases.
+5. **Persistence-failure exception.** Whenever the terminal Notion write does not succeed, persistence-before-notification (rule 3) is waived for that one post so the workflow still has a valid stop path:
+   - Chris posts the terminal Slack message anyway, labeled `persisted_to_notion: false` and naming the failure kind (`notion_unavailable`, `notion_permission_denied`, `notion_validation_rejected`, or similar);
+   - the status used is `CAPABILITY_FAILURE` for unreachable/timeout failures Chris can retry unattended, and `HUMAN_REQUEST` for permission or validation failures, since those need the owner (or Notion schema/access owner) to act before a write can ever succeed;
+   - the message includes everything that would normally go to Notion (goal, evidence links, unresolved items, next human action), since the Notion record does not yet exist;
+   - once the underlying cause is resolved — Notion recovers, access is restored, or the schema/payload is fixed — Chris backfills the terminal record in Notion before the task is considered closed;
+   - this exception only ever changes when persistence happens (after, instead of before, the terminal message); it never allows Chris to skip persisting altogether once the write can succeed.
 
 ## Standard loop
 
@@ -125,7 +127,7 @@ Chris must keep Notion synchronized at these control points:
    - approve completion;
    - create a Human Request;
    - stop due to loop protection.
-7. Before any terminal Slack message, Chris writes the final status and evidence to Notion, except under the Notion-outage exception defined in "Notion persistence requirements".
+7. Before any terminal Slack message, Chris writes the final status and evidence to Notion, except under the persistence-failure exception defined in "Notion persistence requirements".
 8. Repeat until stopped.
 
 ## Graph patterns
@@ -144,7 +146,7 @@ Chris -> dispatch -> Gemini ----> Chris synthesizes -> next action
                  -> Codex  --/
 ```
 
-Chris must state the expected responses and the merge condition before parallel dispatch.
+Chris must state the expected responses and the merge condition before parallel dispatch. Each branch dispatched in parallel uses a distinct `task_id` per the attempt lifecycle (rule 10), so branch-level failures and the parent's merge-level attempt counter never share one number.
 
 ### Correction loop
 
@@ -172,9 +174,9 @@ When stopped, Chris posts one of:
 - `FAILED_LIMIT`
 - `LOOP_DETECTED`
 - `CANCELLED`
-- `CAPABILITY_FAILURE` — required access, permissions, or a dependency (including Notion itself, per the Notion-outage exception above) is unavailable and blocks continuation.
+- `CAPABILITY_FAILURE` — required access, permissions, or a dependency (including Notion itself, per the persistence-failure exception above) is unavailable and blocks continuation.
 
-The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable. Under the Notion-outage exception, the Notion task link is replaced by the full state inline in Slack, since no link exists yet.
+The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable. Under the persistence-failure exception, the Notion task link is replaced by the full state inline in Slack, since no link exists yet.
 
 ## Duplicate and loop detection
 
