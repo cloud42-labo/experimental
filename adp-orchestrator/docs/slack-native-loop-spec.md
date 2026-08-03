@@ -83,18 +83,18 @@ Natural-language Slack messages may be used, but these fields must be inferable 
 
 ## Attempt lifecycle
 
-`attempt` counts logical execution attempts for the same `workflow_id + task_id + assigned agent + acceptance scope`.
+`attempt` counts unsuccessful execution attempts for the same `workflow_id + task_id + acceptance scope`, independent of which agent is assigned. There is exactly one attempt counter per task; it is not tracked separately per agent.
 
-1. The first dispatch starts at `attempt: 1`.
+1. The first dispatch of the task, to any agent, starts at `attempt: 1`.
 2. `planned`, `working`, and progress updates for that dispatch retain the same attempt number.
 3. Slack delivery retries, duplicate event delivery, reconnects, and transport failures do not increment the attempt.
 4. An attempt is unsuccessful when either:
    - the assigned agent returns `failed`; or
    - the assigned agent returns `done` or `review`, but Chris rejects the evidence because the stated acceptance criteria are not met.
-5. When Chris redispatches the same task after an unsuccessful attempt, the attempt increments by one.
-6. A `blocked` result does not increment automatically. Chris either resolves the blocker and redispatches with the next attempt, or stops with `HUMAN_REQUEST` or capability failure.
+5. When Chris redispatches the same task after an unsuccessful attempt, the attempt increments by one, regardless of whether the redispatch goes to the same agent or a different agent. Reassigning to a different agent does not reset or start a separate counter.
+6. A `blocked` result does not increment automatically. Chris either resolves the blocker and redispatches with the next attempt, or stops with `HUMAN_REQUEST` or `CAPABILITY_FAILURE`.
 7. `human_required` stops the workflow immediately and does not consume another attempt.
-8. After three unsuccessful attempts, Chris must stop with `FAILED_LIMIT`; a fourth execution attempt is not permitted without the owner explicitly changing the goal or acceptance scope.
+8. After three unsuccessful attempts on the task, regardless of agent mix, Chris must stop with `FAILED_LIMIT`; a fourth execution attempt on that task is not permitted without the owner explicitly changing the goal or acceptance scope.
 9. A material change to the goal or acceptance scope creates a new task or workflow rather than resetting the counter silently.
 
 ## Notion persistence requirements
@@ -104,7 +104,12 @@ Chris must keep Notion synchronized at these control points:
 1. Before the first agent dispatch: create or update the task with the goal, acceptance criteria, plan, assigned agent, and `In Progress` status.
 2. At each material transition: record assignment changes, accepted evidence, rejected evidence, blockers, correction requests, and Human Requests.
 3. Before posting a terminal Slack message: persist the terminal status, result summary, evidence links, unresolved items, and next human action when applicable.
-4. If the Notion update fails, do not declare `COMPLETED`. Stop as `HUMAN_REQUEST` or capability failure with the persistence error summarized without exposing secrets.
+4. If the Notion update fails for a reason unrelated to Notion's own availability, do not declare `COMPLETED`. Stop as `HUMAN_REQUEST` or `CAPABILITY_FAILURE` with the persistence error summarized without exposing secrets.
+5. **Notion-outage exception.** If Notion itself is unreachable at the terminal step, persistence is impossible for any status, including `HUMAN_REQUEST`. In that case Chris:
+   - posts the terminal Slack message anyway, using `CAPABILITY_FAILURE`, explicitly labeled `notion_unavailable: true`, so the workflow still has a valid stop path;
+   - includes in that message everything that would normally go to Notion (goal, evidence links, unresolved items, next human action);
+   - retries the Notion write out of band once Notion recovers, backfilling the terminal record before the task is considered closed;
+   - does not use this exception for any failure other than Notion being unreachable — a rejected write, validation error, or permissions error is not an outage and follows rule 4.
 
 ## Standard loop
 
@@ -120,7 +125,7 @@ Chris must keep Notion synchronized at these control points:
    - approve completion;
    - create a Human Request;
    - stop due to loop protection.
-7. Before any terminal Slack message, Chris writes the final status and evidence to Notion.
+7. Before any terminal Slack message, Chris writes the final status and evidence to Notion, except under the Notion-outage exception defined in "Notion persistence requirements".
 8. Repeat until stopped.
 
 ## Graph patterns
@@ -167,8 +172,9 @@ When stopped, Chris posts one of:
 - `FAILED_LIMIT`
 - `LOOP_DETECTED`
 - `CANCELLED`
+- `CAPABILITY_FAILURE` — required access, permissions, or a dependency (including Notion itself, per the Notion-outage exception above) is unavailable and blocks continuation.
 
-The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable.
+The final message must include achieved results, unresolved items, evidence links, the persisted Notion task link, and the next human action when applicable. Under the Notion-outage exception, the Notion task link is replaced by the full state inline in Slack, since no link exists yet.
 
 ## Duplicate and loop detection
 
