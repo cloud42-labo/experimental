@@ -158,9 +158,14 @@
     </div>
 
     <script>
-        const APP_VERSION = "0.2.0";
-        const GEMINI_MODEL = "gemini-2.5-flash";
+        const APP_VERSION = "0.3.0";
+        // gemini-2.5-flash returns 404 for new API keys ("no longer available to new users").
+        // gemini-flash-latest tracks Google's current recommended flash-tier model.
+        const GEMINI_MODEL = "gemini-flash-latest";
         const GEMINI_API_KEY_STORAGE_KEY = "scanhunt_gemini_api_key";
+        const GEMINI_MAX_ATTEMPTS = 3;
+        const GEMINI_RETRY_BASE_DELAY_MS = 1000;
+        const GEMINI_REQUEST_TIMEOUT_MS = 25000;
 
         // --- State Management ---
         let currentStep = 'FRONT';
@@ -290,7 +295,20 @@
             return key;
         }
 
-        async function extractProductData(frontBase64, backBase64, apiKey) {
+        // 主要フィールドが1つも埋まっていない結果は「壊れた抽出」とみなしリトライ対象にする。
+        // STORY-05の実写真検証で、finishReason=STOPかつJSONとしては妥当でも
+        // cooking_instructions/nutrition/allergensが軒並み空のケースが確認されたため。
+        function isResultSubstantial(data) {
+            const cooking = data.cooking_instructions;
+            const hasCooking = Boolean(
+                cooking && (cooking.microwave?.wattage_500w || cooking.microwave?.wattage_600w || cooking.pan_fry)
+            );
+            const hasNutrition = Boolean(data.nutrition && Object.keys(data.nutrition).length > 0);
+            const hasAllergens = Array.isArray(data.allergens) && data.allergens.length > 0;
+            return hasCooking || hasNutrition || hasAllergens;
+        }
+
+        async function callGeminiOnce(frontBase64, backBase64, apiKey) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
             const body = {
                 contents: [{
@@ -306,24 +324,71 @@
                 }
             };
 
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), GEMINI_REQUEST_TIMEOUT_MS);
+
+            let res;
+            try {
+                res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             if (!res.ok) {
                 if (res.status === 400 || res.status === 401 || res.status === 403) {
                     localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
                 }
                 const errText = await res.text();
-                throw new Error(`Gemini API error ${res.status}: ${errText}`);
+                const err = new Error(`Gemini API error ${res.status}: ${errText}`);
+                err.retryable = (res.status === 429 || res.status >= 500);
+                throw err;
             }
 
             const data = await res.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!text) throw new Error('Gemini APIから抽出結果が得られませんでした');
-            return JSON.parse(text);
+            const candidate = data.candidates?.[0];
+            const text = candidate?.content?.parts?.[0]?.text;
+            if (!text) {
+                throw Object.assign(new Error('Gemini APIから抽出結果が得られませんでした'), { retryable: true });
+            }
+            if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+                throw Object.assign(new Error(`Gemini APIの応答が不完全です (finishReason: ${candidate.finishReason})`), { retryable: true });
+            }
+
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch (e) {
+                throw Object.assign(new Error('Gemini APIの応答がJSONとして解析できませんでした'), { retryable: true });
+            }
+
+            if (!isResultSubstantial(parsed)) {
+                throw Object.assign(new Error('Gemini APIの応答に主要フィールドが含まれていません'), { retryable: true });
+            }
+
+            return parsed;
+        }
+
+        async function extractProductData(frontBase64, backBase64, apiKey) {
+            let lastError;
+            for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
+                try {
+                    return await callGeminiOnce(frontBase64, backBase64, apiKey);
+                } catch (e) {
+                    lastError = e;
+                    console.warn(`Gemini抽出 試行${attempt}/${GEMINI_MAX_ATTEMPTS}失敗:`, e.message);
+                    if (attempt < GEMINI_MAX_ATTEMPTS && e.retryable !== false) {
+                        await new Promise(r => setTimeout(r, GEMINI_RETRY_BASE_DELAY_MS * attempt));
+                        continue;
+                    }
+                    break;
+                }
+            }
+            throw lastError;
         }
 
         const MOCK_RESULT = {
