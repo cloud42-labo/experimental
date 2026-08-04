@@ -6,6 +6,17 @@ ADP-019-A。[slack-native-loop-spec.md](slack-native-loop-spec.md)（Chris / Cla
 Claudeが一貫して主担当となる場合の内部役割分離を定義する。ChatGPTはこのループの通常メンバーではなく、
 Claude停止時のフェイルオーバーとしてのみ参加する（[decisions/0010](https://github.com/cloud42-labo/brain/blob/main/decisions/0010-claude-merges-when-chris-is-down.md)参照）。
 
+**適用範囲とChrisとの関係。** `slack-native-loop-spec.md`の原則5（「Chris alone decides the next agent and whether
+the workflow is complete」）は、Chrisが複数の異なるAgent（Claude/Gemini/Codex）を1つのSlack threadで
+Bot-to-Bot調整する汎用ループを対象にしている。本ドキュメントが対象にするのは、OwnerがClaudeへ直接
+（Slack `@Claude`メンション等でClaude Code Webを起動する形で）作業を依頼する、ADP-019の「Claude主系」運用である。
+この場合、PM/Implementer/Reviewer/FixerはすべてClaude自身であり、`slack-native-loop-spec.md`が前提とする
+「複数の異なるAgentを外部から調停するChris」は登場しない。そのためClaude PMの完了判断・次工程判断は、
+この単一workflow内では最終判断として扱ってよい。Slackへは指示の受付と結果通知のためだけに関与し、
+Chrisが別途その完了判断を上書きすることはない。Chrisが複数Agentを実際に調停する汎用ループ（原則5が想定する
+シナリオ）に本ドキュメントのロールを組み込む場合は、Claude PMの判断を助言（advisory）に格下げし、
+最終決定はChrisが行うよう別途明記すること。
+
 ## 原則
 
 1. **実装者は自己承認・自己マージをしない。** PRを作ったところで止まる。マージは別の当事者（Reviewer合格後、
@@ -41,7 +52,7 @@ Claude停止時のフェイルオーバーとしてのみ参加する（[decisio
 
 - 目的が曖昧で受入条件を確定できない → Human Request
 - 権限・課金・実機確認が必要 → Human Request
-- 同一タスクが[slack-native-loop-spec.md](slack-native-loop-spec.md)のFAILED_LIMIT（3回不成功）に到達 → 停止しHuman Request
+- 同一タスクが[slack-native-loop-spec.md](slack-native-loop-spec.md)のFAILED_LIMIT（3回不成功）に到達 → `FAILED_LIMIT`として停止する。`HUMAN_REQUEST`へ書き換えない（同spec attempt lifecycleの規定通り、3回不成功の終端理由はFAILED_LIMITのまま保つ）。オーナーへの報告が必要な場合は、terminal statusを変えずに引継ぎの`next_action`へ明記する
 
 ### 2. Claude Implementer
 
@@ -115,10 +126,12 @@ Claude停止時のフェイルオーバーとしてのみ参加する（[decisio
 Minimum message contractと同じ思想。ChrisがSlack上で使うcontractと、Claude内部の役割間引継ぎは同じ語彙を共有する）。
 
 ```yaml
+workflow_id: <このworkflowを一意に識別する値。Slack起動ならthread_ts、直接起動ならセッションIDやNotionページID>
 task_id: <Notion/GitHubで安定したタスクID>
+attempt: <workflow_id + task_id + acceptance scope単位の実行回数。1から開始し、slack-native-loop-spec.mdのattempt lifecycleと同じ数え方に従う>
 from_role: <pm|implementer|reviewer|fixer>
 to_role: <pm|implementer|reviewer|fixer>
-status: <planned|in_progress|review_requested|changes_requested|approved|human_required|completed>
+status: <planned|in_progress|review_requested|changes_requested|approved|human_required|completed|failed_limit>
 summary: <この受け渡しで何をしたか、何を依頼するかの短い説明>
 acceptance_criteria: <この受け渡し時点で有効な受入条件（PMが確定したもの）>
 result_links:
@@ -127,6 +140,10 @@ open_p0_p1: <未解決のP0/P1指摘（Reviewer→Fixerの場合のみ必須）>
 next_action: <受け取った側が最初にすべきこと>
 requires_human: <true|false>
 ```
+
+`workflow_id`と`attempt`は、同一タスクに対する複数回・並行のworkflowを区別し、FAILED_LIMIT（3回不成功）を
+正しく数えるために必須。PMはこの2つを引継ぎのたびに一貫させ、Fixerへの再割り当てのたびに`attempt`を
+`slack-native-loop-spec.md`のルール5・6の通りに増やす（redispatchのたびに1増加、blockedの解消は増加させない等）。
 
 PM→Implementer、Implementer→Reviewer、Reviewer→Fixer、Fixer→Reviewer、Reviewer→PMの全ての遷移でこの形を使う。
 PR本文またはPRコメントに残し、Notionへの反映はPMの責務とする（他の役割はNotionを直接更新しない）。
@@ -141,7 +158,17 @@ PR本文またはPRコメントに残し、Notionへの反映はPMの責務と�
 | 実装に必要な権限・Secretが無い | Implementer | PMへHuman Requestとして差し戻す。PMがOwnerへエスカレーションする |
 | Reviewerがコード変更なしに指摘を出せない（設計自体の再検討が必要） | Reviewer | PMへ差し戻し、タスクの再分解を依頼する |
 
-P0/P1の重大度定義とCodexレビュー運用は、既存の[AGENTS.md](../../AGENTS.md)のレビュー規約に準じる。
+**P0/P1/P2の定義**（[AGENTS.md](../../AGENTS.md)はこのリポジトリ固有のチェック項目を定めるが、重大度スケール自体は
+定義していないため、Reviewerが実際に使う基準としてここで定義する）:
+
+| 重大度 | 基準 | 分岐 |
+|---|---|---|
+| P0 | 受入条件を満たさない、データ破損・秘密情報漏洩・セキュリティ脆弱性を招く、既存機能を壊す | 必ずFixerへ差し戻す。マージ不可 |
+| P1 | 受入条件は満たすが、明確な不具合・欠落・仕様との矛盾がある（実機確認未実施の高リスク変更を含む） | 必ずFixerへ差し戻す。マージ不可 |
+| P2 | 改善の余地はあるが、受入条件・正しさに影響しない（可読性、命名、軽微な重複等） | PMの判断でマージ候補にできる。Fixerへ回すかは任意 |
+
+Reviewerはこの表でP0/P1/P2を判定し、`ReportFindings`の各指摘にラベルを付ける。AGENTS.mdのリポジトリ固有チェック
+（構成違反、Secret混入、バージョニング等）は、この表のP0またはP1のどちらに該当するかをReviewerがこの基準で判断する。
 
 ## Claude Codeでの配置方法
 
