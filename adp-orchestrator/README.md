@@ -236,6 +236,11 @@ src/adp_orchestrator/
 ├── router.py
 ├── runtime.py
 └── service.py
+
+docs/
+├── slack-native-loop-spec.md      # Slack上のAgent間ループ／グラフ仕様
+├── claude-role-separation.md      # Claude PM/Implementer/Reviewer/Fixerの役割定義
+└── notion-handoff-contract.md     # Notionへ残す引継ぎの記入契約
 ```
 
 ## 制約
