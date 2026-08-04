@@ -17,11 +17,18 @@
 
 `index.html` は Google AI Studio (Gemini) で vibe coding したUIプロトタイプ。カメラで
 表→裏を連続撮影するフロー（触覚フィードバック、3Dフリップ演出、ゼロウェイティングの
-自動シャッター）のUIのみで、AI解析部分はモックデータ。
+自動シャッター）に加え、表裏それぞれのシャッター時に実フレームをcanvasでキャプチャし、
+Gemini API（`gemini-2.5-flash`、マルチモーダル、`responseSchema`で下記JSON構造を指定）へ
+クライアントサイドから直接送る実装まで済んでいる。APIキーは初回のみ`prompt()`で入力し、
+ブラウザの`localStorage`にのみ保存（ソース・Notionには書かない）。キー未設定時や抽出失敗時は
+モックデータにフォールバックする。
 
-- [ ] Gemini API連携（表裏2枚の画像 → JSON構造化データ抽出）
+- [x] Gemini API連携（表裏2枚の画像 → JSON構造化データ抽出）— 実装済み、実写真での精度検証は未実施
+- [ ] 実際のパッケージ写真での抽出精度検証（Go/No-Go判定）
 - [ ] 抽出結果の永続化（マイ・レシピ帳のデータ保存）
 - [ ] JANコード重複時のフィードバックUI
+
+検証の進め方はNotion「Roadmap & Epics」の `Scanhunt: Gemini API抽出精度検証` Epicを参照。
 
 ## データ構造（想定）
 

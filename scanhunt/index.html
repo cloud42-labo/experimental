@@ -41,7 +41,7 @@
       -------------------------------
       Concept: "Discard boxes, keep data."
       Target: Frozen Food / Imported Food
-      Next Step: Replace 'handleCapture()' logic with actual Gemini API Multimodal call.
+      Gemini API key: prompted once, stored in localStorage only (never in source/Notion).
     -->
 
     <!-- 1. HOME SCREEN -->
@@ -125,7 +125,7 @@
                             <p class="text-[10px] font-black uppercase opacity-60">Microwave Instructions</p>
                             <span class="text-[10px] font-mono font-bold">500W</span>
                         </div>
-                        <p id="res-time" class="text-5xl font-black tracking-tighter italic">5<span class="text-2xl">m</span> 30<span class="text-2xl">s</span></p>
+                        <p id="res-time" class="text-3xl font-black tracking-tighter italic">5分30秒</p>
                     </div>
                 </div>
             </div>
@@ -158,10 +158,14 @@
     </div>
 
     <script>
-        const APP_VERSION = "0.1.0";
+        const APP_VERSION = "0.2.0";
+        const GEMINI_MODEL = "gemini-2.5-flash";
+        const GEMINI_API_KEY_STORAGE_KEY = "scanhunt_gemini_api_key";
 
         // --- State Management ---
         let currentStep = 'FRONT';
+        let capturedFront = null;
+        let capturedBack = null;
         const state = {
             FRONT: { text: "Step 1: Front (Product Identity)", color: "text-blue-400", shutter: "bg-white" },
             BACK: { text: "Step 2: Back (Nutrition/JAN)", color: "text-orange-400", shutter: "bg-orange-500" }
@@ -208,15 +212,26 @@
             document.getElementById('v2').srcObject = null;
         }
 
+        // --- Frame Capture ---
+        function captureFrame(videoEl) {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoEl.videoWidth || 1080;
+            canvas.height = videoEl.videoHeight || 1440;
+            canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.85).split(',')[1]; // base64, no data: prefix
+        }
+
         // --- Scanning Sequence ---
         function handleCapture() {
             if(navigator.vibrate) navigator.vibrate(60);
 
             if (currentStep === 'FRONT') {
+                capturedFront = captureFrame(document.getElementById('v1'));
                 currentStep = 'BACK';
                 document.getElementById('flip-container').classList.add('flipped');
                 updateUI();
             } else {
+                capturedBack = captureFrame(document.getElementById('v1'));
                 processAI();
             }
         }
@@ -228,32 +243,141 @@
             document.getElementById('shutter').className = `group relative w-20 h-20 ${s.shutter} rounded-full flex items-center justify-center p-2 shadow-2xl active:scale-90 transition-all`;
         }
 
-        function processAI() {
-            // Simulated AI extraction from Image (TODO: replace with Gemini API multimodal call)
-            const mockResult = {
-                name: "極旨！海鮮ちゃんぽん",
-                time: "5<span class='text-2xl'>m</span> 30<span class='text-2xl'>s</span>",
-                jan: "4902105109885",
-                cal: "452 kcal",
-                allergens: ["Wheat", "Egg", "Milk", "Shrimp", "Soy"]
+        // --- Gemini API (multimodal extraction) ---
+        // JSON Schema is defined in scanhunt/README.md — keep both in sync.
+        const GEMINI_RESPONSE_SCHEMA = {
+            type: "OBJECT",
+            properties: {
+                gtin_jan: { type: "STRING" },
+                product_name: { type: "STRING" },
+                brand: { type: "STRING" },
+                category: { type: "STRING" },
+                temperature_zone: { type: "STRING" },
+                cooking_instructions: {
+                    type: "OBJECT",
+                    properties: {
+                        microwave: {
+                            type: "OBJECT",
+                            properties: {
+                                wattage_500w: { type: "STRING" },
+                                wattage_600w: { type: "STRING" }
+                            }
+                        },
+                        pan_fry: { type: "STRING" },
+                        other_notes: { type: "STRING" }
+                    }
+                },
+                nutrition: {
+                    type: "OBJECT",
+                    properties: {
+                        calories_kcal: { type: "NUMBER" },
+                        protein_g: { type: "NUMBER" },
+                        fat_g: { type: "NUMBER" },
+                        carbs_g: { type: "NUMBER" }
+                    }
+                },
+                allergens: { type: "ARRAY", items: { type: "STRING" } }
+            },
+            required: ["product_name"]
+        };
+
+        function getApiKey() {
+            let key = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY);
+            if (!key) {
+                key = window.prompt("Gemini APIキーを入力してください（このブラウザのlocalStorageにのみ保存されます。未入力ならモックデータで進みます）");
+                if (key) localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, key);
+            }
+            return key;
+        }
+
+        async function extractProductData(frontBase64, backBase64, apiKey) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+            const body = {
+                contents: [{
+                    parts: [
+                        { text: "これは食品パッケージの表面と裏面の写真です。1枚目が表面、2枚目が裏面です。指定されたJSON Schemaに従って、商品名・JANコード・電子レンジ調理手順・栄養成分・アレルギー物質を抽出してください。読み取れない項目は省略してください。" },
+                        { inline_data: { mime_type: "image/jpeg", data: frontBase64 } },
+                        { inline_data: { mime_type: "image/jpeg", data: backBase64 } }
+                    ]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: GEMINI_RESPONSE_SCHEMA
+                }
             };
 
-            // Inject to Result Page
-            document.getElementById('res-name').innerText = mockResult.name;
-            document.getElementById('res-time').innerHTML = mockResult.time;
-            document.getElementById('res-jan').innerText = mockResult.jan;
-            document.getElementById('res-cal').innerText = mockResult.cal;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!res.ok) {
+                if (res.status === 400 || res.status === 401 || res.status === 403) {
+                    localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
+                }
+                const errText = await res.text();
+                throw new Error(`Gemini API error ${res.status}: ${errText}`);
+            }
+
+            const data = await res.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error('Gemini APIから抽出結果が得られませんでした');
+            return JSON.parse(text);
+        }
+
+        const MOCK_RESULT = {
+            product_name: "極旨！海鮮ちゃんぽん",
+            gtin_jan: "4902105109885",
+            cooking_instructions: { microwave: { wattage_500w: "5分30秒" } },
+            nutrition: { calories_kcal: 452 },
+            allergens: ["小麦", "卵", "乳", "えび", "大豆"]
+        };
+
+        function renderResult(data) {
+            document.getElementById('res-name').innerText = data.product_name || '(商品名不明)';
+
+            const micro = data.cooking_instructions?.microwave;
+            document.getElementById('res-time').innerText =
+                micro?.wattage_500w || micro?.wattage_600w || data.cooking_instructions?.pan_fry || '-';
+
+            document.getElementById('res-jan').innerText = data.gtin_jan || '-';
+
+            const kcal = data.nutrition?.calories_kcal;
+            document.getElementById('res-cal').innerText = (kcal || kcal === 0) ? `${kcal} kcal` : '-';
 
             const algContainer = document.getElementById('res-allergens');
-            algContainer.innerHTML = mockResult.allergens.map(a =>
+            const allergens = (data.allergens && data.allergens.length) ? data.allergens : ['検出なし'];
+            algContainer.innerHTML = allergens.map(a =>
                 `<span class="bg-red-900/40 text-red-400 border border-red-500/30 px-3 py-1 rounded-full">${a}</span>`
             ).join('');
+        }
+
+        async function processAI() {
+            const apiKey = getApiKey();
+
+            if (!apiKey || !capturedFront || !capturedBack) {
+                renderResult(MOCK_RESULT);
+                nav('result');
+                return;
+            }
+
+            try {
+                const result = await extractProductData(capturedFront, capturedBack, apiKey);
+                renderResult(result);
+            } catch (e) {
+                console.error('Gemini extraction failed', e);
+                alert('AI解析に失敗しました。モックデータを表示します。\n' + e.message);
+                renderResult(MOCK_RESULT);
+            }
 
             nav('result');
         }
 
         function resetScan() {
             currentStep = 'FRONT';
+            capturedFront = null;
+            capturedBack = null;
             document.getElementById('flip-container').classList.remove('flipped');
             updateUI();
         }
@@ -263,7 +387,7 @@
         // --- Design Doc for Experimental Repo ---
         console.log("%c SCANHUNT EXPERIMENTAL LAB ", "background: #3b82f6; color: white; font-weight: bold; padding: 4px;");
         console.log("Concept: Discard paper boxes, keep digital recipes.");
-        console.log("Future API: POST /api/analyze { front_img, back_img } -> Gemini-1.5-Flash");
+        console.log(`AI extraction: client-side call to Gemini API (${GEMINI_MODEL}), key prompted once and stored in localStorage only.`);
     </script>
 </body>
 </html>
