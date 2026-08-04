@@ -22,7 +22,7 @@
 
         /* UI Animations */
         .page { display: none; }
-        .page.active { display: block; animation: fadeIn 0.4s ease-out; }
+        .page.active { display: revert; animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         .scan-line {
@@ -169,23 +169,43 @@
 
         // --- Navigation ---
         function nav(pageId) {
+            const current = document.querySelector('.page.active');
+            if (current && current.id === 'page-scan' && pageId !== 'scan') {
+                stopCamera();
+            }
+
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
-            if(pageId === 'scan') initCamera();
-            if(pageId === 'home') resetScan();
+
+            if(pageId === 'scan') {
+                resetScan();
+                initCamera();
+            }
         }
 
         // --- Camera Logic ---
+        let currentStream = null;
+
         async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment', width: { ideal: 1080 } }
                 });
+                currentStream = stream;
                 document.getElementById('v1').srcObject = stream;
                 document.getElementById('v2').srcObject = stream;
             } catch (e) {
                 alert("Camera Access Required for Experimental Lab.");
             }
+        }
+
+        function stopCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+            document.getElementById('v1').srcObject = null;
+            document.getElementById('v2').srcObject = null;
         }
 
         // --- Scanning Sequence ---
