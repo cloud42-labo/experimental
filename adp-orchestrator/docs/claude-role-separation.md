@@ -126,7 +126,7 @@ Chrisが別途その完了判断を上書きすることはない。Chrisが複�
 Minimum message contractと同じ思想。ChrisがSlack上で使うcontractと、Claude内部の役割間引継ぎは同じ語彙を共有する）。
 
 ```yaml
-workflow_id: <このworkflowを一意に識別する値。Slack起動ならthread_ts、直接起動ならセッションIDやNotionページID>
+workflow_id: <このworkflowを一意に識別する値。Slack起動ならthread_ts、直接起動ならその実行を開始したClaude Codeセッションのセッションid、またはPMが起動のたびに新規生成するrun idを使う。同一タスクへの再実行ごとに新しい値になること。タスクのNotionページIDのような、実行間で共有される固定値は使わない（同一task_idへの複数回・並行実行が区別できなくなり、attempt履歴が混ざる）>
 task_id: <Notion/GitHubで安定したタスクID>
 attempt: <workflow_id + task_id + acceptance scope単位の実行回数。1から開始し、slack-native-loop-spec.mdのattempt lifecycleと同じ数え方に従う>
 from_role: <pm|implementer|reviewer|fixer>
@@ -142,8 +142,12 @@ requires_human: <true|false>
 ```
 
 `workflow_id`と`attempt`は、同一タスクに対する複数回・並行のworkflowを区別し、FAILED_LIMIT（3回不成功）を
-正しく数えるために必須。PMはこの2つを引継ぎのたびに一貫させ、Fixerへの再割り当てのたびに`attempt`を
-`slack-native-loop-spec.md`のルール5・6の通りに増やす（redispatchのたびに1増加、blockedの解消は増加させない等）。
+正しく数えるために必須。PMはこの2つを引継ぎのたびに一貫させる。`attempt`は`slack-native-loop-spec.md`の
+attempt lifecycle（ルール4の3述語が網羅的）に厳密に従って増やす。**Fixerへ差し戻したこと自体は増加事由ではない。**
+増加するのはImplementer/Fixerの実行がrule 4の3述語のいずれか（`failed`を返す／Reviewerが受入条件未達として却下する／
+解決不能な`blocked`を却下する）に該当し、不成功と判定された場合だけである。P2のみの指摘でFixerへ回す場合や、
+Reviewerが単に追加確認を求める場合は不成功ではないため`attempt`を増やさない（P2は受入条件・正しさに影響しない。
+下記「分岐ルール」内のP0/P1/P2の定義を参照）。
 
 PM→Implementer、Implementer→Reviewer、Reviewer→Fixer、Fixer→Reviewer、Reviewer→PMの全ての遷移でこの形を使う。
 PR本文またはPRコメントに残し、Notionへの反映はPMの責務とする（他の役割はNotionを直接更新しない）。
