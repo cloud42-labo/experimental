@@ -61,7 +61,8 @@ PR本文に残す。本ドキュメントが定めるのは**タスクの現在�
 
 updated_at: <ISO-8601のUTCタイムスタンプ。秒まで書く。例 2026-08-04T07:20:31Z>
 updated_by: <claude-pm | claude-implementer | claude-reviewer | claude-fixer | chatgpt-backup | human>
-current_role: <pm | implementer | reviewer | fixer | none>
+current_role: <pm | implementer | reviewer | fixer | none。none＝今どの役割も作業中ではない>
+workflow_state: <active | completed。下記「同一タスクに対する並行workflow」参照>
 workflow_id: <実行を識別する値。Slack起動ならthread_ts、直接起動ならセッションid。claude-role-separation.mdと同じ>
 attempt: <この受入条件に対する実行回数。1から。claude-role-separation.mdのattempt lifecycleに従う>
 commits:
@@ -86,27 +87,38 @@ requires_human: <true | false。trueなら理由をBlockerにも書く>
 
 上書き前に、**必ず既存ブロックを読んでから書く**（read-before-write）。
 
-**判定は`current_role`で行う。`updated_at`の新旧では判定しない。**
-`updated_at`が古いことは「終了した」ことの証明にならない（単に長時間Notionを更新していない
-だけの、稼働中のworkflowかもしれない）。一方`current_role`は、PMが役割の受け渡し・完了のたびに
-明示的に更新する値であり、「今まさに誰かがこのタスクの役割についているか」を表す。
+**判定は`workflow_state`で行う。`updated_at`の新旧でも`current_role`でも判定しない。**
+
+- `updated_at`が古いことは「終了した」ことの証明にならない（単に長時間Notionを更新していない
+  だけの、稼働中のworkflowかもしれない）。
+- `current_role: none`も「終了した」ことの証明にならない。**役割の合間で外部イベント待ち
+  （Chrisのマージ待ち、CI待ち、人間の実機確認待ち）のworkflowは、`current_role`こそ`none`だが、
+  そのworkflowはまだこのタスクを「所有」しており、いずれ再開する。** これを見落として上書きすると、
+  再開予定だったworkflowの引継ぎを消してしまう。
+
+そこで**所有権そのもの**を表す`workflow_state`を別に持つ。
+
+- `active`: このworkflowはまだこのタスクを所有している。役割中（`current_role`が`pm`等）か、
+  外部イベント待ちで一時的に`current_role: none`かを問わない。
+- `completed`: このworkflowのこのタスクへの関与は完全に終わった。以後、このworkflow_idからの
+  再開は無い（タスクが`Done`になった、または別workflowへ意図的に所有権を移した場合のみ）。
 
 | 既存ブロックの状態 | 対応 |
 |---|---|
 | ブロックが無い | 新規に書いてよい |
-| `workflow_id`が自分と同じ | そのまま上書きしてよい（自分自身の継続） |
-| `workflow_id`が自分と異なり、`current_role`が`none` | 先行workflowは役割から離れている（完了・一時停止のいずれか）。上書きしてよい |
-| `workflow_id`が自分と異なり、`current_role`が`none`以外（`pm`/`implementer`/`reviewer`/`fixer`） | 別のworkflowが役割中＝稼働中とみなす。**上書きしない。** `requires_human: true`として停止し、どちらを継続するかオーナーへ確認する |
+| `workflow_id`が自分と同じ | そのまま上書きしてよい（自分自身の継続。役割の合間の外部イベント待ちから戻ってきた場合を含む） |
+| `workflow_id`が自分と異なり、`workflow_state`が`completed` | 先行workflowは所有権を手放している。上書きしてよい |
+| `workflow_id`が自分と異なり、`workflow_state`が`active` | 別のworkflowがまだ所有中（作業中または外部イベント待ち）。**上書きしない。** `requires_human: true`として停止し、どちらを継続するかオーナーへ確認する |
 
-**フェイルクローズを意図した設計。** workflowが役割の途中でクラッシュし`current_role`を
-`none`へ戻せなかった場合、そのタスクは後続workflowから見て「稼働中」のまま残り、以後は
-人間の確認待ちで止まる。これは意図した挙動である。「本当は終わっているのに稼働中に見える」ために
-毎回人間の手を煩わせるコストより、「稼働中のworkflowを気づかず上書きする」事故を防ぐことを優先する。
-クラッシュを検知して回復したPM（別workflowまたは人間）が、状況を確認した上で`current_role: none`へ
+**フェイルクローズを意図した設計。** workflowがクラッシュし`workflow_state`を`completed`へ
+戻せなかった場合、そのタスクは後続workflowから見て「所有中」のまま残り、以後は人間の確認待ちで
+止まる。これは意図した挙動である。「本当は終わっているのに所有中に見える」ために毎回人間の手を
+煩わせるコストより、「所有中のworkflowの引継ぎを気づかず上書きする」事故を防ぐことを優先する。
+クラッシュを検知して回復したPM（別workflowまたは人間）が、状況を確認した上で`workflow_state: completed`へ
 書き戻して解除する。
 
-`updated_at`は秒精度のUTCタイムスタンプのまま残すが、役割は「監査用の最終更新時刻」に限定する
-（安全性の判定には使わない）。
+`updated_at`と`current_role`は監査用・情報用に残すが、上書き可否の判定には使わない。判定は
+`workflow_state`のみで行う。
 
 ## 記入規則
 
@@ -118,6 +130,10 @@ requires_human: <true | false。trueなら理由をBlockerにも書く>
   フィールドが無ければ「まだ確認していない」と解釈する。
 - **PRを作った時点で必ず1回更新する。** PR作成からマージまでの間が、他エージェントが引き継ぐ可能性の最も高い区間。
 - **書く前に既存ブロックを読む。** 上表のworkflow競合判定を行う。
+- **`workflow_state`は`current_role`と連動しない。** マージ待ち・CI待ち・実機確認待ちのように
+  「今どの役割も作業していないが、このworkflowはまだ再開するつもり」の間は`current_role: none`かつ
+  `workflow_state: active`のままにする。`completed`にするのは、このworkflow_idが二度とこのタスクへ
+  戻らないと決まったときだけ。
 
 ## 再開手順（Claude / ChatGPT 共通）
 
@@ -146,6 +162,7 @@ ChatGPTがバックアップとして入る場合も手順は同じ。Claude固�
 updated_at: 2026-08-04T07:20:31Z
 updated_by: claude-pm
 current_role: none
+workflow_state: active
 workflow_id: session_01HvemhQPLFL33FBFF6GYUf5
 attempt: 1
 commits:
@@ -154,6 +171,9 @@ open_p0_p1: []
 next_action: Chrisのマージを待つ。マージされたらStatusをDoneへ更新し、実機確認が必要な変更のためHUMAN-06-1へ確認を依頼する。
 requires_human: false
 ```
+
+`current_role`が`none`でも、マージ待ちで再開するつもりなので`workflow_state`は`active`のまま
+（このworkflowはまだタスクを所有している）。マージ完了・Status更新まで終えたら`completed`にする。
 
 ## 関連
 
