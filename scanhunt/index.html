@@ -1,269 +1,561 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanhunt | Experimental Lab</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-    <style>
-        :root { --neon-blue: #3b82f6; --neon-orange: #f97316; --bg-dark: #020617; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg-dark); color: white; overflow: hidden; }
-
-        /* 3D Flip System */
-        .perspective { perspective: 1200px; }
-        .flip-card {
-            position: relative; width: 100%; height: 100%;
-            transition: transform 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            transform-style: preserve-3d;
-        }
-        .flipped { transform: rotateY(180deg); }
-        .backface-hidden { backface-visibility: hidden; position: absolute; inset: 0; }
-
-        /* UI Animations */
-        .page { display: none; }
-        .page.active { display: revert; animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        .scan-line {
-            height: 2px; background: linear-gradient(to right, transparent, var(--neon-blue), transparent);
-            position: absolute; width: 100%; top: 20%; animation: scan 2s infinite; z-index: 20;
-        }
-        @keyframes scan { 0% { top: 20%; opacity: 0; } 50% { opacity: 1; } 100% { top: 80%; opacity: 0; } }
-
-        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Scanhunt | Experimental Lab</title>
+  <script src="https://cdn.tailwindcss.com" defer></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    :root { --neon-blue:#3b82f6; --neon-orange:#f97316; --bg-dark:#020617; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg-dark); color:#fff; overflow:hidden; }
+    button { font:inherit; border:0; cursor:pointer; }
+    button:disabled { cursor:not-allowed; opacity:.45; }
+    .page { display:none !important; }
+    .page.active { display:flex !important; }
+    #page-scan.active, #page-result.active { display:block !important; }
+    .glass { background:rgba(15,23,42,.82); backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,.1); }
+    .home { height:100dvh; flex-direction:column; align-items:center; justify-content:center; padding:2rem; text-align:center; background:linear-gradient(#0f172a,#000); }
+    .logo { width:5rem; height:5rem; border-radius:2rem; background:#2563eb; display:flex; align-items:center; justify-content:center; font-size:1.75rem; font-weight:900; font-style:italic; margin-bottom:1.5rem; box-shadow:0 0 50px rgba(59,130,246,.3); }
+    h1 { margin:0 0 .5rem; font-size:3rem; font-weight:900; font-style:italic; letter-spacing:-.06em; }
+    .version { color:#3b82f6; font:500 .625rem 'JetBrains Mono',monospace; letter-spacing:.3em; text-transform:uppercase; margin-bottom:3rem; }
+    .home-actions { width:100%; max-width:20rem; }
+    .primary { width:100%; padding:1.2rem; border-radius:1rem; background:#fff; color:#000; font-size:1.2rem; font-weight:900; box-shadow:0 18px 30px rgba(0,0,0,.3); }
+    .primary:active, .blue-button:active { transform:scale(.97); }
+    .metrics { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; margin-top:1rem; }
+    .metric { padding:1rem; border-radius:1rem; text-align:left; }
+    .metric-label { margin:0; color:#64748b; font-size:.58rem; font-weight:700; text-transform:uppercase; }
+    .metric-value { margin:.25rem 0 0; font-size:1.05rem; font-weight:900; font-style:italic; }
+    #page-scan { height:100dvh; background:#000; position:relative; }
+    .guide-wrap { position:absolute; top:max(1rem,env(safe-area-inset-top)); width:100%; z-index:30; padding:1rem 2rem; text-align:center; pointer-events:none; }
+    .guide { display:inline-block; padding:.55rem 1.2rem; border-radius:999px; }
+    #guide-text { font-size:.65rem; font-weight:900; letter-spacing:.2em; text-transform:uppercase; color:#60a5fa; }
+    #camera-status { margin:.5rem auto 0; max-width:26rem; min-height:1.25rem; color:#cbd5e1; font-size:.75rem; line-height:1.35; }
+    #camera-status.error { color:#fca5a5; }
+    .camera-stage { height:70dvh; width:100%; padding:6rem 1.5rem 1.5rem; perspective:1200px; }
+    .flip-card { position:relative; width:100%; height:100%; transition:transform .8s cubic-bezier(.175,.885,.32,1.275); transform-style:preserve-3d; }
+    .flip-card.flipped { transform:rotateY(180deg); }
+    .camera-face { position:absolute; inset:0; border-radius:3rem; overflow:hidden; background:#0f172a; backface-visibility:hidden; border:2px solid rgba(59,130,246,.35); }
+    .camera-face.back { transform:rotateY(180deg); border-color:rgba(249,115,22,.35); }
+    video { width:100%; height:100%; object-fit:cover; }
+    .camera-face.front video { filter:grayscale(.2); }
+    .camera-face.back video { opacity:.78; }
+    .scan-line { height:2px; background:linear-gradient(to right,transparent,var(--neon-blue),transparent); position:absolute; width:100%; top:20%; animation:scan 2s infinite; z-index:20; }
+    @keyframes scan { 0%{top:20%;opacity:0} 50%{opacity:1} 100%{top:80%;opacity:0} }
+    .scan-controls { position:absolute; bottom:max(1.5rem,env(safe-area-inset-bottom)); width:100%; display:flex; flex-direction:column; align-items:center; gap:1rem; }
+    #shutter { position:relative; width:5rem; height:5rem; border-radius:999px; background:#fff; display:flex; align-items:center; justify-content:center; padding:.5rem; box-shadow:0 0 30px rgba(255,255,255,.25); }
+    #shutter.back-step { background:#f97316; }
+    #shutter::after { content:''; width:100%; height:100%; border:4px solid rgba(0,0,0,.12); border-radius:999px; }
+    .abort { background:transparent; color:#94a3b8; font-size:.65rem; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+    #page-result { height:100dvh; background:#020617; overflow-y:auto; }
+    .result-inner { padding:4rem 2rem 8rem; max-width:34rem; margin:0 auto; }
+    .result-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem; }
+    .result-label { background:#2563eb; padding:.35rem .75rem; border-radius:.35rem; font-size:.65rem; font-weight:900; letter-spacing:.08em; }
+    .done { background:transparent; color:#94a3b8; font-size:.75rem; font-weight:900; }
+    .card { padding:2rem; border-radius:2.5rem; margin-bottom:1rem; }
+    .validated { margin:0 0 .5rem; color:#3b82f6; font-size:.65rem; font-weight:900; letter-spacing:.2em; text-transform:uppercase; }
+    #res-name { margin:0 0 1.5rem; font-size:2.25rem; line-height:1.05; font-weight:900; font-style:italic; letter-spacing:-.04em; }
+    .cook { background:#ea580c; padding:1.5rem; border-radius:2rem; }
+    .cook-head { display:flex; justify-content:space-between; opacity:.7; font-size:.65rem; font-weight:900; text-transform:uppercase; }
+    #res-time { margin:.5rem 0 0; font-size:1.85rem; font-weight:900; font-style:italic; }
+    .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem; }
+    .detail { padding:1.25rem; border-radius:2rem; }
+    .detail p:first-child, .allergen-title { margin:0 0 .5rem; color:#64748b; font-size:.58rem; font-weight:900; text-transform:uppercase; }
+    .detail p:last-child { margin:0; font:700 .75rem 'JetBrains Mono',monospace; }
+    #res-jan { color:#60a5fa; }
+    #res-allergens { display:flex; flex-wrap:wrap; gap:.5rem; }
+    .allergen { background:rgba(127,29,29,.45); color:#f87171; border:1px solid rgba(239,68,68,.3); padding:.3rem .7rem; border-radius:999px; font-size:.6rem; font-weight:900; text-transform:uppercase; }
+    .result-footer { position:fixed; bottom:0; left:0; width:100%; padding:1.5rem; padding-bottom:max(1.5rem,env(safe-area-inset-bottom)); background:linear-gradient(transparent,#020617 35%); }
+    .blue-button { width:100%; max-width:34rem; display:block; margin:0 auto; padding:1.15rem; border-radius:1rem; background:#2563eb; color:#fff; font-size:1.05rem; font-weight:900; }
+    #fatal-error { position:fixed; z-index:100; left:1rem; right:1rem; bottom:1rem; display:none; background:#7f1d1d; color:#fff; border:1px solid #f87171; border-radius:.75rem; padding:.85rem; font-size:.75rem; white-space:pre-wrap; }
+  </style>
 </head>
 <body>
-
-    <!--
-      DEVELOPMENT DOCS (Hidden in UI)
-      -------------------------------
-      Concept: "Discard boxes, keep data."
-      Target: Frozen Food / Imported Food
-      Next Step: Replace 'handleCapture()' logic with actual Gemini API Multimodal call.
-    -->
-
-    <!-- 1. HOME SCREEN -->
-    <div id="page-home" class="page active flex flex-col items-center justify-center h-screen p-8 text-center bg-gradient-to-b from-slate-900 to-black">
-        <div class="w-20 h-20 bg-blue-600 rounded-[2rem] mb-6 flex items-center justify-center shadow-[0_0_50px_rgba(59,130,246,0.3)]">
-            <span class="text-3xl font-black italic tracking-tighter">SH</span>
+  <main>
+    <section id="page-home" class="page home active" aria-label="ホーム">
+      <div class="logo">SH</div>
+      <h1>SCANHUNT</h1>
+      <p id="app-version" class="version">Experimental Lab</p>
+      <div class="home-actions">
+        <button id="new-scan-button" type="button" class="primary">NEW SCAN</button>
+        <div class="metrics">
+          <div class="metric glass"><p class="metric-label">My Items</p><p class="metric-value">24</p></div>
+          <div class="metric glass"><p class="metric-label" style="color:#3b82f6">Contribution</p><p class="metric-value" style="color:#60a5fa">B2B OK</p></div>
         </div>
-        <h1 class="text-5xl font-black italic tracking-tighter mb-2">SCANHUNT</h1>
-        <p id="app-version" class="text-blue-500 font-mono text-[10px] tracking-[0.3em] uppercase mb-12">Experimental Lab v0.1.0</p>
+      </div>
+    </section>
 
-        <div class="w-full max-w-xs space-y-4">
-            <button onclick="nav('scan')" class="w-full bg-white text-black font-black py-5 rounded-2xl text-xl shadow-2xl active:scale-95 transition-transform">
-                NEW SCAN
-            </button>
-            <div class="flex gap-2">
-                <div class="flex-1 glass p-4 rounded-2xl text-left">
-                    <p class="text-[9px] font-bold text-slate-500 uppercase">My Items</p>
-                    <p class="text-lg font-black tracking-tight italic">24</p>
-                </div>
-                <div class="flex-1 glass p-4 rounded-2xl text-left border-blue-500/30">
-                    <p class="text-[9px] font-bold text-blue-500 uppercase">Contribution</p>
-                    <p class="text-lg font-black tracking-tight italic text-blue-400">B2B OK</p>
-                </div>
-            </div>
+    <section id="page-scan" class="page" aria-label="スキャン">
+      <div class="guide-wrap">
+        <div class="guide glass"><span id="guide-text">Step 1: Front (Product Identity)</span></div>
+        <p id="camera-status" role="status" aria-live="polite"></p>
+      </div>
+      <div class="camera-stage">
+        <div id="flip-container" class="flip-card">
+          <div class="camera-face front"><video id="v1" autoplay muted playsinline></video><div class="scan-line"></div></div>
+          <div class="camera-face back"><video id="v2" autoplay muted playsinline></video></div>
         </div>
-    </div>
+      </div>
+      <div class="scan-controls">
+        <button id="shutter" type="button" disabled aria-label="撮影"></button>
+        <button id="abort-button" type="button" class="abort">Abort Mission</button>
+      </div>
+    </section>
 
-    <!-- 2. SCANNING SCREEN -->
-    <div id="page-scan" class="page h-screen bg-black relative">
-        <div class="absolute top-12 w-full z-50 px-8 text-center pointer-events-none">
-            <div id="guide-badge" class="inline-block glass px-6 py-2 rounded-full border border-white/20 transition-all">
-                <span id="guide-text" class="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Step 1: Front (Product Identity)</span>
-            </div>
+    <section id="page-result" class="page" aria-label="解析結果">
+      <div class="result-inner">
+        <div class="result-head"><div class="result-label">AI ANALYSIS RESULT</div><button id="done-button" type="button" class="done">DONE</button></div>
+        <div class="card glass">
+          <p class="validated">Validated Product</p>
+          <h2 id="res-name">海鮮ちゃんぽん</h2>
+          <div class="cook"><div class="cook-head"><span>Microwave Instructions</span><span>500W</span></div><p id="res-time">5分30秒</p></div>
         </div>
-
-        <div class="h-[70vh] w-full pt-24 pb-12 px-6 perspective">
-            <div id="flip-container" class="flip-card">
-                <!-- Front Side -->
-                <div class="backface-hidden rounded-[3rem] border-2 border-blue-500/30 overflow-hidden bg-slate-900 shadow-2xl">
-                    <video id="v1" autoplay playsinline class="w-full h-full object-cover grayscale-[0.2]"></video>
-                    <div class="scan-line"></div>
-                </div>
-                <!-- Back Side -->
-                <div class="backface-hidden rounded-[3rem] border-2 border-orange-500/30 overflow-hidden bg-slate-900 shadow-2xl" style="transform: rotateY(180deg);">
-                    <video id="v2" autoplay playsinline class="w-full h-full object-cover opacity-60"></video>
-                    <div class="absolute inset-0 bg-orange-500/10 backdrop-blur-[2px]"></div>
-                </div>
-            </div>
+        <div class="detail-grid">
+          <div class="detail glass"><p>GTIN / JAN</p><p id="res-jan">4902105109885</p></div>
+          <div class="detail glass"><p>Health Log</p><p id="res-cal">452 kcal</p></div>
         </div>
+        <div class="card glass"><p class="allergen-title">Allergens Detected</p><div id="res-allergens"></div></div>
+      </div>
+      <div class="result-footer"><button id="scan-next-button" type="button" class="blue-button">SCAN NEXT ITEM</button></div>
+    </section>
+  </main>
+  <div id="fatal-error" role="alert"></div>
 
-        <!-- Shutter Button -->
-        <div class="absolute bottom-12 w-full flex flex-col items-center gap-6">
-            <button id="shutter" onclick="handleCapture()" class="group relative w-20 h-20 bg-white rounded-full flex items-center justify-center p-2 shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-90 transition-all">
-                <div id="shutter-inner" class="w-full h-full border-4 border-black/10 rounded-full flex items-center justify-center transition-colors">
-                    <div class="w-4 h-4 bg-black rounded-sm animate-pulse"></div>
-                </div>
-            </button>
-            <button onclick="nav('home')" class="text-[10px] font-black tracking-widest text-slate-500 uppercase">Abort Mission</button>
-        </div>
-    </div>
+  <script>
+  (function () {
+    'use strict';
 
-    <!-- 3. RESULT / RECIPE SCREEN -->
-    <div id="page-result" class="page h-screen bg-slate-950 overflow-y-auto">
-        <div class="p-8 pt-16 pb-32">
-            <div class="flex justify-between items-center mb-8">
-                <div class="bg-blue-600 text-[10px] font-black px-3 py-1 rounded shadow-lg animate-pulse uppercase tracking-widest">
-                    AI Analysis Result
-                </div>
-                <button onclick="nav('home')" class="text-slate-500 font-black text-xs uppercase tracking-widest">Done</button>
-            </div>
+    var APP_VERSION = '0.3.3';
+    var GEMINI_MODEL = 'gemini-flash-latest';
+    var GEMINI_API_KEY_STORAGE_KEY = 'scanhunt_gemini_api_key';
+    var GEMINI_MAX_ATTEMPTS = 3;
+    var GEMINI_RETRY_BASE_DELAY_MS = 1000;
+    var GEMINI_REQUEST_TIMEOUT_MS = 25000;
 
-            <!-- Main Data Card -->
-            <div class="glass rounded-[2.5rem] p-8 mb-6 border border-white/10 shadow-2xl relative overflow-hidden">
-                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-3xl"></div>
-                <p class="text-blue-500 text-[10px] font-black uppercase mb-2 tracking-[0.2em]">Validated Product</p>
-                <h2 id="res-name" class="text-4xl font-black leading-tight mb-6 italic tracking-tighter">海鮮ちゃんぽん</h2>
+    var currentStep = 'FRONT';
+    var capturedFront = null;
+    var capturedBack = null;
+    var currentStream = null;
+    var cameraGeneration = 0;
+    var scanGeneration = 0;
+    var activeAbortController = null;
+    var retryTimer = null;
 
-                <div class="space-y-4">
-                    <div class="bg-orange-600 text-white p-6 rounded-[2rem] shadow-xl">
-                        <div class="flex justify-between items-center mb-2">
-                            <p class="text-[10px] font-black uppercase opacity-60">Microwave Instructions</p>
-                            <span class="text-[10px] font-mono font-bold">500W</span>
-                        </div>
-                        <p id="res-time" class="text-5xl font-black tracking-tighter italic">5<span class="text-2xl">m</span> 30<span class="text-2xl">s</span></p>
-                    </div>
-                </div>
-            </div>
+    var state = {
+      FRONT: { text:'Step 1: Front (Product Identity)', color:'#60a5fa' },
+      BACK: { text:'Step 2: Back (Nutrition/JAN)', color:'#fb923c' }
+    };
 
-            <!-- B2B & Detail Layer -->
-            <div class="grid grid-cols-2 gap-4 mb-4">
-                <div class="glass p-5 rounded-[2rem]">
-                    <p class="text-[9px] font-black text-slate-500 uppercase mb-2">GTIN / JAN</p>
-                    <p id="res-jan" class="font-mono text-xs font-bold text-blue-400">4902105109885</p>
-                </div>
-                <div class="glass p-5 rounded-[2rem]">
-                    <p class="text-[9px] font-black text-slate-500 uppercase mb-2">Health Log</p>
-                    <p id="res-cal" class="font-mono text-xs font-bold text-white">452 kcal</p>
-                </div>
-            </div>
+    var GEMINI_RESPONSE_SCHEMA = {
+      type:'OBJECT',
+      properties:{
+        gtin_jan:{type:'STRING'}, product_name:{type:'STRING'}, brand:{type:'STRING'}, category:{type:'STRING'}, temperature_zone:{type:'STRING'},
+        cooking_instructions:{type:'OBJECT',properties:{microwave:{type:'OBJECT',properties:{wattage_500w:{type:'STRING'},wattage_600w:{type:'STRING'}}},pan_fry:{type:'STRING'},other_notes:{type:'STRING'}}},
+        nutrition:{type:'OBJECT',properties:{calories_kcal:{type:'NUMBER'},protein_g:{type:'NUMBER'},fat_g:{type:'NUMBER'},carbs_g:{type:'NUMBER'}}},
+        allergens:{type:'ARRAY',items:{type:'STRING'}}
+      },
+      required:['product_name']
+    };
 
-            <div class="glass p-6 rounded-[2rem]">
-                <p class="text-[9px] font-black text-slate-500 uppercase mb-3">Allergens Detected</p>
-                <div id="res-allergens" class="flex flex-wrap gap-2 uppercase text-[9px] font-black">
-                    <!-- Dynamic Badges -->
-                </div>
-            </div>
-        </div>
+    var MOCK_RESULT = {
+      product_name:'極旨！海鮮ちゃんぽん', gtin_jan:'4902105109885',
+      cooking_instructions:{microwave:{wattage_500w:'5分30秒'}}, nutrition:{calories_kcal:452},
+      allergens:['小麦','卵','乳','えび','大豆']
+    };
 
-        <div class="fixed bottom-0 w-full p-6 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent">
-            <button onclick="nav('scan')" class="w-full bg-blue-600 text-white font-black py-5 rounded-2xl text-lg shadow-2xl active:scale-95 transition-all">
-                SCAN NEXT ITEM
-            </button>
-        </div>
-    </div>
+    function byId(id) { return document.getElementById(id); }
 
-    <script>
-        const APP_VERSION = "0.1.0";
+    function showFatal(message) {
+      var box = byId('fatal-error');
+      if (!box) return;
+      box.textContent = 'Scanhunt error: ' + message;
+      box.style.display = 'block';
+    }
 
-        // --- State Management ---
-        let currentStep = 'FRONT';
-        const state = {
-            FRONT: { text: "Step 1: Front (Product Identity)", color: "text-blue-400", shutter: "bg-white" },
-            BACK: { text: "Step 2: Back (Nutrition/JAN)", color: "text-orange-400", shutter: "bg-orange-500" }
-        };
+    window.addEventListener('error', function (event) {
+      showFatal(event.message || 'JavaScript initialization failed');
+    });
+    window.addEventListener('unhandledrejection', function (event) {
+      var reason = event.reason;
+      showFatal(reason && reason.message ? reason.message : String(reason || 'Unhandled promise rejection'));
+    });
 
-        // --- Navigation ---
-        function nav(pageId) {
-            const current = document.querySelector('.page.active');
-            if (current && current.id === 'page-scan' && pageId !== 'scan') {
-                stopCamera();
-            }
+    function setCameraStatus(message, isError) {
+      var el = byId('camera-status');
+      el.textContent = message || '';
+      el.className = isError ? 'error' : '';
+    }
 
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('page-' + pageId).classList.add('active');
+    function navigateTo(pageId) {
+      var pages = document.querySelectorAll('.page');
+      var i;
+      var target = byId('page-' + pageId);
+      if (!target) throw new Error('Unknown page: ' + pageId);
 
-            if(pageId === 'scan') {
-                resetScan();
-                initCamera();
-            }
+      stopCamera();
+      if (pageId === 'home' || pageId === 'scan') cancelActiveAnalysis();
+
+      for (i = 0; i < pages.length; i += 1) pages[i].classList.remove('active');
+      target.classList.add('active');
+
+      if (pageId === 'scan') {
+        resetScan();
+        initCamera();
+      }
+    }
+
+    function cancelActiveAnalysis() {
+      scanGeneration += 1;
+      if (activeAbortController) activeAbortController.abort();
+      activeAbortController = null;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    }
+
+    function cameraReady(video) {
+      return Boolean(video && video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2);
+    }
+
+    function updateShutterAvailability() {
+      var ready = cameraReady(byId('v1'));
+      byId('shutter').disabled = !ready;
+      if (ready) setCameraStatus('カメラ準備完了', false);
+    }
+
+    function stopStream(stream) {
+      if (!stream) return;
+      stream.getTracks().forEach(function (track) { track.stop(); });
+    }
+
+    function attachStream(video, stream) {
+      return new Promise(function (resolve, reject) {
+        var settled = false;
+        function cleanup() {
+          video.removeEventListener('loadeddata', onReady);
+          video.removeEventListener('canplay', onReady);
+          video.removeEventListener('error', onError);
         }
-
-        // --- Camera Logic ---
-        let currentStream = null;
-
-        async function initCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment', width: { ideal: 1080 } }
-                });
-                currentStream = stream;
-                document.getElementById('v1').srcObject = stream;
-                document.getElementById('v2').srcObject = stream;
-            } catch (e) {
-                alert("Camera Access Required for Experimental Lab.");
-            }
+        function onReady() {
+          if (settled || !cameraReady(video)) return;
+          settled = true;
+          cleanup();
+          resolve();
         }
-
-        function stopCamera() {
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop());
-                currentStream = null;
-            }
-            document.getElementById('v1').srcObject = null;
-            document.getElementById('v2').srcObject = null;
+        function onError() {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error('カメラ映像を再生できませんでした'));
         }
-
-        // --- Scanning Sequence ---
-        function handleCapture() {
-            if(navigator.vibrate) navigator.vibrate(60);
-
-            if (currentStep === 'FRONT') {
-                currentStep = 'BACK';
-                document.getElementById('flip-container').classList.add('flipped');
-                updateUI();
-            } else {
-                processAI();
-            }
+        video.addEventListener('loadeddata', onReady);
+        video.addEventListener('canplay', onReady);
+        video.addEventListener('error', onError);
+        video.srcObject = stream;
+        var playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(function (error) {
+            console.error('video.play failed', error);
+            onError();
+          });
         }
+        if (cameraReady(video)) onReady();
+      });
+    }
 
-        function updateUI() {
-            const s = state[currentStep];
-            document.getElementById('guide-text').innerText = s.text;
-            document.getElementById('guide-text').className = `text-[10px] font-black uppercase tracking-[0.2em] ${s.color}`;
-            document.getElementById('shutter').className = `group relative w-20 h-20 ${s.shutter} rounded-full flex items-center justify-center p-2 shadow-2xl active:scale-90 transition-all`;
+    async function initCamera() {
+      var stream;
+      var myCameraGeneration = cameraGeneration + 1;
+      cameraGeneration = myCameraGeneration;
+      byId('shutter').disabled = true;
+      setCameraStatus('カメラを起動しています…', false);
+
+      if (!window.isSecureContext) {
+        setCameraStatus('カメラはHTTPS接続でのみ利用できます。', true);
+        return;
+      }
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        setCameraStatus('このブラウザではカメラAPIを利用できません。Chromeで開いてください。', true);
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1080}},audio:false});
+        if (myCameraGeneration !== cameraGeneration || !byId('page-scan').classList.contains('active')) {
+          stopStream(stream);
+          return;
         }
-
-        function processAI() {
-            // Simulated AI extraction from Image (TODO: replace with Gemini API multimodal call)
-            const mockResult = {
-                name: "極旨！海鮮ちゃんぽん",
-                time: "5<span class='text-2xl'>m</span> 30<span class='text-2xl'>s</span>",
-                jan: "4902105109885",
-                cal: "452 kcal",
-                allergens: ["Wheat", "Egg", "Milk", "Shrimp", "Soy"]
-            };
-
-            // Inject to Result Page
-            document.getElementById('res-name').innerText = mockResult.name;
-            document.getElementById('res-time').innerHTML = mockResult.time;
-            document.getElementById('res-jan').innerText = mockResult.jan;
-            document.getElementById('res-cal').innerText = mockResult.cal;
-
-            const algContainer = document.getElementById('res-allergens');
-            algContainer.innerHTML = mockResult.allergens.map(a =>
-                `<span class="bg-red-900/40 text-red-400 border border-red-500/30 px-3 py-1 rounded-full">${a}</span>`
-            ).join('');
-
-            nav('result');
+        currentStream = stream;
+        await Promise.all([attachStream(byId('v1'), stream), attachStream(byId('v2'), stream)]);
+        if (myCameraGeneration !== cameraGeneration || currentStream !== stream || !byId('page-scan').classList.contains('active')) {
+          if (currentStream === stream) currentStream = null;
+          stopStream(stream);
+          return;
         }
-
-        function resetScan() {
-            currentStep = 'FRONT';
-            document.getElementById('flip-container').classList.remove('flipped');
-            updateUI();
+        updateShutterAvailability();
+      } catch (error) {
+        if (myCameraGeneration !== cameraGeneration) {
+          stopStream(stream);
+          return;
         }
+        console.error('initCamera failed', error);
+        stopCamera();
+        var name = error && error.name ? error.name : '';
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+          setCameraStatus('カメラ権限が拒否されています。Chromeのサイト設定でカメラを許可してください。', true);
+        } else {
+          setCameraStatus('カメラを起動できませんでした。ページを再読み込みしてください。', true);
+        }
+      }
+    }
 
-        document.getElementById('app-version').textContent = `Experimental Lab v${APP_VERSION}`;
+    function stopCamera() {
+      cameraGeneration += 1;
+      if (currentStream) {
+        stopStream(currentStream);
+        currentStream = null;
+      }
+      ['v1','v2'].forEach(function (id) {
+        var video = byId(id);
+        if (video) video.srcObject = null;
+      });
+      var shutter = byId('shutter');
+      if (shutter) shutter.disabled = true;
+    }
 
-        // --- Design Doc for Experimental Repo ---
-        console.log("%c SCANHUNT EXPERIMENTAL LAB ", "background: #3b82f6; color: white; font-weight: bold; padding: 4px;");
-        console.log("Concept: Discard paper boxes, keep digital recipes.");
-        console.log("Future API: POST /api/analyze { front_img, back_img } -> Gemini-1.5-Flash");
-    </script>
+    function captureFrame(video) {
+      var canvas;
+      var context;
+      if (!cameraReady(video)) return null;
+      canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      try {
+        context = canvas.getContext('2d');
+        if (!context) return null;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', .85).split(',')[1] || null;
+      } catch (error) {
+        console.error('captureFrame failed', error);
+        return null;
+      }
+    }
+
+    function handleCapture() {
+      var frame = captureFrame(byId('v1'));
+      if (!frame) {
+        setCameraStatus('映像がまだ準備できていません。少し待ってから再度お試しください。', true);
+        updateShutterAvailability();
+        return;
+      }
+      if (navigator.vibrate) navigator.vibrate(60);
+      if (currentStep === 'FRONT') {
+        capturedFront = frame;
+        currentStep = 'BACK';
+        byId('flip-container').classList.add('flipped');
+        updateUI();
+      } else {
+        capturedBack = frame;
+        byId('shutter').disabled = true;
+        setCameraStatus('AI解析中…', false);
+        processAI();
+      }
+    }
+
+    function updateUI() {
+      var current = state[currentStep];
+      byId('guide-text').textContent = current.text;
+      byId('guide-text').style.color = current.color;
+      byId('shutter').classList.toggle('back-step', currentStep === 'BACK');
+    }
+
+    function getApiKey() {
+      var key = '';
+      try { key = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY) || ''; } catch (error) { console.warn('localStorage unavailable', error); }
+      if (!key) {
+        key = window.prompt('Gemini APIキーを入力してください（このブラウザにのみ保存。未入力ならモックデータで進みます）') || '';
+        if (key) {
+          try { localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, key); } catch (error) { console.warn('API key could not be stored', error); }
+        }
+      }
+      return key;
+    }
+
+    function isResultSubstantial(data) {
+      var cooking = data && data.cooking_instructions;
+      var microwave = cooking && cooking.microwave;
+      var nutrition = data && data.nutrition;
+      var hasCooking = Boolean(cooking && ((microwave && (microwave.wattage_500w || microwave.wattage_600w)) || cooking.pan_fry));
+      var hasNutrition = Boolean(nutrition && Object.keys(nutrition).length > 0);
+      var hasAllergens = Boolean(data && Array.isArray(data.allergens) && data.allergens.length > 0);
+      return hasCooking || hasNutrition || hasAllergens;
+    }
+
+    function abortableDelay(ms, controller) {
+      return new Promise(function (resolve, reject) {
+        function onAbort() {
+          if (retryTimer !== null) clearTimeout(retryTimer);
+          retryTimer = null;
+          reject(Object.assign(new Error('スキャンが中止されました'), {retryable:false}));
+        }
+        retryTimer = setTimeout(function () {
+          retryTimer = null;
+          if (controller) controller.signal.removeEventListener('abort', onAbort);
+          resolve();
+        }, ms);
+        if (controller) {
+          if (controller.signal.aborted) return onAbort();
+          controller.signal.addEventListener('abort', onAbort, {once:true});
+        }
+      });
+    }
+
+    async function callGeminiOnce(frontBase64, backBase64, apiKey, externalController) {
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function () { controller.abort(); }, GEMINI_REQUEST_TIMEOUT_MS);
+      var onExternalAbort = function () { controller.abort(); };
+      var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(GEMINI_MODEL) + ':generateContent?key=' + encodeURIComponent(apiKey);
+      var body = {
+        contents:[{parts:[
+          {text:'これは食品パッケージの表面と裏面の写真です。1枚目が表面、2枚目が裏面です。指定されたJSON Schemaに従って、商品名・JANコード・電子レンジ調理手順・栄養成分・アレルギー物質を抽出してください。読み取れない項目は省略してください。'},
+          {inline_data:{mime_type:'image/jpeg',data:frontBase64}},
+          {inline_data:{mime_type:'image/jpeg',data:backBase64}}
+        ]}],
+        generationConfig:{responseMimeType:'application/json',responseSchema:GEMINI_RESPONSE_SCHEMA}
+      };
+      var response;
+      var payload;
+      var candidate;
+      var text;
+      var parsed;
+
+      if (externalController) externalController.signal.addEventListener('abort', onExternalAbort);
+      try {
+        response = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+      } catch (error) {
+        if (externalController && externalController.signal.aborted) throw Object.assign(new Error('スキャンが中止されました'), {retryable:false});
+        throw Object.assign(new Error('Gemini APIへの通信に失敗しました（タイムアウトまたはネットワークエラー）'), {retryable:true});
+      } finally {
+        clearTimeout(timeoutId);
+        if (externalController) externalController.signal.removeEventListener('abort', onExternalAbort);
+      }
+
+      if (!response.ok) {
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          try { localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY); } catch (error) {}
+        }
+        text = await response.text();
+        throw Object.assign(new Error('Gemini API error ' + response.status + ': ' + text), {retryable:response.status === 429 || response.status >= 500});
+      }
+
+      payload = await response.json();
+      candidate = payload.candidates && payload.candidates[0];
+      text = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
+      if (!text) throw Object.assign(new Error('Gemini APIから抽出結果が得られませんでした'), {retryable:true});
+      if (candidate.finishReason && candidate.finishReason !== 'STOP') throw Object.assign(new Error('Gemini APIの応答が不完全です (' + candidate.finishReason + ')'), {retryable:true});
+      try { parsed = JSON.parse(text); } catch (error) { throw Object.assign(new Error('Gemini APIの応答がJSONとして解析できませんでした'), {retryable:true}); }
+      if (!isResultSubstantial(parsed)) throw Object.assign(new Error('Gemini APIの応答に主要フィールドが含まれていません'), {retryable:true});
+      return parsed;
+    }
+
+    async function extractProductData(frontBase64, backBase64, apiKey, externalController) {
+      var attempt;
+      var lastError;
+      for (attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt += 1) {
+        if (externalController && externalController.signal.aborted) throw Object.assign(new Error('スキャンが中止されました'), {retryable:false});
+        try { return await callGeminiOnce(frontBase64, backBase64, apiKey, externalController); }
+        catch (error) {
+          lastError = error;
+          console.warn('Gemini抽出 試行' + attempt + '/' + GEMINI_MAX_ATTEMPTS + '失敗:', error.message);
+          if (attempt < GEMINI_MAX_ATTEMPTS && error.retryable !== false) {
+            await abortableDelay(GEMINI_RETRY_BASE_DELAY_MS * attempt, externalController);
+          } else break;
+        }
+      }
+      throw lastError;
+    }
+
+    function renderResult(data) {
+      var cooking = data && data.cooking_instructions;
+      var microwave = cooking && cooking.microwave;
+      var kcal = data && data.nutrition && data.nutrition.calories_kcal;
+      var allergens = data && Array.isArray(data.allergens) && data.allergens.length ? data.allergens : ['検出なし'];
+      var container = byId('res-allergens');
+
+      byId('res-name').textContent = data && data.product_name ? data.product_name : '(商品名不明)';
+      byId('res-time').textContent = (microwave && (microwave.wattage_500w || microwave.wattage_600w)) || (cooking && cooking.pan_fry) || '-';
+      byId('res-jan').textContent = data && data.gtin_jan ? data.gtin_jan : '-';
+      byId('res-cal').textContent = kcal === 0 || kcal ? kcal + ' kcal' : '-';
+      container.textContent = '';
+      allergens.forEach(function (allergen) {
+        var badge = document.createElement('span');
+        badge.className = 'allergen';
+        badge.textContent = String(allergen);
+        container.appendChild(badge);
+      });
+    }
+
+    async function processAI() {
+      var apiKey = getApiKey();
+      var myGeneration;
+      var controller;
+      var result;
+
+      if (!apiKey || !capturedFront || !capturedBack) {
+        renderResult(MOCK_RESULT);
+        navigateTo('result');
+        return;
+      }
+
+      myGeneration = scanGeneration;
+      controller = new AbortController();
+      activeAbortController = controller;
+      try {
+        result = await extractProductData(capturedFront, capturedBack, apiKey, controller);
+      } catch (error) {
+        if (myGeneration !== scanGeneration || controller.signal.aborted) return;
+        console.error('Gemini extraction failed', error);
+        window.alert('AI解析に失敗しました。モックデータを表示します。\n' + error.message);
+        result = MOCK_RESULT;
+      } finally {
+        if (activeAbortController === controller) activeAbortController = null;
+      }
+      if (myGeneration !== scanGeneration) return;
+      renderResult(result);
+      navigateTo('result');
+    }
+
+    function resetScan() {
+      currentStep = 'FRONT';
+      capturedFront = null;
+      capturedBack = null;
+      byId('flip-container').classList.remove('flipped');
+      byId('shutter').classList.remove('back-step');
+      byId('shutter').disabled = true;
+      updateUI();
+      setCameraStatus('', false);
+    }
+
+    function bindEvents() {
+      byId('new-scan-button').addEventListener('click', function () { navigateTo('scan'); });
+      byId('shutter').addEventListener('click', handleCapture);
+      byId('abort-button').addEventListener('click', function () { navigateTo('home'); });
+      byId('done-button').addEventListener('click', function () { navigateTo('home'); });
+      byId('scan-next-button').addEventListener('click', function () { navigateTo('scan'); });
+    }
+
+    function bootstrap() {
+      byId('app-version').textContent = 'Experimental Lab v' + APP_VERSION;
+      bindEvents();
+      renderResult(MOCK_RESULT);
+      console.log('SCANHUNT EXPERIMENTAL LAB', APP_VERSION);
+    }
+
+    try { bootstrap(); }
+    catch (error) { console.error('bootstrap failed', error); showFatal(error.message || String(error)); }
+  }());
+  </script>
 </body>
 </html>

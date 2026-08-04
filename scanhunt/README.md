@@ -17,9 +17,22 @@
 
 `index.html` は Google AI Studio (Gemini) で vibe coding したUIプロトタイプ。カメラで
 表→裏を連続撮影するフロー（触覚フィードバック、3Dフリップ演出、ゼロウェイティングの
-自動シャッター）のUIのみで、AI解析部分はモックデータ。
+自動シャッター）に加え、表裏それぞれのシャッター時に実フレームをcanvasでキャプチャし、
+Gemini API（`gemini-flash-latest`、マルチモーダル、`responseSchema`で下記JSON構造を指定）へ
+クライアントサイドから直接送る実装まで済んでいる。APIキーは初回のみ`prompt()`で入力し、
+ブラウザの`localStorage`にのみ保存（ソース・Notionには書かない）。キー未設定時や抽出失敗時は
+モックデータにフォールバックする。
 
-- [ ] Gemini API連携（表裏2枚の画像 → JSON構造化データ抽出）
+実写真3点（国内2点・輸入1点=Picard仏製品の日本語シール）でのGo/No-Go検証を実施し、
+**Conditional Go**と判定した。輸入品の極小日本語シールも含め成功時は非常に高精度だが、
+3回に1回程度の頻度で出力が不安定になる（無関係な内容の生成・タイムアウト・主要フィールド
+欠落）ことを確認したため、最大3回までの自動リトライ＋出力検証（JSONパース成功かつ
+cooking_instructions/nutrition/allergensのいずれかが埋まっていること）を実装済み。
+詳細はNotion「Roadmap & Epics」の `Scanhunt: Gemini API抽出精度検証` Epic（STORY-05・06）を参照。
+
+- [x] Gemini API連携（表裏2枚の画像 → JSON構造化データ抽出）
+- [x] 実際のパッケージ写真での抽出精度検証（Go/No-Go判定）— Conditional Go
+- [x] 抽出のリトライ・出力検証（不安定な出力への対策）
 - [ ] 抽出結果の永続化（マイ・レシピ帳のデータ保存）
 - [ ] JANコード重複時のフィードバックUI
 
