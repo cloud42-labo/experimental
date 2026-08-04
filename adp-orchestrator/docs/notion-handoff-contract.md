@@ -20,22 +20,37 @@ PR本文に残す。本ドキュメントが定めるのは**タスクの現在�
 | 受入条件 | `Acceptance Criteria` | 足りる |
 | 対象リポジトリ・Issue・PR | `GitHub Issue`、`Pull Request`（URLにリポジトリが含まれる） | 足りる |
 | 対象コミット | — | **表せない** |
-| 実施済み内容 | `Result` | 足りる |
+| 実施済み内容 | `Result` | **単独では不十分。** Notion Adapterが自動更新で上書きする（下記「`Result`の扱い」） |
 | 未解決P0・P1 | — | **表せない**（`Blocker`は停止理由用で、意味が違う） |
-| エラーまたは停止理由 | `Blocker` | 足りる |
+| エラーまたは停止理由 | `Blocker` | 足りる（ただしAdapterが上書きしうる） |
 | 次に実行すべき具体的な一手 | — | **表せない** |
 
 ### プロパティを追加しない理由
 
-表せない4項目のために`Stories & Tasks`へプロパティを追加することはしない。
+表せない項目のために`Stories & Tasks`へプロパティを追加することはしない。
 
 - Mission ControlのAuto集計（`Task Count Auto` / `Done Count Auto` / `Progress Auto %`）と
   Relation/Rollup構成（ADP-007）に影響が及ぶ。引継ぎのためだけにその構成をいじるのは割に合わない。
 - 「未解決P0/P1」「次の一手」は自由記述であり、select/urlのような構造化の恩恵が小さい。
 - 増やすより減らす方向で構成を保つ（[brain/CLAUDE.md](https://github.com/cloud42-labo/brain/blob/main/CLAUDE.md)の週次レビュー方針）。
 
-代わりに、**本文末尾の`## AI Handoff`ブロック1つ**で4項目をまとめて持つ。1回のページ取得で
+代わりに、**本文末尾の`## AI Handoff`ブロック1つ**で残りをまとめて持つ。1回のページ取得で
 現在地が一望でき、再開に必要な情報がプロパティと本文へ散らばらない。
+
+### `Result`の扱い — Adapterが上書きする
+
+`NOTION_TOKEN`が設定されOrchestratorのNotion Adapterが有効な場合、通常イベントのたびに
+`Result`はその時点の`RouteResult.message`だけで**置換**される（`src/adp_orchestrator/notion_adapter.py`の
+`NotionTaskRepository.record`。`Blocker`も同様）。したがって`Result`へ経緯を積み上げても、
+次の自動遷移で消える。
+
+**`Result`は「最新の一言」を持つ揮発フィールドとして扱い、再開時に信頼する情報源にしない。**
+消えて困る経緯は次のいずれかへ残す。
+
+- **`## AI Handoff`ブロック（本文）** — Adapterはページの`properties`しか更新せず、本文ブロックには触らない。
+  引継ぎの正本はこちら。
+- **PR本文・PRコメント・コミットメッセージ** — 役割間の受け渡しの記録（[claude-role-separation.md](claude-role-separation.md)）。
+- **[brain](https://github.com/cloud42-labo/brain)** — 恒久的な決定・教訓。
 
 ## 本文テンプレート（`## AI Handoff`ブロック）
 
@@ -44,21 +59,42 @@ PR本文に残す。本ドキュメントが定めるのは**タスクの現在�
 ```yaml
 ## AI Handoff
 
-updated_at: <YYYY-MM-DD、更新した日>
+updated_at: <ISO-8601のUTCタイムスタンプ。秒まで書く。例 2026-08-04T07:20:31Z>
 updated_by: <claude-pm | claude-implementer | claude-reviewer | claude-fixer | chatgpt-backup | human>
 current_role: <pm | implementer | reviewer | fixer | none>
 workflow_id: <実行を識別する値。Slack起動ならthread_ts、直接起動ならセッションid。claude-role-separation.mdと同じ>
 attempt: <この受入条件に対する実行回数。1から。claude-role-separation.mdのattempt lifecycleに従う>
 commits:
-  - <コミットURLまたはSHA。無ければ空>
-open_p0_p1:
-  - <未解決のP0/P1。無ければ「なし」と明記する>
+  - <コミットURLまたはSHA。無ければ空リスト []>
+open_p0_p1: <未解決のP0/P1。無ければ空リスト []。フィールド自体の省略は禁止>
 next_action: <次に実行する具体的な一手。「レビュー待ち」で終えず、誰が何をするかまで書く>
 requires_human: <true | false。trueなら理由をBlockerにも書く>
 ```
 
-`Status`・`Acceptance Criteria`・`Result`・`Blocker`・`GitHub Issue`・`Pull Request`は
-**プロパティ側が正**とし、このブロックには複製しない（二重管理を避ける）。
+`Status`・`Acceptance Criteria`・`GitHub Issue`・`Pull Request`は**プロパティ側が正**とし、
+このブロックには複製しない（二重管理を避ける）。`Result`・`Blocker`はAdapterが上書きしうるため、
+再開時に必要な内容はこのブロック側にも持つ。
+
+### 同一タスクに対する並行workflow
+
+[claude-role-separation.md](claude-role-separation.md)は同一`task_id`に対して複数の`workflow_id`が
+存在しうることを許容する（attempt履歴を区別するため）。一方、Notionページの`## AI Handoff`ブロックは
+1タスクに1つしかない。そのまま上書きを許すと、先行するworkflowの現在地を古い状態で潰しうる。
+
+**原則: 同一`task_id`に対して同時にactiveなworkflowは1つとする。** 引継ぎがNotionページ1つに
+集約される以上、並行実行は引継ぎとして表現できない。
+
+上書き前に、**必ず既存ブロックを読んでから書く**（read-before-write）。
+
+| 既存ブロックの状態 | 対応 |
+|---|---|
+| `workflow_id`が自分と同じ | そのまま上書きしてよい |
+| ブロックが無い | 新規に書いてよい |
+| `workflow_id`が自分と異なり、`updated_at`が自分の開始時刻より**古い** | 先行workflowは終了済みとみなし、上書きしてよい |
+| `workflow_id`が自分と異なり、`updated_at`が自分の開始時刻より**新しい** | **上書きしない。** 別のworkflowが同じタスクを進行中。`requires_human: true`として停止し、どちらを継続するかオーナーへ確認する |
+
+`updated_at`を秒精度のUTCタイムスタンプにしているのはこの判定のため。日付だけでは同日中の
+前後関係を判定できない。
 
 ## 記入規則
 
@@ -66,9 +102,10 @@ requires_human: <true | false。trueなら理由をBlockerにも書く>
   Implementer/Reviewer/FixerはPR本文へ引継ぎを残し、Notionへの反映はPMが行う。
 - **`next_action`を空欄・「レビュー待ち」だけで終えない。** 再開する側が最初の一手を判断できなければ
   引継ぎとして機能しない。「Chrisのマージを待つ。マージされたらStatusをDoneにし、HUMAN-xx-1へ実機確認を依頼する」まで書く。
-- **`open_p0_p1`は「なし」を省略しない。** 空欄は「未解決が無い」のか「確認していない」のか区別できない。
+- **`open_p0_p1`のフィールド自体を省略しない。** 未解決が無いときは空リスト`[]`と書く。
+  フィールドが無ければ「まだ確認していない」と解釈する。
 - **PRを作った時点で必ず1回更新する。** PR作成からマージまでの間が、他エージェントが引き継ぐ可能性の最も高い区間。
-- **`Result`は経緯を残す（追記）、`AI Handoff`は現在地を示す（上書き）。** 役割が違うので両方書く。
+- **書く前に既存ブロックを読む。** 上表のworkflow競合判定を行う。
 
 ## 再開手順（Claude / ChatGPT 共通）
 
@@ -77,10 +114,12 @@ requires_human: <true | false。trueなら理由をBlockerにも書く>
 1. `Title`からTask IDと対象を、本文冒頭から目的を読む。
 2. `Acceptance Criteria`で「何をもって完了か」を確認する。
 3. `Status`と`## AI Handoff`の`current_role`で現在工程を特定する。
-4. `Result`で実施済み内容を、`Blocker`で停止理由を読む。
+4. `## AI Handoff`で実施済みの経緯と現在地を読む。`Result`・`Blocker`は
+   Adapterに上書きされている可能性があるため、補助的な情報として扱う。
 5. `GitHub Issue` / `Pull Request` / `commits`で成果物の実体を確認する。
    **記録と実体が食い違う場合は実体を正とし、記録を直してから進む**（記録は数時間で陳腐化する）。
-6. `open_p0_p1`が空でなければ、それを片付けることを最優先にする。
+6. `open_p0_p1`が空リストでなければ、そこに挙がっている指摘を片付けることを最優先にする。
+   空リストなら次へ進む。フィールドが無い場合は「未確認」とみなし、PR上のレビュー状態を自分で確認する。
 7. `next_action`を実行する。`requires_human: true`なら、実行せずオーナーへ確認する。
 
 ChatGPTがバックアップとして入る場合も手順は同じ。Claude固有の前提（Claude Codeのセッション、
@@ -92,15 +131,14 @@ ChatGPTがバックアップとして入る場合も手順は同じ。Claude固�
 ```yaml
 ## AI Handoff
 
-updated_at: 2026-08-04
+updated_at: 2026-08-04T07:20:31Z
 updated_by: claude-pm
 current_role: none
 workflow_id: session_01HvemhQPLFL33FBFF6GYUf5
 attempt: 1
 commits:
   - https://github.com/cloud42-labo/experimental/commit/0432626
-open_p0_p1:
-  - なし（Codexレビュー4件はすべて対応・スレッド解決済み）
+open_p0_p1: []
 next_action: Chrisのマージを待つ。マージされたらStatusをDoneへ更新し、実機確認が必要な変更のためHUMAN-06-1へ確認を依頼する。
 requires_human: false
 ```
