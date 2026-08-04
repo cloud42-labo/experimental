@@ -126,7 +126,7 @@
   (function () {
     'use strict';
 
-    var APP_VERSION = '0.3.2';
+    var APP_VERSION = '0.3.3';
     var GEMINI_MODEL = 'gemini-flash-latest';
     var GEMINI_API_KEY_STORAGE_KEY = 'scanhunt_gemini_api_key';
     var GEMINI_MAX_ATTEMPTS = 3;
@@ -137,6 +137,7 @@
     var capturedFront = null;
     var capturedBack = null;
     var currentStream = null;
+    var cameraGeneration = 0;
     var scanGeneration = 0;
     var activeAbortController = null;
     var retryTimer = null;
@@ -192,7 +193,7 @@
       var target = byId('page-' + pageId);
       if (!target) throw new Error('Unknown page: ' + pageId);
 
-      if (pageId !== 'scan') stopCamera();
+      stopCamera();
       if (pageId === 'home' || pageId === 'scan') cancelActiveAnalysis();
 
       for (i = 0; i < pages.length; i += 1) pages[i].classList.remove('active');
@@ -222,6 +223,11 @@
       var ready = cameraReady(byId('v1'));
       byId('shutter').disabled = !ready;
       if (ready) setCameraStatus('カメラ準備完了', false);
+    }
+
+    function stopStream(stream) {
+      if (!stream) return;
+      stream.getTracks().forEach(function (track) { track.stop(); });
     }
 
     function attachStream(video, stream) {
@@ -261,6 +267,8 @@
 
     async function initCamera() {
       var stream;
+      var myCameraGeneration = cameraGeneration + 1;
+      cameraGeneration = myCameraGeneration;
       byId('shutter').disabled = true;
       setCameraStatus('カメラを起動しています…', false);
 
@@ -275,14 +283,23 @@
 
       try {
         stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1080}},audio:false});
-        if (!byId('page-scan').classList.contains('active')) {
-          stream.getTracks().forEach(function (track) { track.stop(); });
+        if (myCameraGeneration !== cameraGeneration || !byId('page-scan').classList.contains('active')) {
+          stopStream(stream);
           return;
         }
         currentStream = stream;
         await Promise.all([attachStream(byId('v1'), stream), attachStream(byId('v2'), stream)]);
+        if (myCameraGeneration !== cameraGeneration || currentStream !== stream || !byId('page-scan').classList.contains('active')) {
+          if (currentStream === stream) currentStream = null;
+          stopStream(stream);
+          return;
+        }
         updateShutterAvailability();
       } catch (error) {
+        if (myCameraGeneration !== cameraGeneration) {
+          stopStream(stream);
+          return;
+        }
         console.error('initCamera failed', error);
         stopCamera();
         var name = error && error.name ? error.name : '';
@@ -295,8 +312,9 @@
     }
 
     function stopCamera() {
+      cameraGeneration += 1;
       if (currentStream) {
-        currentStream.getTracks().forEach(function (track) { track.stop(); });
+        stopStream(currentStream);
         currentStream = null;
       }
       ['v1','v2'].forEach(function (id) {
