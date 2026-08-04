@@ -171,6 +171,11 @@
         let currentStep = 'FRONT';
         let capturedFront = null;
         let capturedBack = null;
+        // Bumped whenever the user leaves an in-flight analysis (Abort Mission / new scan).
+        // processAI() checks this after awaiting Gemini so a late/aborted response can't
+        // hijack the UI back to the result screen.
+        let scanGeneration = 0;
+        let activeAbortController = null;
         const state = {
             FRONT: { text: "Step 1: Front (Product Identity)", color: "text-blue-400", shutter: "bg-white" },
             BACK: { text: "Step 2: Back (Nutrition/JAN)", color: "text-orange-400", shutter: "bg-orange-500" }
@@ -182,6 +187,9 @@
             if (current && current.id === 'page-scan' && pageId !== 'scan') {
                 stopCamera();
             }
+            if (pageId === 'home' || pageId === 'scan') {
+                cancelActiveAnalysis();
+            }
 
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
@@ -189,6 +197,13 @@
             if(pageId === 'scan') {
                 resetScan();
                 initCamera();
+            }
+        }
+
+        function cancelActiveAnalysis() {
+            scanGeneration++;
+            if (activeAbortController) {
+                activeAbortController.abort();
             }
         }
 
@@ -218,25 +233,42 @@
         }
 
         // --- Frame Capture ---
+        // Returns null (instead of an empty/garbage frame) if the video has no current
+        // image yet — e.g. shutter tapped before getUserMedia resolves, before
+        // loadedmetadata fires, or after camera permission was denied.
         function captureFrame(videoEl) {
+            if (!videoEl.videoWidth || !videoEl.videoHeight || videoEl.readyState < videoEl.HAVE_CURRENT_DATA) {
+                return null;
+            }
             const canvas = document.createElement('canvas');
-            canvas.width = videoEl.videoWidth || 1080;
-            canvas.height = videoEl.videoHeight || 1440;
-            canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            canvas.width = videoEl.videoWidth;
+            canvas.height = videoEl.videoHeight;
+            try {
+                canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            } catch (e) {
+                console.error('captureFrame failed', e);
+                return null;
+            }
             return canvas.toDataURL('image/jpeg', 0.85).split(',')[1]; // base64, no data: prefix
         }
 
         // --- Scanning Sequence ---
         function handleCapture() {
+            const frame = captureFrame(document.getElementById('v1'));
+            if (!frame) {
+                alert('カメラの映像がまだ準備できていません。少し待ってからもう一度お試しください。');
+                return;
+            }
+
             if(navigator.vibrate) navigator.vibrate(60);
 
             if (currentStep === 'FRONT') {
-                capturedFront = captureFrame(document.getElementById('v1'));
+                capturedFront = frame;
                 currentStep = 'BACK';
                 document.getElementById('flip-container').classList.add('flipped');
                 updateUI();
             } else {
-                capturedBack = captureFrame(document.getElementById('v1'));
+                capturedBack = frame;
                 processAI();
             }
         }
@@ -308,7 +340,7 @@
             return hasCooking || hasNutrition || hasAllergens;
         }
 
-        async function callGeminiOnce(frontBase64, backBase64, apiKey) {
+        async function callGeminiOnce(frontBase64, backBase64, apiKey, externalController) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
             const body = {
                 contents: [{
@@ -324,8 +356,12 @@
                 }
             };
 
+            // Combine the per-request timeout with the caller's abort (Abort Mission / new scan)
+            // by relaying the external signal onto a local controller.
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), GEMINI_REQUEST_TIMEOUT_MS);
+            const onExternalAbort = () => controller.abort();
+            if (externalController) externalController.signal.addEventListener('abort', onExternalAbort);
 
             let res;
             try {
@@ -335,8 +371,14 @@
                     body: JSON.stringify(body),
                     signal: controller.signal
                 });
+            } catch (e) {
+                if (externalController?.signal.aborted) {
+                    throw Object.assign(new Error('スキャンが中止されました'), { retryable: false });
+                }
+                throw Object.assign(new Error('Gemini APIへの通信に失敗しました（タイムアウトまたはネットワークエラー）'), { retryable: true });
             } finally {
                 clearTimeout(timeoutId);
+                if (externalController) externalController.signal.removeEventListener('abort', onExternalAbort);
             }
 
             if (!res.ok) {
@@ -373,11 +415,14 @@
             return parsed;
         }
 
-        async function extractProductData(frontBase64, backBase64, apiKey) {
+        async function extractProductData(frontBase64, backBase64, apiKey, externalController) {
             let lastError;
             for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
+                if (externalController?.signal.aborted) {
+                    throw Object.assign(new Error('スキャンが中止されました'), { retryable: false });
+                }
                 try {
-                    return await callGeminiOnce(frontBase64, backBase64, apiKey);
+                    return await callGeminiOnce(frontBase64, backBase64, apiKey, externalController);
                 } catch (e) {
                     lastError = e;
                     console.warn(`Gemini抽出 試行${attempt}/${GEMINI_MAX_ATTEMPTS}失敗:`, e.message);
@@ -412,10 +457,17 @@
             document.getElementById('res-cal').innerText = (kcal || kcal === 0) ? `${kcal} kcal` : '-';
 
             const algContainer = document.getElementById('res-allergens');
+            algContainer.innerHTML = '';
             const allergens = (data.allergens && data.allergens.length) ? data.allergens : ['検出なし'];
-            algContainer.innerHTML = allergens.map(a =>
-                `<span class="bg-red-900/40 text-red-400 border border-red-500/30 px-3 py-1 rounded-full">${a}</span>`
-            ).join('');
+            // Gemini output is untrusted (OCR misreads, hallucination, or a maliciously
+            // crafted package label could contain markup). Build badges via the DOM API
+            // and set text with textContent so it can never be parsed as HTML/script.
+            allergens.forEach(a => {
+                const badge = document.createElement('span');
+                badge.className = 'bg-red-900/40 text-red-400 border border-red-500/30 px-3 py-1 rounded-full';
+                badge.textContent = a;
+                algContainer.appendChild(badge);
+            });
         }
 
         async function processAI() {
@@ -427,13 +479,33 @@
                 return;
             }
 
+            const myGeneration = scanGeneration;
+            const controller = new AbortController();
+            activeAbortController = controller;
+
+            let result = null;
+            let failed = false;
+            let failureMessage = '';
+
             try {
-                const result = await extractProductData(capturedFront, capturedBack, apiKey);
-                renderResult(result);
+                result = await extractProductData(capturedFront, capturedBack, apiKey, controller);
             } catch (e) {
+                failed = true;
+                failureMessage = e.message;
                 console.error('Gemini extraction failed', e);
-                alert('AI解析に失敗しました。モックデータを表示します。\n' + e.message);
+            } finally {
+                if (activeAbortController === controller) activeAbortController = null;
+            }
+
+            // Abort Mission や次のスキャン開始で世代が進んでいたら、
+            // 遅れて届いた結果で画面を上書きしない。
+            if (myGeneration !== scanGeneration) return;
+
+            if (failed) {
+                alert('AI解析に失敗しました。モックデータを表示します。\n' + failureMessage);
                 renderResult(MOCK_RESULT);
+            } else {
+                renderResult(result);
             }
 
             nav('result');
