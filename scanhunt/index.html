@@ -126,7 +126,7 @@
   (function () {
     'use strict';
 
-    var APP_VERSION = '0.3.1';
+    var APP_VERSION = '0.3.2';
     var GEMINI_MODEL = 'gemini-flash-latest';
     var GEMINI_API_KEY_STORAGE_KEY = 'scanhunt_gemini_api_key';
     var GEMINI_MAX_ATTEMPTS = 3;
@@ -249,7 +249,12 @@
         video.addEventListener('error', onError);
         video.srcObject = stream;
         var playPromise = video.play();
-        if (playPromise && typeof playPromise.catch === 'function') playPromise.catch(function () {});
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(function (error) {
+            console.error('video.play failed', error);
+            onError();
+          });
+        }
         if (cameraReady(video)) onReady();
       });
     }
