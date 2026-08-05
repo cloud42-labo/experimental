@@ -109,7 +109,7 @@
         <div class="card glass">
           <p class="validated">Validated Product</p>
           <h2 id="res-name">海鮮ちゃんぽん</h2>
-          <div class="cook"><div class="cook-head"><span>Microwave Instructions</span><span>500W</span></div><p id="res-time">5分30秒</p></div>
+          <div class="cook"><div class="cook-head"><span id="res-cook-label">Microwave Instructions</span><span id="res-cook-unit">500W</span></div><p id="res-time">5分30秒</p></div>
         </div>
         <div class="detail-grid">
           <div class="detail glass"><p>GTIN / JAN</p><p id="res-jan">4902105109885</p></div>
@@ -126,7 +126,7 @@
   (function () {
     'use strict';
 
-    var APP_VERSION = '0.3.3';
+    var APP_VERSION = '0.3.4';
     var GEMINI_MODEL = 'gemini-flash-latest';
     var GEMINI_API_KEY_STORAGE_KEY = 'scanhunt_gemini_api_key';
     var GEMINI_MAX_ATTEMPTS = 3;
@@ -477,15 +477,28 @@
       throw lastError;
     }
 
+    function pickCookMethod(cooking) {
+      var microwave = cooking && cooking.microwave;
+      if (microwave && microwave.wattage_500w) return {label:'Microwave Instructions', unit:'500W', time:microwave.wattage_500w};
+      if (microwave && microwave.wattage_600w) return {label:'Microwave Instructions', unit:'600W', time:microwave.wattage_600w};
+      if (cooking && cooking.pan_fry) return {label:'Pan-Fry Instructions', unit:'', time:cooking.pan_fry};
+      if (cooking && cooking.other_notes) return {label:'Cooking Instructions', unit:'', time:cooking.other_notes};
+      return {label:'Cooking Instructions', unit:'', time:'-'};
+    }
+
     function renderResult(data) {
       var cooking = data && data.cooking_instructions;
-      var microwave = cooking && cooking.microwave;
+      var method = pickCookMethod(cooking);
       var kcal = data && data.nutrition && data.nutrition.calories_kcal;
       var allergens = data && Array.isArray(data.allergens) && data.allergens.length ? data.allergens : ['検出なし'];
       var container = byId('res-allergens');
+      var unitEl = byId('res-cook-unit');
 
       byId('res-name').textContent = data && data.product_name ? data.product_name : '(商品名不明)';
-      byId('res-time').textContent = (microwave && (microwave.wattage_500w || microwave.wattage_600w)) || (cooking && cooking.pan_fry) || '-';
+      byId('res-cook-label').textContent = method.label;
+      unitEl.textContent = method.unit;
+      unitEl.style.display = method.unit ? '' : 'none';
+      byId('res-time').textContent = method.time;
       byId('res-jan').textContent = data && data.gtin_jan ? data.gtin_jan : '-';
       byId('res-cal').textContent = kcal === 0 || kcal ? kcal + ' kcal' : '-';
       container.textContent = '';
