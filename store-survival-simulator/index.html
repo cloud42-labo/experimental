@@ -225,8 +225,9 @@
     <p class="note" style="margin-bottom:12px;font-size:12px;line-height:1.7;">
       開始すると、指定した店舗周辺の地域メッシュ統計（1kmメッシュ、令和2年・平成27年国勢調査）を
       あなた自身の e-Stat アプリケーションID（APIキー）でその場から取得します。
-      キーはこのページを開いている間、ブラウザのメモリ上でのみ保持され、e-Stat の公式APIへ
-      送信する以外の用途には使いません。リロードすると再入力が必要です。
+      キーはこのブラウザの localStorage にのみ保存され、次回以降は自動で入力されます。
+      e-Stat の公式APIへ送信する以外の用途には使わず、配布ファイルやサーバーには一切含まれません。
+      研修等で共有・貸与PCを使う場合は、下の「保存したキーを削除」で消してから返却してください。
     </p>
     <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">店舗の場所</label>
     <div style="display:flex;gap:8px;margin-bottom:6px;">
@@ -241,7 +242,11 @@
       <button id="toggleAppIdVisible" type="button"
         style="font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;">表示</button>
     </div>
-    <div class="note" style="margin-bottom:14px;">未発行の場合は e-Stat マイページ（www.e-stat.go.jp）からアプリケーションIDを取得してください。</div>
+    <div class="note" style="margin-bottom:14px;">
+      未発行の場合は e-Stat マイページ（www.e-stat.go.jp）からアプリケーションIDを取得してください。
+      <button id="clearSavedAppId" type="button"
+        style="font-size:12px;padding:0;border:none;background:transparent;color:var(--text-secondary);text-decoration:underline;cursor:pointer;">保存したキーを削除</button>
+    </div>
     <div style="border-top:1px solid var(--gridline);margin:14px 0 12px;padding-top:14px;">
       <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">業種</label>
       <div class="biz-grid" id="setupBizGrid" style="margin-bottom:6px;"></div>
@@ -439,10 +444,11 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.9.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.10.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
-let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
+let ESTAT_APP_ID = null;  // 実行中はJS変数として保持。ブラウザを閉じた後の永続化はlocalStorage側（下記）が担う
+const ESTAT_APP_ID_STORAGE_KEY = "storeSurvivalSim.eStatAppId"; // このブラウザのlocalStorageのみ。配布ファイルへの埋め込みやサーバー送信はしない
 
 /* ---------- live data loading (JIS地域メッシュ統計を e-Stat から取得、全国対応) ----------
    町丁目境界ポリゴンはCORSでライブ取得できない(README/design-doc参照)ため、代わりに
@@ -1942,6 +1948,7 @@ async function loadRealData(appId, storeLat, storeLng) {
   /* ---------- setup screen: 店舗座標・e-Statキー入力 → ライブデータ取得 → ゲーム開始 ---------- */
   const appIdInput = document.getElementById("appIdInput");
   const toggleAppIdVisible = document.getElementById("toggleAppIdVisible");
+  const clearSavedAppId = document.getElementById("clearSavedAppId");
   const storeLocationInput = document.getElementById("storeLocationInput");
   const storeLocationStatus = document.getElementById("storeLocationStatus");
   const setupBizStatus = document.getElementById("setupBizStatus");
@@ -1958,6 +1965,28 @@ async function loadRealData(appId, storeLat, storeLng) {
     const showing = appIdInput.type === "text";
     appIdInput.type = showing ? "password" : "text";
     toggleAppIdVisible.textContent = showing ? "表示" : "隠す";
+  });
+
+  // e-Statキーの永続化はこのブラウザのlocalStorageのみに限定する（配布ファイル・サーバーには一切含めない）。
+  // プライベートブラウジング等でlocalStorageへのアクセスが例外を投げる環境でも、キー入力自体は
+  // 従来どおり動作させたいため、読み書きはすべてtry/catchで包み失敗時は無言でメモリ保持のみに留める。
+  try {
+    const savedAppId = localStorage.getItem(ESTAT_APP_ID_STORAGE_KEY);
+    if (savedAppId) appIdInput.value = savedAppId;
+  } catch (e) { /* noop */ }
+
+  appIdInput.addEventListener("input", () => {
+    const trimmed = appIdInput.value.trim();
+    try {
+      if (trimmed) localStorage.setItem(ESTAT_APP_ID_STORAGE_KEY, trimmed);
+      else localStorage.removeItem(ESTAT_APP_ID_STORAGE_KEY);
+    } catch (e) { /* noop */ }
+  });
+
+  clearSavedAppId.addEventListener("click", () => {
+    try { localStorage.removeItem(ESTAT_APP_ID_STORAGE_KEY); } catch (e) { /* noop */ }
+    appIdInput.value = "";
+    appIdInput.focus();
   });
 
   function nonNegNumber(raw) {
