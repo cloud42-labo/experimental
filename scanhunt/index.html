@@ -63,6 +63,10 @@
     .detail { padding:1.25rem; border-radius:2rem; }
     .detail p:first-child, .allergen-title { margin:0 0 .5rem; color:#64748b; font-size:.58rem; font-weight:900; text-transform:uppercase; }
     .detail p:last-child { margin:0; font:700 .75rem 'JetBrains Mono',monospace; }
+    .detail p.detail-value { margin:0; font:700 .75rem 'JetBrains Mono',monospace; }
+    /* 栄養値の基準（100gあたり等）。値と必ず同じカードに出す。 */
+    .detail p.detail-basis { margin:.35rem 0 0; font:700 .55rem/1.35 'JetBrains Mono',monospace; color:#94a3b8; text-transform:none; }
+    .detail p.detail-basis.unknown { color:#fbbf24; }
     #res-jan { color:#60a5fa; }
     #res-allergens { display:flex; flex-wrap:wrap; gap:.5rem; }
     .allergen { background:rgba(127,29,29,.45); color:#f87171; border:1px solid rgba(239,68,68,.3); padding:.3rem .7rem; border-radius:999px; font-size:.6rem; font-weight:900; text-transform:uppercase; }
@@ -165,7 +169,7 @@
         </div>
         <div class="detail-grid">
           <div class="detail glass"><p>GTIN / JAN</p><p id="res-jan">4902105109885</p></div>
-          <div class="detail glass"><p>Health Log</p><p id="res-cal">452 kcal</p></div>
+          <div class="detail glass"><p>Health Log</p><p id="res-cal" class="detail-value">452 kcal</p><p id="res-cal-basis" class="detail-basis">1包装あたり</p></div>
         </div>
         <div class="card glass"><p class="allergen-title">Allergens Detected</p><div id="res-allergens"></div></div>
       </div>
@@ -178,7 +182,7 @@
   (function () {
     'use strict';
 
-    var APP_VERSION = '0.4.0';
+    var APP_VERSION = '0.4.1';
     var GEMINI_MODEL = 'gemini-flash-latest';
     var GEMINI_API_KEY_STORAGE_KEY = 'scanhunt_gemini_api_key';
     var GEMINI_MAX_ATTEMPTS = 3;
@@ -600,14 +604,18 @@
       return key;
     }
 
+    // 「リトライを打ち切ってよいだけの中身があるか」を判定する。
+    // 結果画面に出るもの（調理・栄養・アレルゲン）だけを成功条件にする。
+    // ingredients_text は結果画面に表示しないため、ここに入れると
+    // 商品名＋原材料だけの不安定な応答で3回リトライが打ち切られ、
+    // ユーザーには実質空の結果が出てしまう。表示するようになるまで入れない。
     function isResultSubstantial(data) {
       var hasCooking = availableCookMethods(data).length > 0;
       var hasNutrition = ['calories_kcal','protein_g','fat_g','carbs_g','salt_equivalent_g'].some(function (field) {
         return typeof (data && data[field]) === 'number';
       });
       var hasAllergens = collectAllergens(data).length > 0;
-      var hasIngredients = Boolean(textValue(data && data.ingredients_text));
-      return hasCooking || hasNutrition || hasAllergens || hasIngredients;
+      return hasCooking || hasNutrition || hasAllergens;
     }
 
     function abortableDelay(ms, controller) {
@@ -721,6 +729,35 @@
       return typeof value === 'string' ? value.trim() : '';
     }
 
+    var NUTRITION_BASIS_LABELS = {
+      per_100g:'100gあたり',
+      per_100ml:'100mlあたり',
+      per_serving:'1食あたり',
+      per_package:'1包装あたり'
+    };
+
+    // 栄養値は基準（100gあたり／1食あたり／1包装あたり）とセットでなければ意味を持たない。
+    // 同じ「200 kcal」でも基準が違えば別物なので、基準が読み取れていないときは
+    // 数値だけを黙って見せず「基準不明」と明示する（SH-01-S03で決めた不変条件）。
+    function nutritionSummary(data) {
+      var kcal = data && data.calories_kcal;
+      var basisKey = textValue(data && data.nutrition_basis);
+      var basisLabel = NUTRITION_BASIS_LABELS[basisKey] || '';
+      var amount = data && data.nutrition_basis_amount;
+      var serving = textValue(data && data.serving_size);
+
+      if (typeof kcal !== 'number' || !isFinite(kcal)) return {value:'-', basis:'', known:false};
+      if (!basisLabel) return {value:kcal + ' kcal', basis:'基準不明', known:false};
+      // per_100g / per_100ml は基準量がラベルに含まれているので付け足さない。
+      if ((basisKey === 'per_serving' || basisKey === 'per_package') && typeof amount === 'number' && isFinite(amount)) {
+        return {value:kcal + ' kcal', basis:basisLabel + '（' + amount + 'g）', known:true};
+      }
+      if (basisKey === 'per_serving' && serving) {
+        return {value:kcal + ' kcal', basis:basisLabel + '（' + serving + '）', known:true};
+      }
+      return {value:kcal + ' kcal', basis:basisLabel, known:true};
+    }
+
     // 値が入っている調理手順だけを、方式定義の順に並べて返す。
     function availableCookMethods(data) {
       var found = [];
@@ -808,6 +845,65 @@
       }
     ];
 
+    // 栄養値と基準の併記。PR #74 のCodexレビューP1「200 kcal だけでは
+    // 100gあたりか1食あたりか区別できない」に対する回帰ケース。
+    var NUTRITION_TEST_CASES = [
+      {
+        name:'100gあたり: 基準を併記する',
+        data:{calories_kcal:200, nutrition_basis:'per_100g'},
+        expect:{value:'200 kcal', basis:'100gあたり', known:true}
+      },
+      {
+        name:'1食あたり: 基準量(g)も併記する',
+        data:{calories_kcal:320, nutrition_basis:'per_serving', nutrition_basis_amount:70},
+        expect:{value:'320 kcal', basis:'1食あたり（70g）', known:true}
+      },
+      {
+        name:'1食あたり: 基準量が無ければ serving_size を使う',
+        data:{calories_kcal:320, nutrition_basis:'per_serving', serving_size:'1袋(冷凍時180g)'},
+        expect:{value:'320 kcal', basis:'1食あたり（1袋(冷凍時180g)）', known:true}
+      },
+      {
+        name:'基準が読み取れていない: 数値だけを黙って見せない',
+        data:{calories_kcal:200},
+        expect:{value:'200 kcal', basis:'基準不明', known:false}
+      },
+      {
+        name:'基準の値が想定外: 基準不明として扱う',
+        data:{calories_kcal:200, nutrition_basis:'per_bowl'},
+        expect:{value:'200 kcal', basis:'基準不明', known:false}
+      },
+      {
+        name:'0 kcal も値として扱う',
+        data:{calories_kcal:0, nutrition_basis:'per_package'},
+        expect:{value:'0 kcal', basis:'1包装あたり', known:true}
+      },
+      {
+        name:'栄養値が無い: 基準行も出さない',
+        data:{product_name:'なにか'},
+        expect:{value:'-', basis:'', known:false}
+      }
+    ];
+
+    // リトライ打ち切り判定。同じくCodexレビューP1「原材料だけの応答でも
+    // 成功扱いになり、実質空の結果が出る」に対する回帰ケース。
+    var SUBSTANTIAL_TEST_CASES = [
+      {
+        name:'原材料だけ: 成功にしない（リトライさせる）',
+        data:{product_name:'なにか', ingredients_text:'小麦粉、砂糖、植物油脂'},
+        expect:false
+      },
+      {name:'商品名だけ: 成功にしない', data:{product_name:'なにか'}, expect:false},
+      {name:'調理手順がある: 成功', data:{product_name:'なにか', cooking_microwave_500w:'5分30秒'}, expect:true},
+      {name:'栄養値がある: 成功', data:{product_name:'なにか', calories_kcal:200, nutrition_basis:'per_100g'}, expect:true},
+      {name:'アレルゲンがある: 成功', data:{product_name:'なにか', allergens_mandatory:['小麦']}, expect:true},
+      {
+        name:'原材料＋アレルゲン: アレルゲン側で成功',
+        data:{product_name:'なにか', ingredients_text:'小麦粉', allergens_mandatory:['小麦']},
+        expect:true
+      }
+    ];
+
     function runCookMethodSelfTest() {
       return COOK_TEST_CASES.map(function (testCase) {
         var actual = pickCookMethod(testCase.data);
@@ -821,33 +917,72 @@
       });
     }
 
+    function runNutritionSelfTest() {
+      return NUTRITION_TEST_CASES.map(function (testCase) {
+        var actual = nutritionSummary(testCase.data);
+        var failures = [];
+        if (actual.value !== testCase.expect.value) failures.push('value=' + actual.value);
+        if (actual.basis !== testCase.expect.basis) failures.push('basis=' + (actual.basis || '(なし)'));
+        if (actual.known !== testCase.expect.known) failures.push('known=' + actual.known);
+        return {name:testCase.name, ok:failures.length === 0, detail:failures.join(' ')};
+      });
+    }
+
+    function runSubstantialSelfTest() {
+      return SUBSTANTIAL_TEST_CASES.map(function (testCase) {
+        var actual = isResultSubstantial(testCase.data);
+        var ok = actual === testCase.expect;
+        return {name:testCase.name, ok:ok, detail:ok ? '' : 'substantial=' + actual};
+      });
+    }
+
+    function runAllSelfTests() {
+      return [
+        {suite:'pickCookMethod', results:runCookMethodSelfTest()},
+        {suite:'nutritionSummary', results:runNutritionSelfTest()},
+        {suite:'isResultSubstantial', results:runSubstantialSelfTest()}
+      ];
+    }
+
     // ?selftest=1 のときだけ内部関数を公開する。カメラとAPIキーが無くても
     // 結果画面・解析中画面を実機のブラウザで確認できるようにするため（SH-03-S05の実機確認用）。
     function exposeTestHooks() {
       window.scanhuntTest = {
         renderResult: renderResult,
         pickCookMethod: pickCookMethod,
+        nutritionSummary: nutritionSummary,
+        isResultSubstantial: isResultSubstantial,
         navigateTo: navigateTo,
         startAnalyzingUI: startAnalyzingUI,
         showAnalyzingError: showAnalyzingError,
-        runCookMethodSelfTest: runCookMethodSelfTest
+        runCookMethodSelfTest: runCookMethodSelfTest,
+        runNutritionSelfTest: runNutritionSelfTest,
+        runSubstantialSelfTest: runSubstantialSelfTest,
+        runAllSelfTests: runAllSelfTests
       };
     }
 
     function showSelfTestReport() {
-      var results = runCookMethodSelfTest();
-      var passed = results.filter(function (r) { return r.ok; }).length;
+      var suites = runAllSelfTests();
+      var all = suites.reduce(function (acc, suite) { return acc.concat(suite.results); }, []);
+      var passed = all.filter(function (r) { return r.ok; }).length;
       var box = document.createElement('pre');
       box.style.cssText = 'position:fixed;inset:1rem;z-index:200;overflow:auto;margin:0;padding:1rem;'
         + 'background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:.75rem;'
         + 'font:500 .7rem/1.6 monospace;white-space:pre-wrap;';
-      box.textContent = 'pickCookMethod self test: ' + passed + '/' + results.length + ' passed\n'
+      box.textContent = 'scanhunt self test: ' + passed + '/' + all.length + ' passed\n'
         + '(タップで閉じる)\n\n'
-        + results.map(function (r) { return (r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.detail ? '\n      ' + r.detail : ''); }).join('\n');
+        + suites.map(function (suite) {
+          var suitePassed = suite.results.filter(function (r) { return r.ok; }).length;
+          return '[' + suite.suite + '] ' + suitePassed + '/' + suite.results.length + '\n'
+            + suite.results.map(function (r) {
+              return (r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.detail ? '\n      ' + r.detail : '');
+            }).join('\n');
+        }).join('\n\n');
       // アプリ本体を覆ったままにしない。実機ではこれを閉じてUIを触る。
       box.addEventListener('click', function () { box.remove(); });
       document.body.appendChild(box);
-      console.log('[scanhunt] self test', passed + '/' + results.length, results);
+      console.log('[scanhunt] self test', passed + '/' + all.length, suites);
     }
 
     function collectAllergens(data) {
@@ -865,12 +1000,13 @@
 
     function renderResult(data) {
       var method = pickCookMethod(data);
-      var kcal = data && data.calories_kcal;
+      var nutrition = nutritionSummary(data);
       var allergens = collectAllergens(data);
       var container = byId('res-allergens');
       var unitEl = byId('res-cook-unit');
       var othersEl = byId('res-cook-others');
       var noteEl = byId('res-cook-note');
+      var basisEl = byId('res-cal-basis');
 
       byId('res-name').textContent = data && data.product_name ? data.product_name : '(商品名不明)';
       byId('res-cook-label').textContent = method.label;
@@ -896,7 +1032,10 @@
       noteEl.style.display = method.note ? '' : 'none';
 
       byId('res-jan').textContent = data && data.gtin_jan ? data.gtin_jan : '-';
-      byId('res-cal').textContent = kcal === 0 || kcal ? kcal + ' kcal' : '-';
+      byId('res-cal').textContent = nutrition.value;
+      basisEl.textContent = nutrition.basis;
+      basisEl.style.display = nutrition.basis ? '' : 'none';
+      basisEl.classList.toggle('unknown', Boolean(nutrition.basis) && !nutrition.known);
       container.textContent = '';
       (allergens.length ? allergens : ['検出なし']).forEach(function (allergen) {
         var badge = document.createElement('span');
