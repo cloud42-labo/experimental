@@ -63,12 +63,40 @@
     .detail { padding:1.25rem; border-radius:2rem; }
     .detail p:first-child, .allergen-title { margin:0 0 .5rem; color:#64748b; font-size:.58rem; font-weight:900; text-transform:uppercase; }
     .detail p:last-child { margin:0; font:700 .75rem 'JetBrains Mono',monospace; }
+    .detail p.detail-value { margin:0; font:700 .75rem 'JetBrains Mono',monospace; }
+    /* 栄養値の基準（100gあたり等）。値と必ず同じカードに出す。 */
+    .detail p.detail-basis { margin:.35rem 0 0; font:700 .55rem/1.35 'JetBrains Mono',monospace; color:#94a3b8; text-transform:none; }
+    .detail p.detail-basis.unknown { color:#fbbf24; }
     #res-jan { color:#60a5fa; }
     #res-allergens { display:flex; flex-wrap:wrap; gap:.5rem; }
     .allergen { background:rgba(127,29,29,.45); color:#f87171; border:1px solid rgba(239,68,68,.3); padding:.3rem .7rem; border-radius:999px; font-size:.6rem; font-weight:900; text-transform:uppercase; }
     .result-footer { position:fixed; bottom:0; left:0; width:100%; padding:1.5rem; padding-bottom:max(1.5rem,env(safe-area-inset-bottom)); background:linear-gradient(transparent,#020617 35%); }
     .blue-button { width:100%; max-width:34rem; display:block; margin:0 auto; padding:1.15rem; border-radius:1rem; background:#2563eb; color:#fff; font-size:1.05rem; font-weight:900; }
     #fatal-error { position:fixed; z-index:100; left:1rem; right:1rem; bottom:1rem; display:none; background:#7f1d1d; color:#fff; border:1px solid #f87171; border-radius:.75rem; padding:.85rem; font-size:.75rem; white-space:pre-wrap; }
+    .cook-others { margin:.75rem 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:.4rem; }
+    .cook-others li { display:flex; justify-content:space-between; gap:1rem; font-size:.7rem; font-weight:700; opacity:.85; }
+    .cook-others-label { flex:1 1 auto; min-width:0; text-transform:uppercase; letter-spacing:.06em; }
+    .cook-others-time { flex:none; font-family:'JetBrains Mono',monospace; text-align:right; white-space:nowrap; }
+    #res-cook-note { margin:.6rem 0 0; font-size:.66rem; font-weight:700; color:#fed7aa; }
+    #page-analyzing { height:100dvh; flex-direction:column; align-items:center; justify-content:center; padding:2rem; text-align:center; background:linear-gradient(#0f172a,#000); }
+    .analyzing-card { width:100%; max-width:22rem; padding:2rem; border-radius:2.5rem; }
+    .spinner { width:3.5rem; height:3.5rem; margin:0 auto 1.25rem; border-radius:999px; border:4px solid rgba(59,130,246,.2); border-top-color:var(--neon-blue); animation:spin 1s linear infinite; }
+    .spinner.failed { animation:none; border-color:rgba(248,113,113,.35); border-top-color:#f87171; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    #analyzing-title { margin:0 0 .35rem; font-size:1.15rem; font-weight:900; font-style:italic; }
+    #analyzing-attempt { margin:0 0 1.25rem; min-height:1rem; color:#fb923c; font:700 .66rem 'JetBrains Mono',monospace; letter-spacing:.1em; }
+    .steps { margin:0; padding:0; list-style:none; text-align:left; display:flex; flex-direction:column; gap:.55rem; }
+    .steps li { display:flex; align-items:center; gap:.6rem; color:#64748b; font-size:.72rem; font-weight:700; }
+    .steps .dot { flex:none; width:.6rem; height:.6rem; border-radius:999px; background:#334155; }
+    .steps li.active { color:#e2e8f0; }
+    .steps li.active .dot { background:var(--neon-blue); box-shadow:0 0 12px rgba(59,130,246,.8); }
+    .steps li.done { color:#94a3b8; }
+    .steps li.done .dot { background:#22c55e; }
+    #analyzing-elapsed { margin:1.25rem 0 0; color:#475569; font:500 .62rem 'JetBrains Mono',monospace; letter-spacing:.2em; }
+    #analyzing-error { margin:1rem 0 0; color:#fca5a5; font-size:.72rem; line-height:1.5; white-space:pre-wrap; }
+    .analyzing-actions { display:none; flex-direction:column; gap:.6rem; margin-top:1.5rem; }
+    .analyzing-actions.visible { display:flex; }
+    .ghost-button { width:100%; padding:.9rem; border-radius:1rem; background:transparent; border:1px solid rgba(148,163,184,.35); color:#cbd5e1; font-size:.85rem; font-weight:900; }
   </style>
 </head>
 <body>
@@ -103,17 +131,45 @@
       </div>
     </section>
 
+    <section id="page-analyzing" class="page" aria-label="AI解析中">
+      <div class="analyzing-card glass">
+        <div id="analyzing-spinner" class="spinner"></div>
+        <p id="analyzing-title">AIが解析しています</p>
+        <p id="analyzing-attempt" role="status" aria-live="polite"></p>
+        <ul id="analyzing-steps" class="steps">
+          <li data-step="compress"><span class="dot"></span><span>画像を圧縮</span></li>
+          <li data-step="request"><span class="dot"></span><span>AIが読み取っています</span></li>
+          <li data-step="verify"><span class="dot"></span><span>抽出結果を検証しています</span></li>
+        </ul>
+        <p id="analyzing-elapsed"></p>
+        <p id="analyzing-error" role="alert"></p>
+        <div id="analyzing-actions" class="analyzing-actions">
+          <button id="analyzing-retry-button" type="button" class="blue-button">もう一度解析する</button>
+          <button id="analyzing-mock-button" type="button" class="ghost-button">サンプルデータで見る</button>
+          <button id="analyzing-cancel-button" type="button" class="ghost-button">ホームへ戻る</button>
+        </div>
+        <div id="analyzing-abort-wrap" class="analyzing-actions visible">
+          <button id="analyzing-abort-button" type="button" class="ghost-button">解析を中止する</button>
+        </div>
+      </div>
+    </section>
+
     <section id="page-result" class="page" aria-label="解析結果">
       <div class="result-inner">
         <div class="result-head"><div class="result-label">AI ANALYSIS RESULT</div><button id="done-button" type="button" class="done">DONE</button></div>
         <div class="card glass">
           <p class="validated">Validated Product</p>
           <h2 id="res-name">海鮮ちゃんぽん</h2>
-          <div class="cook"><div class="cook-head"><span>Microwave Instructions</span><span>500W</span></div><p id="res-time">5分30秒</p></div>
+          <div class="cook">
+            <div class="cook-head"><span id="res-cook-label">Microwave Instructions</span><span id="res-cook-unit">500W</span></div>
+            <p id="res-time">5分30秒</p>
+            <ul id="res-cook-others" class="cook-others"></ul>
+            <p id="res-cook-note"></p>
+          </div>
         </div>
         <div class="detail-grid">
           <div class="detail glass"><p>GTIN / JAN</p><p id="res-jan">4902105109885</p></div>
-          <div class="detail glass"><p>Health Log</p><p id="res-cal">452 kcal</p></div>
+          <div class="detail glass"><p>Health Log</p><p id="res-cal" class="detail-value">452 kcal</p><p id="res-cal-basis" class="detail-basis">1包装あたり</p></div>
         </div>
         <div class="card glass"><p class="allergen-title">Allergens Detected</p><div id="res-allergens"></div></div>
       </div>
@@ -126,12 +182,23 @@
   (function () {
     'use strict';
 
-    var APP_VERSION = '0.3.3';
+    var APP_VERSION = '0.4.1';
     var GEMINI_MODEL = 'gemini-flash-latest';
     var GEMINI_API_KEY_STORAGE_KEY = 'scanhunt_gemini_api_key';
     var GEMINI_MAX_ATTEMPTS = 3;
     var GEMINI_RETRY_BASE_DELAY_MS = 1000;
     var GEMINI_REQUEST_TIMEOUT_MS = 25000;
+
+    // Notion SH-01-S03 で決めた採番規則。Prompt と Schema は独立に版を持つ。
+    var PROMPT_VERSION = 'p2.0';
+    var SCHEMA_VERSION = 's2';
+
+    // Notion SH-03-S01。長辺1000〜1500px・JPEG品質70〜80%の範囲で設定する。
+    var IMAGE_MAX_EDGE_PX = 1280;
+    var IMAGE_JPEG_QUALITY = .75;
+    // 圧縮前後のバイト数を比較したいときだけ true にする（元解像度でもう一度エンコードするため、
+    // 常時有効にすると撮影のたびに二重の負荷がかかる）。
+    var DEBUG_COMPRESSION = false;
 
     var currentStep = 'FRONT';
     var capturedFront = null;
@@ -141,27 +208,82 @@
     var scanGeneration = 0;
     var activeAbortController = null;
     var retryTimer = null;
+    var analyzingTimer = null;
 
     var state = {
       FRONT: { text:'Step 1: Front (Product Identity)', color:'#60a5fa' },
       BACK: { text:'Step 2: Back (Nutrition/JAN)', color:'#fb923c' }
     };
 
+    // Notion SH-03-S03。SH-01-S04 で確定した Products シートの列名と1対1で対応させ、
+    // 保存時にマッピングを挟まなくて済むようにフラットにしている。
     var GEMINI_RESPONSE_SCHEMA = {
       type:'OBJECT',
       properties:{
-        gtin_jan:{type:'STRING'}, product_name:{type:'STRING'}, brand:{type:'STRING'}, category:{type:'STRING'}, temperature_zone:{type:'STRING'},
-        cooking_instructions:{type:'OBJECT',properties:{microwave:{type:'OBJECT',properties:{wattage_500w:{type:'STRING'},wattage_600w:{type:'STRING'}}},pan_fry:{type:'STRING'},other_notes:{type:'STRING'}}},
-        nutrition:{type:'OBJECT',properties:{calories_kcal:{type:'NUMBER'},protein_g:{type:'NUMBER'},fat_g:{type:'NUMBER'},carbs_g:{type:'NUMBER'}}},
-        allergens:{type:'ARRAY',items:{type:'STRING'}}
+        // 商品識別
+        gtin_jan:{type:'STRING'},
+        product_name:{type:'STRING'},
+        brand_name:{type:'STRING'},
+        manufacturer_name:{type:'STRING'},
+        country_of_origin:{type:'STRING'},
+        category:{type:'STRING'},
+        // 販売単位
+        net_content_value:{type:'NUMBER'},
+        net_content_uom:{type:'STRING'},
+        piece_count:{type:'NUMBER'},
+        // 物流属性
+        temperature_zone:{type:'STRING',enum:['frozen','chilled','ambient']},
+        storage_temperature_c:{type:'NUMBER'},
+        storage_instructions:{type:'STRING'},
+        date_marking_type:{type:'STRING',enum:['best_before','use_by']},
+        // 食品情報（栄養）
+        nutrition_basis:{type:'STRING',enum:['per_100g','per_100ml','per_serving','per_package']},
+        nutrition_basis_amount:{type:'NUMBER'},
+        calories_kcal:{type:'NUMBER'},
+        protein_g:{type:'NUMBER'},
+        fat_g:{type:'NUMBER'},
+        carbs_g:{type:'NUMBER'},
+        salt_equivalent_g:{type:'NUMBER'},
+        serving_size:{type:'STRING'},
+        // 食品情報（原材料・アレルゲン）
+        ingredients_text:{type:'STRING'},
+        allergens_mandatory:{type:'ARRAY',items:{type:'STRING'}},
+        allergens_recommended:{type:'ARRAY',items:{type:'STRING'}},
+        allergen_trace_note:{type:'STRING'},
+        // 食品情報（調理）
+        primary_cooking_method:{type:'STRING',enum:['microwave','oven','pan_fry','deep_fry','boil','thaw']},
+        cooking_microwave_500w:{type:'STRING'},
+        cooking_microwave_600w:{type:'STRING'},
+        cooking_microwave_1500w:{type:'STRING'},
+        cooking_microwave_notes:{type:'STRING'},
+        cooking_oven:{type:'STRING'},
+        cooking_pan_fry:{type:'STRING'},
+        cooking_deep_fry:{type:'STRING'},
+        cooking_boil:{type:'STRING'},
+        cooking_thaw:{type:'STRING'},
+        cooking_other:{type:'STRING'},
+        cooking_notes:{type:'STRING'}
       },
       required:['product_name']
     };
 
+    var GEMINI_PROMPT = [
+      '食品パッケージの表面（1枚目）と裏面（2枚目）の写真です。JSON Schemaに従って抽出してください。',
+      '規則:',
+      '1. パッケージに印字されている内容だけを抽出する。書かれていない項目は推測しない。',
+      '2. 読み取れない項目はキーごと省略する。null・空文字・「不明」などの値を入れない。',
+      '3. 栄養成分は必ず nutrition_basis（100gあたり/1食あたり等）も併せて返す。基準が読めない場合は栄養成分自体を省略する。',
+      '4. allergens_mandatory は特定原材料8品目（えび・かに・くるみ・小麦・そば・卵・乳・落花生）のみ。それ以外は allergens_recommended へ入れる。',
+      '5. 調理時間は「3分30秒」のようにパッケージの表記のまま返す。',
+      '6. primary_cooking_method には、パッケージが主として案内している調理方式を1つ選ぶ。',
+      '7. category のみ、明記がなくても商品から推定してよい。'
+    ].join('\n');
+
     var MOCK_RESULT = {
-      product_name:'極旨！海鮮ちゃんぽん', gtin_jan:'4902105109885',
-      cooking_instructions:{microwave:{wattage_500w:'5分30秒'}}, nutrition:{calories_kcal:452},
-      allergens:['小麦','卵','乳','えび','大豆']
+      product_name:'極旨！海鮮ちゃんぽん', gtin_jan:'4902105109885', brand_name:'Scanhunt Foods',
+      primary_cooking_method:'microwave', cooking_microwave_500w:'5分30秒', cooking_microwave_600w:'4分40秒',
+      nutrition_basis:'per_package', calories_kcal:452,
+      allergens_mandatory:['小麦','卵','乳','えび'], allergens_recommended:['大豆']
     };
 
     function byId(id) { return document.getElementById(id); }
@@ -213,6 +335,68 @@
         clearTimeout(retryTimer);
         retryTimer = null;
       }
+      stopAnalyzingTimer();
+    }
+
+    // ---- Notion SH-03-S02: 解析中UX ----
+
+    // 実際に区別できる段階だけを出す。fetch は送信と生成待ちを分離できないため、
+    // 「送信中」と「解析中」を別ステップとして見せることはしない。
+    var ANALYZING_STEPS = ['compress', 'request', 'verify'];
+
+    function setAnalyzingStep(stepKey) {
+      var currentIndex = ANALYZING_STEPS.indexOf(stepKey);
+      var items = byId('analyzing-steps').querySelectorAll('li');
+      var i;
+      for (i = 0; i < items.length; i += 1) {
+        var index = ANALYZING_STEPS.indexOf(items[i].getAttribute('data-step'));
+        items[i].classList.toggle('done', index > -1 && index < currentIndex);
+        items[i].classList.toggle('active', index === currentIndex);
+      }
+    }
+
+    function setAnalyzingAttempt(attempt, maxAttempts) {
+      byId('analyzing-attempt').textContent = attempt > 1 ? '再試行中 ' + attempt + ' / ' + maxAttempts : '';
+    }
+
+    function stopAnalyzingTimer() {
+      if (analyzingTimer !== null) {
+        clearInterval(analyzingTimer);
+        analyzingTimer = null;
+      }
+    }
+
+    function startAnalyzingUI() {
+      var startedAt = Date.now();
+      var elapsedEl = byId('analyzing-elapsed');
+      stopAnalyzingTimer();
+      byId('analyzing-spinner').classList.remove('failed');
+      byId('analyzing-title').textContent = 'AIが解析しています';
+      byId('analyzing-error').textContent = '';
+      byId('analyzing-actions').classList.remove('visible');
+      byId('analyzing-abort-wrap').classList.add('visible');
+      setAnalyzingAttempt(1, GEMINI_MAX_ATTEMPTS);
+      setAnalyzingStep('compress');
+      elapsedEl.textContent = '0.0s';
+      analyzingTimer = setInterval(function () {
+        elapsedEl.textContent = ((Date.now() - startedAt) / 1000).toFixed(1) + 's';
+      }, 100);
+    }
+
+    function showAnalyzingError(message) {
+      stopAnalyzingTimer();
+      byId('analyzing-spinner').classList.add('failed');
+      byId('analyzing-title').textContent = '解析に失敗しました';
+      byId('analyzing-attempt').textContent = '';
+      byId('analyzing-error').textContent = message + '\n撮り直さずにもう一度試せます。';
+      byId('analyzing-abort-wrap').classList.remove('visible');
+      byId('analyzing-actions').classList.add('visible');
+      setAnalyzingStep('');
+    }
+
+    function onAnalyzeProgress(step, attempt, maxAttempts) {
+      setAnalyzingStep(step);
+      setAnalyzingAttempt(attempt, maxAttempts);
     }
 
     function cameraReady(video) {
@@ -325,18 +509,55 @@
       if (shutter) shutter.disabled = true;
     }
 
-    function captureFrame(video) {
-      var canvas;
+    // base64（データURL部分を除いた本体）の実バイト数。末尾のパディングを差し引く。
+    function base64Bytes(base64) {
+      var padding = 0;
+      if (!base64) return 0;
+      if (base64.charAt(base64.length - 1) === '=') padding += 1;
+      if (base64.charAt(base64.length - 2) === '=') padding += 1;
+      return Math.floor(base64.length * 3 / 4) - padding;
+    }
+
+    function scaledSize(width, height, maxEdge) {
+      var longEdge = Math.max(width, height);
+      var ratio;
+      // 拡大はしない。もとから小さい画像は解像度をそのまま使う。
+      if (!longEdge || longEdge <= maxEdge) return {width:width, height:height, scaled:false};
+      ratio = maxEdge / longEdge;
+      return {width:Math.round(width * ratio), height:Math.round(height * ratio), scaled:true};
+    }
+
+    function encodeFrame(video, width, height, quality) {
+      var canvas = document.createElement('canvas');
       var context;
+      canvas.width = width;
+      canvas.height = height;
+      context = canvas.getContext('2d');
+      if (!context) return null;
+      context.drawImage(video, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
+    }
+
+    function captureFrame(video) {
+      var source;
+      var target;
+      var base64;
+      var originalBase64;
       if (!cameraReady(video)) return null;
-      canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      source = {width:video.videoWidth, height:video.videoHeight};
+      target = scaledSize(source.width, source.height, IMAGE_MAX_EDGE_PX);
       try {
-        context = canvas.getContext('2d');
-        if (!context) return null;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/jpeg', .85).split(',')[1] || null;
+        base64 = encodeFrame(video, target.width, target.height, IMAGE_JPEG_QUALITY);
+        if (!base64) return null;
+        if (DEBUG_COMPRESSION) {
+          originalBase64 = encodeFrame(video, source.width, source.height, 1);
+          console.log('[scanhunt] 圧縮 ' + source.width + 'x' + source.height + ' (' + base64Bytes(originalBase64) + ' bytes) -> '
+            + target.width + 'x' + target.height + ' (' + base64Bytes(base64) + ' bytes)');
+        } else {
+          console.log('[scanhunt] 圧縮 ' + source.width + 'x' + source.height + ' -> ' + target.width + 'x' + target.height
+            + ' quality=' + IMAGE_JPEG_QUALITY + ' ' + base64Bytes(base64) + ' bytes');
+        }
+        return base64;
       } catch (error) {
         console.error('captureFrame failed', error);
         return null;
@@ -383,13 +604,17 @@
       return key;
     }
 
+    // 「リトライを打ち切ってよいだけの中身があるか」を判定する。
+    // 結果画面に出るもの（調理・栄養・アレルゲン）だけを成功条件にする。
+    // ingredients_text は結果画面に表示しないため、ここに入れると
+    // 商品名＋原材料だけの不安定な応答で3回リトライが打ち切られ、
+    // ユーザーには実質空の結果が出てしまう。表示するようになるまで入れない。
     function isResultSubstantial(data) {
-      var cooking = data && data.cooking_instructions;
-      var microwave = cooking && cooking.microwave;
-      var nutrition = data && data.nutrition;
-      var hasCooking = Boolean(cooking && ((microwave && (microwave.wattage_500w || microwave.wattage_600w)) || cooking.pan_fry));
-      var hasNutrition = Boolean(nutrition && Object.keys(nutrition).length > 0);
-      var hasAllergens = Boolean(data && Array.isArray(data.allergens) && data.allergens.length > 0);
+      var hasCooking = availableCookMethods(data).length > 0;
+      var hasNutrition = ['calories_kcal','protein_g','fat_g','carbs_g','salt_equivalent_g'].some(function (field) {
+        return typeof (data && data[field]) === 'number';
+      });
+      var hasAllergens = collectAllergens(data).length > 0;
       return hasCooking || hasNutrition || hasAllergens;
     }
 
@@ -412,14 +637,14 @@
       });
     }
 
-    async function callGeminiOnce(frontBase64, backBase64, apiKey, externalController) {
+    async function callGeminiOnce(frontBase64, backBase64, apiKey, externalController, onProgress, attempt) {
       var controller = new AbortController();
       var timeoutId = setTimeout(function () { controller.abort(); }, GEMINI_REQUEST_TIMEOUT_MS);
       var onExternalAbort = function () { controller.abort(); };
       var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(GEMINI_MODEL) + ':generateContent?key=' + encodeURIComponent(apiKey);
       var body = {
         contents:[{parts:[
-          {text:'これは食品パッケージの表面と裏面の写真です。1枚目が表面、2枚目が裏面です。指定されたJSON Schemaに従って、商品名・JANコード・電子レンジ調理手順・栄養成分・アレルギー物質を抽出してください。読み取れない項目は省略してください。'},
+          {text:GEMINI_PROMPT},
           {inline_data:{mime_type:'image/jpeg',data:frontBase64}},
           {inline_data:{mime_type:'image/jpeg',data:backBase64}}
         ]}],
@@ -450,6 +675,7 @@
         throw Object.assign(new Error('Gemini API error ' + response.status + ': ' + text), {retryable:response.status === 429 || response.status >= 500});
       }
 
+      if (onProgress) onProgress('verify', attempt || 1, GEMINI_MAX_ATTEMPTS);
       payload = await response.json();
       candidate = payload.candidates && payload.candidates[0];
       text = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
@@ -460,12 +686,13 @@
       return parsed;
     }
 
-    async function extractProductData(frontBase64, backBase64, apiKey, externalController) {
+    async function extractProductData(frontBase64, backBase64, apiKey, externalController, onProgress) {
       var attempt;
       var lastError;
       for (attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt += 1) {
         if (externalController && externalController.signal.aborted) throw Object.assign(new Error('スキャンが中止されました'), {retryable:false});
-        try { return await callGeminiOnce(frontBase64, backBase64, apiKey, externalController); }
+        if (onProgress) onProgress('request', attempt, GEMINI_MAX_ATTEMPTS);
+        try { return await callGeminiOnce(frontBase64, backBase64, apiKey, externalController, onProgress, attempt); }
         catch (error) {
           lastError = error;
           console.warn('Gemini抽出 試行' + attempt + '/' + GEMINI_MAX_ATTEMPTS + '失敗:', error.message);
@@ -477,27 +704,348 @@
       throw lastError;
     }
 
+    // Notion SH-03-S04。調理方式のenumと、方式ごとの表示ラベル・単位。
+    // 並び順がそのまま、primary_cooking_method が無い/一致しないときのフォールバック優先順になる。
+    var COOKING_METHODS = [
+      {key:'microwave', label:'Microwave Instructions', variants:[
+        {field:'cooking_microwave_500w', unit:'500W'},
+        {field:'cooking_microwave_600w', unit:'600W'},
+        {field:'cooking_microwave_1500w', unit:'1500W'}
+      ]},
+      {key:'oven', label:'Oven Instructions', variants:[{field:'cooking_oven', unit:''}]},
+      {key:'pan_fry', label:'Pan-Fry Instructions', variants:[{field:'cooking_pan_fry', unit:''}]},
+      {key:'deep_fry', label:'Deep-Fry Instructions', variants:[{field:'cooking_deep_fry', unit:''}]},
+      {key:'boil', label:'Boil Instructions', variants:[{field:'cooking_boil', unit:''}]},
+      {key:'thaw', label:'Thaw Instructions', variants:[{field:'cooking_thaw', unit:''}]},
+      {key:'other', label:'Cooking Instructions', variants:[{field:'cooking_other', unit:''}]}
+    ];
+
+    var COOKING_METHOD_LABELS_JA = {
+      microwave:'電子レンジ', oven:'オーブン', pan_fry:'フライパン',
+      deep_fry:'油調理', boil:'ゆでる', thaw:'自然解凍', other:'その他'
+    };
+
+    function textValue(value) {
+      return typeof value === 'string' ? value.trim() : '';
+    }
+
+    var NUTRITION_BASIS_LABELS = {
+      per_100g:'100gあたり',
+      per_100ml:'100mlあたり',
+      per_serving:'1食あたり',
+      per_package:'1包装あたり'
+    };
+
+    // 栄養値は基準（100gあたり／1食あたり／1包装あたり）とセットでなければ意味を持たない。
+    // 同じ「200 kcal」でも基準が違えば別物なので、基準が読み取れていないときは
+    // 数値だけを黙って見せず「基準不明」と明示する（SH-01-S03で決めた不変条件）。
+    function nutritionSummary(data) {
+      var kcal = data && data.calories_kcal;
+      var basisKey = textValue(data && data.nutrition_basis);
+      var basisLabel = NUTRITION_BASIS_LABELS[basisKey] || '';
+      var amount = data && data.nutrition_basis_amount;
+      var serving = textValue(data && data.serving_size);
+
+      if (typeof kcal !== 'number' || !isFinite(kcal)) return {value:'-', basis:'', known:false};
+      if (!basisLabel) return {value:kcal + ' kcal', basis:'基準不明', known:false};
+      // per_100g / per_100ml は基準量がラベルに含まれているので付け足さない。
+      if ((basisKey === 'per_serving' || basisKey === 'per_package') && typeof amount === 'number' && isFinite(amount)) {
+        return {value:kcal + ' kcal', basis:basisLabel + '（' + amount + 'g）', known:true};
+      }
+      if (basisKey === 'per_serving' && serving) {
+        return {value:kcal + ' kcal', basis:basisLabel + '（' + serving + '）', known:true};
+      }
+      return {value:kcal + ' kcal', basis:basisLabel, known:true};
+    }
+
+    // 値が入っている調理手順だけを、方式定義の順に並べて返す。
+    function availableCookMethods(data) {
+      var found = [];
+      if (!data) return found;
+      COOKING_METHODS.forEach(function (method) {
+        method.variants.forEach(function (variant) {
+          var time = textValue(data[variant.field]);
+          if (time) found.push({key:method.key, label:method.label, unit:variant.unit, time:time});
+        });
+      });
+      return found;
+    }
+
+    function pickCookMethod(data) {
+      var available = availableCookMethods(data);
+      var preferred = textValue(data && data.primary_cooking_method);
+      var primary = null;
+      var i;
+
+      if (!available.length) {
+        return {label:'Cooking Instructions', unit:'', time:'-', others:[], note:'調理方法を読み取れませんでした', known:false};
+      }
+      for (i = 0; i < available.length; i += 1) {
+        if (preferred && available[i].key === preferred) { primary = available[i]; break; }
+      }
+      // AIが示した主調理方式に対応する手順が無いことがある。黙って別方式を出すと
+      // 「フライパン調理なのに電子レンジと表示される」類の取り違えになるため、注記を出す。
+      var note = '';
+      if (!primary) {
+        primary = available[0];
+        if (preferred) {
+          note = '主な調理方式は' + (COOKING_METHOD_LABELS_JA[preferred] || preferred) + 'ですが、その手順を読み取れませんでした。';
+        }
+      }
+      return {
+        label:primary.label, unit:primary.unit, time:primary.time,
+        others:available.filter(function (entry) { return entry !== primary; }),
+        note:note, known:true
+      };
+    }
+
+    // 回帰ケース。PR #71 の実機確認で見つかった「フライパン調理なのに
+    // MICROWAVE / 500W と表示される」取り違えを先頭に置く。
+    // ?selftest=1 を付けて開くと実行される（実機のブラウザでもそのまま確認できる）。
+    var COOK_TEST_CASES = [
+      {
+        name:'フライドポテト: オーブンと油調理のみ。電子レンジ表記なし',
+        data:{primary_cooking_method:'oven', cooking_oven:'220℃ 15分', cooking_deep_fry:'170℃ 3分'},
+        expect:{label:'Oven Instructions', unit:'', time:'220℃ 15分', others:1, note:false}
+      },
+      {
+        name:'フライパン調理のみ',
+        data:{primary_cooking_method:'pan_fry', cooking_pan_fry:'水50mlを入れフタをして5分'},
+        expect:{label:'Pan-Fry Instructions', unit:'', time:'水50mlを入れフタをして5分', others:0, note:false}
+      },
+      {
+        name:'電子レンジ 500W / 600W 併記',
+        data:{primary_cooking_method:'microwave', cooking_microwave_500w:'5分30秒', cooking_microwave_600w:'4分40秒'},
+        expect:{label:'Microwave Instructions', unit:'500W', time:'5分30秒', others:1, note:false}
+      },
+      {
+        name:'電子レンジ 600W のみ',
+        data:{primary_cooking_method:'microwave', cooking_microwave_600w:'3分'},
+        expect:{label:'Microwave Instructions', unit:'600W', time:'3分', others:0, note:false}
+      },
+      {
+        name:'自然解凍のみ',
+        data:{primary_cooking_method:'thaw', cooking_thaw:'冷蔵庫で6時間'},
+        expect:{label:'Thaw Instructions', unit:'', time:'冷蔵庫で6時間', others:0, note:false}
+      },
+      {
+        name:'主調理方式は電子レンジだが、その手順が読み取れていない',
+        data:{primary_cooking_method:'microwave', cooking_pan_fry:'中火で7分'},
+        expect:{label:'Pan-Fry Instructions', unit:'', time:'中火で7分', others:0, note:true}
+      },
+      {
+        name:'調理情報がまったく無い',
+        data:{product_name:'なにか'},
+        expect:{label:'Cooking Instructions', unit:'', time:'-', others:0, note:true}
+      },
+      {
+        name:'空文字だけが入っている（値ありと誤判定しない）',
+        data:{cooking_pan_fry:'   ', cooking_microwave_500w:''},
+        expect:{label:'Cooking Instructions', unit:'', time:'-', others:0, note:true}
+      }
+    ];
+
+    // 栄養値と基準の併記。PR #74 のCodexレビューP1「200 kcal だけでは
+    // 100gあたりか1食あたりか区別できない」に対する回帰ケース。
+    var NUTRITION_TEST_CASES = [
+      {
+        name:'100gあたり: 基準を併記する',
+        data:{calories_kcal:200, nutrition_basis:'per_100g'},
+        expect:{value:'200 kcal', basis:'100gあたり', known:true}
+      },
+      {
+        name:'1食あたり: 基準量(g)も併記する',
+        data:{calories_kcal:320, nutrition_basis:'per_serving', nutrition_basis_amount:70},
+        expect:{value:'320 kcal', basis:'1食あたり（70g）', known:true}
+      },
+      {
+        name:'1食あたり: 基準量が無ければ serving_size を使う',
+        data:{calories_kcal:320, nutrition_basis:'per_serving', serving_size:'1袋(冷凍時180g)'},
+        expect:{value:'320 kcal', basis:'1食あたり（1袋(冷凍時180g)）', known:true}
+      },
+      {
+        name:'基準が読み取れていない: 数値だけを黙って見せない',
+        data:{calories_kcal:200},
+        expect:{value:'200 kcal', basis:'基準不明', known:false}
+      },
+      {
+        name:'基準の値が想定外: 基準不明として扱う',
+        data:{calories_kcal:200, nutrition_basis:'per_bowl'},
+        expect:{value:'200 kcal', basis:'基準不明', known:false}
+      },
+      {
+        name:'0 kcal も値として扱う',
+        data:{calories_kcal:0, nutrition_basis:'per_package'},
+        expect:{value:'0 kcal', basis:'1包装あたり', known:true}
+      },
+      {
+        name:'栄養値が無い: 基準行も出さない',
+        data:{product_name:'なにか'},
+        expect:{value:'-', basis:'', known:false}
+      }
+    ];
+
+    // リトライ打ち切り判定。同じくCodexレビューP1「原材料だけの応答でも
+    // 成功扱いになり、実質空の結果が出る」に対する回帰ケース。
+    var SUBSTANTIAL_TEST_CASES = [
+      {
+        name:'原材料だけ: 成功にしない（リトライさせる）',
+        data:{product_name:'なにか', ingredients_text:'小麦粉、砂糖、植物油脂'},
+        expect:false
+      },
+      {name:'商品名だけ: 成功にしない', data:{product_name:'なにか'}, expect:false},
+      {name:'調理手順がある: 成功', data:{product_name:'なにか', cooking_microwave_500w:'5分30秒'}, expect:true},
+      {name:'栄養値がある: 成功', data:{product_name:'なにか', calories_kcal:200, nutrition_basis:'per_100g'}, expect:true},
+      {name:'アレルゲンがある: 成功', data:{product_name:'なにか', allergens_mandatory:['小麦']}, expect:true},
+      {
+        name:'原材料＋アレルゲン: アレルゲン側で成功',
+        data:{product_name:'なにか', ingredients_text:'小麦粉', allergens_mandatory:['小麦']},
+        expect:true
+      }
+    ];
+
+    function runCookMethodSelfTest() {
+      return COOK_TEST_CASES.map(function (testCase) {
+        var actual = pickCookMethod(testCase.data);
+        var failures = [];
+        if (actual.label !== testCase.expect.label) failures.push('label=' + actual.label);
+        if (actual.unit !== testCase.expect.unit) failures.push('unit=' + actual.unit);
+        if (actual.time !== testCase.expect.time) failures.push('time=' + actual.time);
+        if (actual.others.length !== testCase.expect.others) failures.push('others=' + actual.others.length);
+        if (Boolean(actual.note) !== testCase.expect.note) failures.push('note=' + (actual.note || '(なし)'));
+        return {name:testCase.name, ok:failures.length === 0, detail:failures.join(' ')};
+      });
+    }
+
+    function runNutritionSelfTest() {
+      return NUTRITION_TEST_CASES.map(function (testCase) {
+        var actual = nutritionSummary(testCase.data);
+        var failures = [];
+        if (actual.value !== testCase.expect.value) failures.push('value=' + actual.value);
+        if (actual.basis !== testCase.expect.basis) failures.push('basis=' + (actual.basis || '(なし)'));
+        if (actual.known !== testCase.expect.known) failures.push('known=' + actual.known);
+        return {name:testCase.name, ok:failures.length === 0, detail:failures.join(' ')};
+      });
+    }
+
+    function runSubstantialSelfTest() {
+      return SUBSTANTIAL_TEST_CASES.map(function (testCase) {
+        var actual = isResultSubstantial(testCase.data);
+        var ok = actual === testCase.expect;
+        return {name:testCase.name, ok:ok, detail:ok ? '' : 'substantial=' + actual};
+      });
+    }
+
+    function runAllSelfTests() {
+      return [
+        {suite:'pickCookMethod', results:runCookMethodSelfTest()},
+        {suite:'nutritionSummary', results:runNutritionSelfTest()},
+        {suite:'isResultSubstantial', results:runSubstantialSelfTest()}
+      ];
+    }
+
+    // ?selftest=1 のときだけ内部関数を公開する。カメラとAPIキーが無くても
+    // 結果画面・解析中画面を実機のブラウザで確認できるようにするため（SH-03-S05の実機確認用）。
+    function exposeTestHooks() {
+      window.scanhuntTest = {
+        renderResult: renderResult,
+        pickCookMethod: pickCookMethod,
+        nutritionSummary: nutritionSummary,
+        isResultSubstantial: isResultSubstantial,
+        navigateTo: navigateTo,
+        startAnalyzingUI: startAnalyzingUI,
+        showAnalyzingError: showAnalyzingError,
+        runCookMethodSelfTest: runCookMethodSelfTest,
+        runNutritionSelfTest: runNutritionSelfTest,
+        runSubstantialSelfTest: runSubstantialSelfTest,
+        runAllSelfTests: runAllSelfTests
+      };
+    }
+
+    function showSelfTestReport() {
+      var suites = runAllSelfTests();
+      var all = suites.reduce(function (acc, suite) { return acc.concat(suite.results); }, []);
+      var passed = all.filter(function (r) { return r.ok; }).length;
+      var box = document.createElement('pre');
+      box.style.cssText = 'position:fixed;inset:1rem;z-index:200;overflow:auto;margin:0;padding:1rem;'
+        + 'background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:.75rem;'
+        + 'font:500 .7rem/1.6 monospace;white-space:pre-wrap;';
+      box.textContent = 'scanhunt self test: ' + passed + '/' + all.length + ' passed\n'
+        + '(タップで閉じる)\n\n'
+        + suites.map(function (suite) {
+          var suitePassed = suite.results.filter(function (r) { return r.ok; }).length;
+          return '[' + suite.suite + '] ' + suitePassed + '/' + suite.results.length + '\n'
+            + suite.results.map(function (r) {
+              return (r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.detail ? '\n      ' + r.detail : '');
+            }).join('\n');
+        }).join('\n\n');
+      // アプリ本体を覆ったままにしない。実機ではこれを閉じてUIを触る。
+      box.addEventListener('click', function () { box.remove(); });
+      document.body.appendChild(box);
+      console.log('[scanhunt] self test', passed + '/' + all.length, suites);
+    }
+
+    function collectAllergens(data) {
+      var list = [];
+      ['allergens_mandatory','allergens_recommended'].forEach(function (field) {
+        var values = data && data[field];
+        if (!Array.isArray(values)) return;
+        values.forEach(function (value) {
+          var name = textValue(value);
+          if (name && list.indexOf(name) === -1) list.push(name);
+        });
+      });
+      return list;
+    }
+
     function renderResult(data) {
-      var cooking = data && data.cooking_instructions;
-      var microwave = cooking && cooking.microwave;
-      var kcal = data && data.nutrition && data.nutrition.calories_kcal;
-      var allergens = data && Array.isArray(data.allergens) && data.allergens.length ? data.allergens : ['検出なし'];
+      var method = pickCookMethod(data);
+      var nutrition = nutritionSummary(data);
+      var allergens = collectAllergens(data);
       var container = byId('res-allergens');
+      var unitEl = byId('res-cook-unit');
+      var othersEl = byId('res-cook-others');
+      var noteEl = byId('res-cook-note');
+      var basisEl = byId('res-cal-basis');
 
       byId('res-name').textContent = data && data.product_name ? data.product_name : '(商品名不明)';
-      byId('res-time').textContent = (microwave && (microwave.wattage_500w || microwave.wattage_600w)) || (cooking && cooking.pan_fry) || '-';
+      byId('res-cook-label').textContent = method.label;
+      unitEl.textContent = method.unit;
+      unitEl.style.display = method.unit ? '' : 'none';
+      byId('res-time').textContent = method.time;
+
+      othersEl.textContent = '';
+      method.others.forEach(function (entry) {
+        var item = document.createElement('li');
+        var label = document.createElement('span');
+        var time = document.createElement('span');
+        label.className = 'cook-others-label';
+        label.textContent = entry.unit ? entry.label + ' / ' + entry.unit : entry.label;
+        time.className = 'cook-others-time';
+        time.textContent = entry.time;
+        item.appendChild(label);
+        item.appendChild(time);
+        othersEl.appendChild(item);
+      });
+
+      noteEl.textContent = method.note;
+      noteEl.style.display = method.note ? '' : 'none';
+
       byId('res-jan').textContent = data && data.gtin_jan ? data.gtin_jan : '-';
-      byId('res-cal').textContent = kcal === 0 || kcal ? kcal + ' kcal' : '-';
+      byId('res-cal').textContent = nutrition.value;
+      basisEl.textContent = nutrition.basis;
+      basisEl.style.display = nutrition.basis ? '' : 'none';
+      basisEl.classList.toggle('unknown', Boolean(nutrition.basis) && !nutrition.known);
       container.textContent = '';
-      allergens.forEach(function (allergen) {
+      (allergens.length ? allergens : ['検出なし']).forEach(function (allergen) {
         var badge = document.createElement('span');
         badge.className = 'allergen';
-        badge.textContent = String(allergen);
+        badge.textContent = allergen;
         container.appendChild(badge);
       });
     }
 
-    async function processAI() {
+    async function runAnalysis() {
       var apiKey = getApiKey();
       var myGeneration;
       var controller;
@@ -509,22 +1057,39 @@
         return;
       }
 
+      startAnalyzingUI();
       myGeneration = scanGeneration;
       controller = new AbortController();
       activeAbortController = controller;
       try {
-        result = await extractProductData(capturedFront, capturedBack, apiKey, controller);
+        result = await extractProductData(capturedFront, capturedBack, apiKey, controller, onAnalyzeProgress);
       } catch (error) {
         if (myGeneration !== scanGeneration || controller.signal.aborted) return;
         console.error('Gemini extraction failed', error);
-        window.alert('AI解析に失敗しました。モックデータを表示します。\n' + error.message);
-        result = MOCK_RESULT;
+        // 撮影済みの画像は保持したままにする。失敗のたびに撮り直させない。
+        showAnalyzingError(error.message || String(error));
+        return;
       } finally {
         if (activeAbortController === controller) activeAbortController = null;
+        stopAnalyzingTimer();
       }
       if (myGeneration !== scanGeneration) return;
       renderResult(result);
       navigateTo('result');
+    }
+
+    // runAnalysis は async のため、同期的な失敗も含めて必ずここで拾う
+    // （拾わないと画面が「解析しています」のまま止まる）。
+    function startAnalysisFlow() {
+      runAnalysis().catch(function (error) {
+        console.error('runAnalysis failed', error);
+        showAnalyzingError(error && error.message ? error.message : String(error));
+      });
+    }
+
+    function processAI() {
+      navigateTo('analyzing');
+      startAnalysisFlow();
     }
 
     function resetScan() {
@@ -544,13 +1109,24 @@
       byId('abort-button').addEventListener('click', function () { navigateTo('home'); });
       byId('done-button').addEventListener('click', function () { navigateTo('home'); });
       byId('scan-next-button').addEventListener('click', function () { navigateTo('scan'); });
+      byId('analyzing-abort-button').addEventListener('click', function () { navigateTo('home'); });
+      byId('analyzing-cancel-button').addEventListener('click', function () { navigateTo('home'); });
+      byId('analyzing-retry-button').addEventListener('click', function () { startAnalysisFlow(); });
+      byId('analyzing-mock-button').addEventListener('click', function () {
+        renderResult(MOCK_RESULT);
+        navigateTo('result');
+      });
     }
 
     function bootstrap() {
       byId('app-version').textContent = 'Experimental Lab v' + APP_VERSION;
       bindEvents();
       renderResult(MOCK_RESULT);
-      console.log('SCANHUNT EXPERIMENTAL LAB', APP_VERSION);
+      console.log('SCANHUNT EXPERIMENTAL LAB', APP_VERSION, PROMPT_VERSION, SCHEMA_VERSION);
+      if (window.location.search.indexOf('selftest=1') !== -1) {
+        exposeTestHooks();
+        showSelfTestReport();
+      }
     }
 
     try { bootstrap(); }
