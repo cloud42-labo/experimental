@@ -218,30 +218,51 @@
 <div class="app" id="setupScreen">
   <header>
     <h1>未来の店舗生存サバイバルゲーム <span class="app-version-tag"></span></h1>
-    <p class="sub">全国どこでも、e-Statの実際の国勢調査データ（地域メッシュ統計）を使い、出店戦略が10年後の人口動態と噛み合っているかを診断するシミュレーションゲームです。</p>
+    <p class="sub">e-Statの実際の国勢調査データ（地域メッシュ統計）を使い、出店戦略が10年後の人口動態と噛み合っているかを診断するシミュレーションゲームです。</p>
   </header>
   <div class="card" style="max-width:560px;">
     <h2>あそぶ準備</h2>
     <p class="note" style="margin-bottom:12px;font-size:12px;line-height:1.7;">
-      開始すると、指定した店舗周辺の地域メッシュ統計（1kmメッシュ、令和2年・平成27年国勢調査）を
-      あなた自身の e-Stat アプリケーションID（APIキー）でその場から取得します。
-      キーはこのページを開いている間、ブラウザのメモリ上でのみ保持され、e-Stat の公式APIへ
-      送信する以外の用途には使いません。リロードすると再入力が必要です。
+      エリアを選んで開始します。人口・事業所の統計（1kmメッシュ、令和2年・平成27年国勢調査、
+      平成28年経済センサス）はこのページに同梱されているため、
+      <strong>APIキーの登録も入力も要りません</strong>。
     </p>
-    <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">店舗の場所</label>
-    <div style="display:flex;gap:8px;margin-bottom:6px;">
-      <input type="text" id="storeLocationInput" placeholder="Google MapsのURL、または「緯度, 経度」を貼り付け"
-        style="flex:1;font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--page);color:var(--text-primary);">
-    </div>
-    <div class="note" id="storeLocationStatus" style="margin-bottom:14px;">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。全国どこでも指定できます。</div>
-    <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">e-Stat アプリケーションID（APIキー）</label>
-    <div style="display:flex;gap:8px;margin-bottom:8px;">
-      <input type="password" id="appIdInput" placeholder="e-Stat マイページで発行したアプリケーションID" autocomplete="off"
-        style="flex:1;font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--page);color:var(--text-primary);">
-      <button id="toggleAppIdVisible" type="button"
-        style="font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;">表示</button>
-    </div>
-    <div class="note" style="margin-bottom:14px;">未発行の場合は e-Stat マイページ（www.e-stat.go.jp）からアプリケーションIDを取得してください。</div>
+    <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">エリア</label>
+    <select id="areaSelect"
+      style="width:100%;font:inherit;font-size:13px;padding:8px 10px;margin-bottom:6px;border-radius:6px;border:1px solid var(--border);background:var(--page);color:var(--text-primary);">
+      <option value="">読み込み中…</option>
+    </select>
+    <div class="note" id="areaStatus" style="margin-bottom:14px;">診断したいエリアを1つ選んでください。</div>
+
+    <details id="liveModeDetails" style="margin-bottom:14px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--text-secondary);">別の場所を診断する（e-Stat アプリケーションIDが必要）</summary>
+      <div style="padding-top:12px;">
+        <p class="note" style="margin-bottom:12px;font-size:12px;line-height:1.7;">
+          一覧に無い場所を診断する場合だけ使います。指定した店舗周辺の統計を、あなた自身の
+          e-Stat アプリケーションID（APIキー）でその場から取得します。キーはこのページを開いている間
+          ブラウザのメモリ上でのみ保持し、<strong>保存はしません</strong>。リロードすると再入力が必要です。
+          共有・貸与PCでは、終わったらタブを閉じてください。
+        </p>
+        <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">店舗の場所</label>
+        <div style="display:flex;gap:8px;margin-bottom:6px;">
+          <input type="text" id="storeLocationInput" placeholder="Google MapsのURL、または「緯度, 経度」を貼り付け"
+            style="flex:1;font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--page);color:var(--text-primary);">
+        </div>
+        <div class="note" id="storeLocationStatus" style="margin-bottom:14px;">Google Mapsで店舗を右クリック→座標をコピー、またはURLをそのまま貼り付け。全国どこでも指定できます。</div>
+        <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">e-Stat アプリケーションID（APIキー）</label>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <input type="password" id="appIdInput" placeholder="e-Stat マイページで発行したアプリケーションID" autocomplete="off"
+            style="flex:1;font:inherit;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--page);color:var(--text-primary);">
+          <button id="toggleAppIdVisible" type="button"
+            style="font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;">表示</button>
+        </div>
+        <div class="note" style="margin-bottom:8px;">未発行の場合は e-Stat マイページ（www.e-stat.go.jp）からアプリケーションIDを取得してください。</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);margin-bottom:14px;">
+          <input type="checkbox" id="exportAreaCheckbox">
+          取得したデータをエリアファイルとして書き出す（配布用。研修の準備で使う）
+        </label>
+      </div>
+    </details>
     <div style="border-top:1px solid var(--gridline);margin:14px 0 12px;padding-top:14px;">
       <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">業種</label>
       <div class="biz-grid" id="setupBizGrid" style="margin-bottom:6px;"></div>
@@ -277,7 +298,7 @@
     </div>
     <button id="startGameBtn" type="button"
       style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">
-      データを取得して開始する
+      診断を開始する
     </button>
     <div id="setupStatus" class="note" style="margin-top:10px;"></div>
   </div>
@@ -439,7 +460,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.9.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.10.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -756,12 +777,20 @@ async function fetchEconRegionData(meshCodes) {
   return result;
 }
 
-async function loadRealData(appId, storeLat, storeLng) {
-  ESTAT_APP_ID = appId;
-
+// 店舗座標から、先読みする1kmメッシュの一覧を求める。
+function meshCodesAroundStore(storeLat, storeLng) {
   const dLat = MAX_RADIUS_M / 1000 / 111;
   const dLng = MAX_RADIUS_M / 1000 / (111 * Math.cos(storeLat * Math.PI / 180));
-  const meshCodes = meshCodesInBBox(storeLat - dLat, storeLat + dLat, storeLng - dLng, storeLng + dLng);
+  return meshCodesInBBox(storeLat - dLat, storeLat + dLat, storeLng - dLng, storeLng + dLng);
+}
+
+// e-Statから素データを取得するだけの層。ここで表示用の組み立てまでやらないのは、
+// 事前生成した静的データ(data/areas/*.json)を読むときに、まったく同じ組み立て処理を
+// 通したいため。取得元が違うだけで結果が変わる、という事故を構造的に防ぐ。
+async function fetchMeshDataset(appId, storeLat, storeLng) {
+  ESTAT_APP_ID = appId;
+
+  const meshCodes = meshCodesAroundStore(storeLat, storeLng);
   if (meshCodes.length === 0) {
     throw new Error("指定座標の周辺メッシュを計算できませんでした。緯度経度が正しいか確認してください。");
   }
@@ -780,6 +809,16 @@ async function loadRealData(appId, storeLat, storeLng) {
     console.warn("経済センサスデータの取得に失敗しました。競合密度は0として扱います: " + e.message);
     econData = {};
   }
+
+  return { meshCodes: meshCodes, data2020: data2020, data2015: data2015, econData: econData };
+}
+
+// 素データ → 表示用GeoJSON。ライブ取得でも事前生成データでも必ずここを通る。
+function buildMeshGeoJson(dataset) {
+  const meshCodes = (dataset && dataset.meshCodes) || [];
+  const data2020 = (dataset && dataset.data2020) || {};
+  const data2015 = (dataset && dataset.data2015) || {};
+  const econData = (dataset && dataset.econData) || {};
 
   // メッシュごとの年率 = (2020年値/2015年値)^(1/5) - 1。2015年に対応データがない
   // (非居住・秘匿等の)メッシュは、先読みした範囲内の人口加重平均(フォールバック)で補う。
@@ -839,6 +878,72 @@ async function loadRealData(appId, storeLat, storeLng) {
   }
 
   INAGE_GEOJSON = { type: "FeatureCollection", name: "mesh_live", features };
+}
+
+async function loadRealData(appId, storeLat, storeLng) {
+  buildMeshGeoJson(await fetchMeshDataset(appId, storeLat, storeLng));
+}
+
+/* ---------- 事前生成データ（研修配布用） ----------
+   参加者にe-Statのアプリケーションキーを用意させないための仕組み。
+   オーナーが事前に「エリアデータを書き出す」で作った data/areas/<slug>.json を読む。
+   キーはクライアントに一切存在しないため、共有PCに残る・外部スクリプトから読まれる、
+   といった問題が起きない。当日の同時アクセスでe-Statのレート制限に当たることもない。 */
+const PACKAGED_AREAS_DIR = "data/areas/";
+const PACKAGED_SCHEMA_VERSION = 1;
+
+async function fetchPackagedIndex() {
+  let resp;
+  try {
+    resp = await fetch(PACKAGED_AREAS_DIR + "index.json", { cache: "no-cache" });
+  } catch (e) {
+    // file:// で直接開いた場合など。エリア一覧が無いだけで、詳細設定からは起動できる。
+    return [];
+  }
+  if (!resp.ok) return [];
+  let json;
+  try { json = await resp.json(); } catch (e) { return []; }
+  const areas = Array.isArray(json) ? json : (json && json.areas);
+  return Array.isArray(areas) ? areas : [];
+}
+
+async function loadPackagedArea(area) {
+  const resp = await fetch(PACKAGED_AREAS_DIR + area.file, { cache: "no-cache" });
+  if (!resp.ok) {
+    throw new Error("エリアデータ(" + area.file + ")を読み込めませんでした（HTTP " + resp.status + "）。");
+  }
+  const pack = await resp.json();
+  if (!pack || pack.schema_version !== PACKAGED_SCHEMA_VERSION) {
+    throw new Error("エリアデータの形式が想定と違います（schema_version=" + (pack && pack.schema_version) + "）。書き出し直してください。");
+  }
+  if (!pack.store || typeof pack.store.lat !== "number" || typeof pack.store.lng !== "number") {
+    throw new Error("エリアデータに店舗座標が入っていません。");
+  }
+  buildMeshGeoJson(pack.dataset);
+  return pack;
+}
+
+// オーナー用。いま取得した素データを、そのまま配布できるJSONとして保存する。
+function downloadAreaPack(name, storeLat, storeLng, dataset) {
+  const slug = (name || "area").trim().replace(/\s+/g, "-").replace(/[^\w\-一-龠ぁ-んァ-ヶ]/g, "") || "area";
+  const pack = {
+    schema_version: PACKAGED_SCHEMA_VERSION,
+    name: name || slug,
+    store: { lat: storeLat, lng: storeLng },
+    generated_at: new Date().toISOString(),
+    source: "e-Stat 地域メッシュ統計（令和2年・平成27年国勢調査、平成28年経済センサス）",
+    dataset: dataset
+  };
+  const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = slug + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return { slug: slug, file: slug + ".json", meshCount: (dataset.meshCodes || []).length };
 }
 </script>
 <script>
@@ -1939,7 +2044,11 @@ async function loadRealData(appId, storeLat, storeLng) {
 
   renderCommands();
 
-  /* ---------- setup screen: 店舗座標・e-Statキー入力 → ライブデータ取得 → ゲーム開始 ---------- */
+  /* ---------- setup screen: エリア選択（既定）またはライブ取得 → ゲーム開始 ---------- */
+  const areaSelect = document.getElementById("areaSelect");
+  const areaStatus = document.getElementById("areaStatus");
+  const liveModeDetails = document.getElementById("liveModeDetails");
+  const exportAreaCheckbox = document.getElementById("exportAreaCheckbox");
   const appIdInput = document.getElementById("appIdInput");
   const toggleAppIdVisible = document.getElementById("toggleAppIdVisible");
   const storeLocationInput = document.getElementById("storeLocationInput");
@@ -1959,6 +2068,45 @@ async function loadRealData(appId, storeLat, storeLng) {
     appIdInput.type = showing ? "password" : "text";
     toggleAppIdVisible.textContent = showing ? "表示" : "隠す";
   });
+
+  // エリア一覧。1件も無いときだけライブ取得の欄を開いておく（そうしないと何も始められないため）。
+  let packagedAreas = [];
+  (async function initAreaSelect() {
+    packagedAreas = await fetchPackagedIndex();
+    areaSelect.textContent = "";
+    if (packagedAreas.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "（利用できるエリアがありません）";
+      areaSelect.appendChild(opt);
+      areaSelect.disabled = true;
+      areaStatus.className = "gmaps-status error";
+      areaStatus.textContent = "同梱のエリアデータが見つかりません。下の「別の場所を診断する」からe-Stat アプリケーションIDを使って開始してください。";
+      liveModeDetails.open = true;
+      return;
+    }
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "エリアを選んでください";
+    areaSelect.appendChild(placeholder);
+    packagedAreas.forEach((area, i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = area.name || area.file;
+      areaSelect.appendChild(opt);
+    });
+    if (packagedAreas.length === 1) areaSelect.value = "0";
+  })();
+
+  function selectedArea() {
+    if (areaSelect.disabled || areaSelect.value === "") return null;
+    return packagedAreas[Number(areaSelect.value)] || null;
+  }
+
+  // ライブ取得の欄に入力があるときだけ、そちらを使う。研修参加者は触らない。
+  function liveModeRequested() {
+    return Boolean(appIdInput.value.trim() || storeLocationInput.value.trim());
+  }
 
   function nonNegNumber(raw) {
     const n = Number(raw);
@@ -1980,6 +2128,8 @@ async function loadRealData(appId, storeLat, storeLng) {
   async function startGame() {
     const appId = appIdInput.value.trim();
     const locationRaw = storeLocationInput.value.trim();
+    const live = liveModeRequested();
+    const area = live ? null : selectedArea();
 
     // 3項目を1つずつ早期returnで検証すると、空フォーム送信時に「直しては再送信」を
     // 3往復させてしまう。さらに業種のエラーは送信ボタンより上に描画されるため、
@@ -1988,32 +2138,46 @@ async function loadRealData(appId, storeLat, storeLng) {
     let firstInvalidEl = null;
     let parsed = null;
 
-    if (!locationRaw) {
-      storeLocationStatus.className = "gmaps-status error";
-      storeLocationStatus.textContent = "店舗の場所を入力してください。";
-      firstInvalidEl = firstInvalidEl || storeLocationInput;
+    if (!live) {
+      if (!area) {
+        areaStatus.className = "gmaps-status error";
+        areaStatus.textContent = "エリアを選んでください。";
+        firstInvalidEl = firstInvalidEl || areaSelect;
+      } else {
+        areaStatus.className = "note";
+        areaStatus.textContent = "";
+      }
     } else {
-      parsed = parseLatLngFromText(locationRaw);
-      if (!parsed) {
-        const isShortLink = /goo\.gl|maps\.app/.test(locationRaw);
+      areaStatus.className = "note";
+      areaStatus.textContent = "";
+
+      if (!locationRaw) {
         storeLocationStatus.className = "gmaps-status error";
-        storeLocationStatus.textContent = isShortLink
-          ? "短縮URLからは座標を取得できません。Google Mapsで展開後のURL、または地点を右クリックして出る「緯度, 経度」をコピーして貼り付けてください。"
-          : "座標を読み取れませんでした。Google MapsのURL、または「緯度, 経度」の形式で貼り付けてください。";
+        storeLocationStatus.textContent = "店舗の場所を入力してください。";
         firstInvalidEl = firstInvalidEl || storeLocationInput;
       } else {
-        storeLocationStatus.className = "note";
-        storeLocationStatus.textContent = "";
+        parsed = parseLatLngFromText(locationRaw);
+        if (!parsed) {
+          const isShortLink = /goo\.gl|maps\.app/.test(locationRaw);
+          storeLocationStatus.className = "gmaps-status error";
+          storeLocationStatus.textContent = isShortLink
+            ? "短縮URLからは座標を取得できません。Google Mapsで展開後のURL、または地点を右クリックして出る「緯度, 経度」をコピーして貼り付けてください。"
+            : "座標を読み取れませんでした。Google MapsのURL、または「緯度, 経度」の形式で貼り付けてください。";
+          firstInvalidEl = firstInvalidEl || storeLocationInput;
+        } else {
+          storeLocationStatus.className = "note";
+          storeLocationStatus.textContent = "";
+        }
       }
-    }
 
-    if (!appId) {
-      setupStatus.className = "note gmaps-status error";
-      setupStatus.textContent = "アプリケーションIDを入力してください。";
-      firstInvalidEl = firstInvalidEl || appIdInput;
-    } else {
-      setupStatus.className = "note";
-      setupStatus.textContent = "";
+      if (!appId) {
+        setupStatus.className = "note gmaps-status error";
+        setupStatus.textContent = "アプリケーションIDを入力してください。";
+        firstInvalidEl = firstInvalidEl || appIdInput;
+      } else {
+        setupStatus.className = "note";
+        setupStatus.textContent = "";
+      }
     }
 
     if (!state.selectedBusinessId) {
@@ -2032,11 +2196,12 @@ async function loadRealData(appId, storeLat, storeLng) {
     }
 
     startGameBtn.disabled = true;
-    startGameBtn.textContent = "取得中…（数十秒かかる場合があります）";
+    startGameBtn.textContent = live ? "取得中…（数十秒かかる場合があります）" : "読み込み中…";
     setupStatus.className = "note";
-    setupStatus.textContent = "e-Statから人口統計データを取得しています…";
+    setupStatus.textContent = live
+      ? "e-Statから人口統計データを取得しています…"
+      : "エリアデータを読み込んでいます…";
     try {
-      state.storeLatLng = L.latLng(parsed.lat, parsed.lng);
       state.storeProfile = parseProfileInputs({
         revenue: storeRevenueInput,
         grossProfit: storeGrossProfitInput,
@@ -2045,7 +2210,22 @@ async function loadRealData(appId, storeLat, storeLng) {
         partTimeCount: storePartTimeCountInput,
         buildingAge: storeBuildingAgeInput
       });
-      await loadRealData(appId, parsed.lat, parsed.lng);
+      if (live) {
+        state.storeLatLng = L.latLng(parsed.lat, parsed.lng);
+        const dataset = await fetchMeshDataset(appId, parsed.lat, parsed.lng);
+        buildMeshGeoJson(dataset);
+        if (exportAreaCheckbox.checked) {
+          const name = window.prompt("書き出すエリア名を入力してください（例: 千葉市稲毛区・稲毛駅前）", "");
+          if (name) {
+            const info = downloadAreaPack(name, parsed.lat, parsed.lng, dataset);
+            console.log("[store-survival] エリアデータを書き出しました。data/areas/ に置き、index.json へ次の行を追加してください:",
+              JSON.stringify({ name: name, file: info.file, mesh_count: info.meshCount }));
+          }
+        }
+      } else {
+        const pack = await loadPackagedArea(area);
+        state.storeLatLng = L.latLng(pack.store.lat, pack.store.lng);
+      }
       document.getElementById("setupScreen").style.display = "none";
       const gameRoot = document.getElementById("gameRoot");
       gameRoot.style.display = "";
@@ -2067,6 +2247,9 @@ async function loadRealData(appId, storeLat, storeLng) {
   }
 
   startGameBtn.addEventListener("click", startGame);
+  areaSelect.addEventListener("change", () => {
+    if (areaSelect.value !== "") { areaStatus.className = "note"; areaStatus.textContent = ""; }
+  });
   storeLocationInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startGame(); });
   appIdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startGame(); });
 })();
