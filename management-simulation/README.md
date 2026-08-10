@@ -1,10 +1,3 @@
-> **⚠️ このディレクトリは履歴として残しているだけです。正本ではありません。**
-> `v1.0.0`昇格（2026-08-08）に伴い、専用リポジトリ
-> [`cloud42-labo/management-simulation-game`](https://github.com/cloud42-labo/management-simulation-game)
-> （private）へ移管済みです。開発・リリース作業は移管先リポジトリで行ってください。
-
----
-
 # はじめてガイド
 **初めて遊ぶ方へ — ゲームの目的・画面の見方・進め方**
 
