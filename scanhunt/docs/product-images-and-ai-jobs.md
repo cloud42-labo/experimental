@@ -75,7 +75,7 @@ Gemini API呼び出しの**試行1回**＝1行。成功・失敗を問わず必�
 | スキャンID | `scan_id` | string (UUID) | 必須 | `ScanHistory` への外部キー |
 | 商品ID | `product_id` | string (UUID) | 任意 | 解析成功しGTINが確定した後に紐付ける |
 | ジョブ種別 | `job_type` | enum (`initial`/`retry`/`reanalysis`/`backfill`) | 必須 | `retry`＝自動リトライ、`reanalysis`＝モデル更新後の再解析、`backfill`＝過去分の一括再処理 |
-| 試行番号 | `attempt_no` | number | 必須 | 同一 `scan_id` 内での連番（1〜3）。成功率の分母に使う |
+| 試行番号 | `attempt_no` | number | 必須 | 同一 `scan_id` 内で `job_type` をまたいで単調増加する通し番号（後述） |
 | 入力画像ID | `input_image_ids` | array\<string\> | 必須 | `ProductImages.image_id` の配列。通常は表裏2件 |
 | AIモデル | `ai_model` | string | 必須 | 例: `gemini-flash-latest`。**エイリアスではなく実際に呼んだ文字列を残す** |
 | Promptバージョン | `prompt_version` | string | 必須 | 例: `p2.0` |
@@ -91,6 +91,24 @@ Gemini API呼び出しの**試行1回**＝1行。成功・失敗を問わず必�
 | エラー内容 | `error_message` | string | 任意 | 例外・HTTPステータス・検証NG理由 |
 | 検証NG項目 | `validation_failures` | array\<string\> | 任意 | 例: `["cooking_instructions", "nutrition"]`。主要フィールド欠落の内訳 |
 | 作成日時 | `created_at` | datetime | 必須 | |
+
+### `attempt_no` の採番規則
+
+**`job_type` をまたいでリセットしない。** 初回解析時点では `scan_id` 内で1から始まる連番だが、
+後から同じ `scan_id` へ再解析（`reanalysis`）やバックフィル（`backfill`）を実行しても、
+番号は1へ戻さず前回の最大値+1から続ける。
+
+- 初回スキャン: `job_type=initial` を `attempt_no=1` で作り、失敗ならリトライを
+  `attempt_no=2`・`3` と増やす（最大3回）。
+- 後日の再解析: その `scan_id` に対する既存の `AIJobs` 行の `attempt_no` 最大値を読み、
+  `+1` から採番する（例: 初回が1〜3まで使っていれば `reanalysis` は4から始まる）。
+- こうすることで `(scan_id, attempt_no)` の組が常に一意になり、初回とその後の再解析・
+  バックフィルの試行を取り違えずに突き合わせられる。新しい列（run_id等）は増やさない。
+
+**成功率の分母には `attempt_no` の値ではなく `job_type` 列を使う。** 「3回に1回失敗する」
+という初回解析の成功率は `job_type IN ('initial', 'retry')` で絞り込んだ行から計算する。
+`attempt_no` が4以上でも `job_type=retry` であればその範囲に含む。`reanalysis`・`backfill`は
+別集計（モデル比較 `SH-06-S04` 側）に使う。
 
 ### 失敗の分類（`status`）
 

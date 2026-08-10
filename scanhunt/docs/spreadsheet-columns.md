@@ -1,4 +1,4 @@
-# Google Spreadsheet 列設計（4シート・計167列）
+# Google Spreadsheet 列設計（4シート・計168列）
 
 由来: Notion `SH-01-S04｜Spreadsheet列設計`
 
@@ -9,7 +9,7 @@
 
 | シート | 列数 | 1行が表すもの | 書き込み方 |
 |---|---|---|---|
-| `Products` | 111 | 商品1つ（GTIN単位） | 更新（`revision` を上げる） |
+| `Products` | 112 | 商品1つ（GTIN単位） | 更新（`revision` を上げる） |
 | `ScanHistory` | 16 | 撮影1回 | 追記 |
 | `ProductImages` | 19 | 画像1枚 | 追記 |
 | `AIJobs` | 21 | AI解析の試行1回 | 追記 |
@@ -59,9 +59,9 @@ Spreadsheetの日付型に任せるとタイムゾーンがシートのロケー
 
 ---
 
-## Products（111列）
+## Products（112列）
 
-### 商品識別（13列）
+### 商品識別（14列）
 
 `product_id` / `gtin_jan` / `gtin_status` / `product_name` / `product_name_kana` /
 `product_name_original` / `brand_name` / `manufacturer_name` / `manufacturer_address` /
@@ -200,7 +200,13 @@ GTIN確定して既存行と重複したときの統合（`revision_reason = mer
 ## ProductImages（19列）
 
 [product-images-and-ai-jobs.md](product-images-and-ai-jobs.md) の定義をそのまま列にする。
-追記専用（`product_id` のみ後追い更新）。
+追記専用。ただし次の2組は後追いで更新する。
+
+- `product_id` — GTIN確定後の紐付け
+- `storage_path`・`updated_at` — GTIN確定に伴い `unresolved/{scan_id}/` から
+  `products/{gtin_jan}/{scan_id}/` へファイルを移動したとき
+  （[Drive保存パスルール](product-images-and-ai-jobs.md#drive保存パスルール)）。
+  `drive_file_id` は移動しても変わらないため対象外
 
 `image_id` / `scan_id` / `product_id` / `gtin_jan` / `face` / `drive_file_id` / `drive_url` /
 `storage_path` / `captured_at` / `width_px` / `height_px` / `file_size_bytes` /
@@ -248,7 +254,7 @@ GTIN確定して既存行と重複したときの統合（`revision_reason = mer
 
 ## 積み残し・要確認事項
 
-1. **`Products` 111列の運用性は実データで確認する。** 横スクロールが長く、Spreadsheet上での
+1. **`Products` 112列の運用性は実データで確認する。** 横スクロールが長く、Spreadsheet上での
    目視確認は現実的でない。列グループの折りたたみと、主要20列だけを表示するフィルタビューを
    `SH-02-S01` で用意することを推奨。
 2. **`ProductRevisions` シートの要否は `SH-04-S03` で判断する。** S04では4シート構成を確定させたが、

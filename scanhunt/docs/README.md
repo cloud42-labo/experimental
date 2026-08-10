@@ -24,7 +24,7 @@ Apps Script）はここを参照する。
 | [product-data-model.md](product-data-model.md) | 商品マスターの論理データモデル（7カテゴリ・90項目） | `SH-01-S01` |
 | [product-images-and-ai-jobs.md](product-images-and-ai-jobs.md) | 画像証跡（ProductImages）とAI解析履歴（AIJobs）、Drive保存パスルール | `SH-01-S02` |
 | [source-confidence-revision.md](source-confidence-revision.md) | 取得元（source）・信頼度（confidence）・リビジョン管理 | `SH-01-S03` |
-| [spreadsheet-columns.md](spreadsheet-columns.md) | Google Spreadsheet 4シートの実列定義（計167列）と実装上の必須ルール | `SH-01-S04` |
+| [spreadsheet-columns.md](spreadsheet-columns.md) | Google Spreadsheet 4シートの実列定義（計168列）と実装上の必須ルール | `SH-01-S04` |
 
 読む順序は上から。`product-data-model.md` が論理モデル、`spreadsheet-columns.md` が
 それを物理表へ落としたもの。実装するときは後者を見る。
