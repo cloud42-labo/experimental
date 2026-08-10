@@ -6,12 +6,25 @@ Experimental 登録時に受領した実装プロトタイプの情報。
 |---|---|
 | Product | 人財ポートフォリオマネジメント |
 | Version | v0.0.0 |
-| Source file | `index(1).html` |
-| Format | 単一 HTML |
-| Size | 166,483 bytes |
-| SHA-256 | `81dea885874dd05c57197fe44338ad41e5ae34896c58df0f9a56a904f1b3a6d1` |
+| Original source file | `index(1).html` |
+| Original format | 単一 HTML |
+| Original size | 166,483 bytes |
+| Original SHA-256 | `81dea885874dd05c57197fe44338ad41e5ae34896c58df0f9a56a904f1b3a6d1` |
 | HTML title | 人財ポートフォリオマネジメント |
 | APP_VERSION | `0.0.0` |
+
+## Experimental での格納形式
+
+GitHub コネクタ経由で会話添付の 166KB HTML を1ファイルのまま転送できないため、PR内では転送用パッケージとして以下の形で格納している。
+
+- `index.html` — ローダー
+- `source-parts/01.js` 〜 `07.js` — 元HTMLを deterministic gzip（mtime=0）で圧縮し、Base64化したペイロード
+- `index.html` は7パーツを連結・展開し、元HTMLをブラウザ上で復元して実行する
+- 外部API・CDNへの依存は追加していない
+
+ローカル検証では、7パーツを連結・Base64デコード・gzip展開した結果が **166,483 bytes** となり、元の `index(1).html` とバイト単位で一致した。復元後の SHA-256 も `81dea885874dd05c57197fe44338ad41e5ae34896c58df0f9a56a904f1b3a6d1` で一致している。
+
+> 製品仕様上のソース・オブ・トゥルースは「単一HTML」。この分割は Experimental へ登録する際の転送制約を回避するための格納形式であり、プロダクト仕様そのものを変更するものではない。
 
 ## 実装上の主要構造
 
@@ -21,7 +34,3 @@ Experimental 登録時に受領した実装プロトタイプの情報。
 - 人事アーキテクチャ、組織再編、報酬水準、現場対応レバー
 - 財務影響、後継者育成、エンゲージメント、人心掌握、10年後持続可能性投影
 - AI分析用の経営レポート生成
-
-## 登録メモ
-
-この manifest は受領したHTMLの同一性を追跡するためのもの。HTML本体は、GitHubコネクタが会話添付ファイルをそのままバイナリ／ファイル参照で投入するインターフェースを持たないため、このPRでは設計・管理情報の登録を先行している。実装ソースの取り込みは別タスクで追跡する。
