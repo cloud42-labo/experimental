@@ -9,6 +9,7 @@
 
 ```
 experimental/
+├── human-capital-portfolio-management/ # 人財ポートフォリオマネジメント研修ゲーム試作
 ├── serendipity-spot/           # 「ついでにスポット」HTML試作（v1.0.0はcloud42-labo/serendipity-spotへ移管済み）
 ├── serendipity-spot-android/   # 同アプリのネイティブAndroid版
 ├── store-survival-simulator/   # 店舗生存シミュレーター
