@@ -1175,6 +1175,7 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
   let locationFetchInFlight = false;
 
   async function setStoreLocation(lat, lng, statusEl) {
+    const prevLatLng = state.storeLatLng;
     state.storeLatLng = L.latLng(lat, lng);
     if (marker) marker.setLatLng(state.storeLatLng);
     map.panTo(state.storeLatLng);
@@ -1184,6 +1185,21 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
       if (statusEl) {
         statusEl.textContent = `座標を反映しました (${lat.toFixed(5)}, ${lng.toFixed(5)})。商圏内のメッシュ数: ${tradeAreaFeatures().length}`;
         statusEl.className = "gmaps-status ok";
+      }
+      return;
+    }
+
+    // 同梱データ(事前生成)で始めたセッションは ESTAT_APP_ID が null のまま。
+    // e-Statを叩けないので、先読み範囲外への移動はその場で取り直せない。
+    // 失敗した状態で放置せず、元の座標へ戻して理由を伝える。
+    if (!ESTAT_APP_ID) {
+      state.storeLatLng = prevLatLng;
+      if (marker) marker.setLatLng(state.storeLatLng);
+      map.panTo(state.storeLatLng);
+      rerenderAll();
+      if (statusEl) {
+        statusEl.textContent = `この場所 (${lat.toFixed(5)}, ${lng.toFixed(5)}) は同梱データの範囲外です。同梱データはエリア選択時の店舗周辺のみに対応しているため、元の場所に戻しました。別の場所を診断するには、開始画面の「別の場所を診断する」からe-Stat アプリケーションIDを使って開始してください。`;
+        statusEl.className = "gmaps-status error";
       }
       return;
     }
