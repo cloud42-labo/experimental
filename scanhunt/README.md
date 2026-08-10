@@ -40,11 +40,24 @@ cooking_instructions/nutrition/allergensのいずれかが埋まっているこ�
 - [ ] 抽出結果の永続化（マイ・レシピ帳のデータ保存）
 - [ ] JANコード重複時のフィードバックUI
 
-## データ構造
+## 設計仕様
 
-抽出JSONは**フラット構造**で、Notion `SH-01-S04` で確定した商品マスター（Products シート）の
-列名と1対1で対応する。保存時にマッピングを挟まないため。ネストしていた旧構造
-（`cooking_instructions.microwave.wattage_500w` 等）は `v0.4.0` で廃止した。
+データモデル・列定義・保存ルールの**正本は [docs/](docs/) 配下**にある。Notionには要約と
+リンクだけを置く（Notionは計画・判断・進捗の正本、GitHubはコード・仕様・履歴の正本）。
+
+| 文書 | 内容 |
+|---|---|
+| [docs/product-data-model.md](docs/product-data-model.md) | 商品マスターの論理データモデル（7カテゴリ・90項目） |
+| [docs/product-images-and-ai-jobs.md](docs/product-images-and-ai-jobs.md) | 画像証跡とAI解析履歴、Drive保存パスルール |
+| [docs/source-confidence-revision.md](docs/source-confidence-revision.md) | 取得元・信頼度・リビジョン管理 |
+| [docs/spreadsheet-columns.md](docs/spreadsheet-columns.md) | Spreadsheet 4シートの実列定義（計168列）と実装上の必須ルール |
+
+### 旧プロトタイプのJSON構造（参考）
+
+下記は Go/No-Go 検証時点の抽出JSON。**現行の正は上記の90項目モデル**で、こちらはその部分集合。
+ネストしていた `cooking_instructions` / `nutrition` は Spreadsheet の列名と1対1で対応する
+フラット構造へ置き換わっている（`cooking_instructions.microwave.wattage_500w` 等の旧ネスト構造は
+`v0.4.0` で廃止した）。
 
 ```json
 {
