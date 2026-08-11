@@ -1,1 +1,430 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>人財ポートフォリオマネジメント v1 Prototype</title></head><body><p>Loading v1 prototype...</p><script>(async()=>{const b=atob("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");const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);const ds=new DecompressionStream("gzip");const t=await new Response(new Blob([u]).stream().pipeThrough(ds)).text();document.open();document.write(t);document.close()})().catch(e=>document.body.innerHTML='<pre>'+String(e)+'</pre>')</script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>人財ポートフォリオマネジメント v1.1 Prototype</title>
+<style>
+:root{--bg:#f5f6f8;--panel:#fff;--line:#dfe3e8;--text:#1f2933;--muted:#66727f;--accent:#2457a7;--good:#16784a;--warn:#9a6700;--bad:#b42318;--soft:#eef3fb;--radius:14px}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;line-height:1.45}
+button,input,select{font:inherit} button{cursor:pointer}.app{max-width:1240px;margin:auto;padding:18px 18px 80px}
+header{position:sticky;top:0;z-index:5;background:rgba(245,246,248,.94);backdrop-filter:blur(8px);padding:10px 0 14px;border-bottom:1px solid var(--line)}
+h1{font-size:22px;margin:0}.sub{color:var(--muted);font-size:13px;margin-top:2px}.steps{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.step{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;color:var(--muted)}.step.active{background:var(--accent);color:white;border-color:var(--accent)}.step.done{border-color:var(--good);color:var(--good)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px}.panel h2{font-size:18px;margin:0 0 12px}.panel h3{font-size:14px;margin:0 0 8px;color:var(--muted)}
+.grid{display:grid;gap:12px}.kpis{grid-template-columns:repeat(4,minmax(150px,1fr))}.two{grid-template-columns:1.08fr .92fr}.three{grid-template-columns:repeat(3,1fr)}
+@media(max-width:900px){.kpis,.two,.three{grid-template-columns:1fr}}
+.kpi{background:var(--soft);border-radius:12px;padding:12px}.kpi .label{font-size:12px;color:var(--muted)}.kpi .value{font-size:22px;font-weight:800;margin:3px 0}.kpi .trip{font-size:12px;color:var(--muted)}
+input[type=number]{width:100%;padding:7px;border:1px solid var(--line);border-radius:8px;background:white}.metric-input{margin-top:7px}
+.dept{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}.dept.selected{outline:2px solid var(--accent)}.dept-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.dept-title{font-weight:800}.badge{font-size:11px;border-radius:999px;padding:3px 8px;background:#f1f3f5}.bad{color:var(--bad)}.warn{color:var(--warn)}.good{color:var(--good)}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin:10px 0;font-size:12px}.stat{padding:7px;background:#f7f8fa;border-radius:8px}.stat b{display:block;font-size:14px}
+.actions{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}.action{display:grid;grid-template-columns:94px 1fr 38px;gap:8px;align-items:center;margin:7px 0;font-size:12px}.action input{width:100%}
+.budget{display:flex;gap:16px;flex-wrap:wrap;align-items:center}.budget strong{font-size:20px}.meter{height:10px;background:#e8ebef;border-radius:999px;overflow:hidden}.meter span{display:block;height:100%;background:var(--accent)}
+.chart-wrap{min-height:315px}.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:6px 0 12px}.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}.age-row{display:grid;grid-template-columns:72px 1fr 42px 1fr 42px;gap:8px;align-items:center;margin:12px 0;font-size:12px}.barbox{height:18px;background:#edf0f3;border-radius:4px;overflow:hidden}.bar{height:100%;background:#7b91ae}.bar.future{background:#2f6ab3}
+.timeline{overflow:auto}.years{min-width:760px;display:grid;grid-template-columns:130px repeat(5,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden}.cell{padding:9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);font-size:12px;min-height:48px}.headcell{font-weight:700;background:#f3f5f7}.event{display:block;margin:2px 0}.event.plus{color:var(--good)}.event.risk{color:var(--bad)}.event.cost{color:var(--warn)}
+.preview-table{width:100%;border-collapse:collapse;font-size:12px}.preview-table th,.preview-table td{padding:7px;border-bottom:1px solid var(--line);text-align:right}.preview-table th:first-child,.preview-table td:first-child{text-align:left}
+.callout{padding:10px 12px;border-left:4px solid var(--accent);background:var(--soft);border-radius:8px;font-size:13px}.controls{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.primary{border:0;background:var(--accent);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700}.secondary{border:1px solid var(--line);background:#fff;padding:9px 14px;border-radius:10px}.primary:disabled{opacity:.4;cursor:not-allowed}
+.hidden{display:none!important}.result-row{display:grid;grid-template-columns:130px repeat(3,1fr);gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.trace{padding:10px;border:1px solid var(--line);border-radius:10px;margin:8px 0;background:#fafbfc}.trace b{display:block;margin-bottom:4px}
+.small{font-size:12px;color:var(--muted)} .current-year{font-weight:800;color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <h1>人財ポートフォリオマネジメント <span class="small">v1.1 Prototype</span></h1>
+  <div class="sub">予定された決算から逆算し、限られた人財投資を5年間で配分する</div>
+  <div class="steps" id="steps">
+    <button class="step active" data-phase="plan">1. 予定された決算</button>
+    <button class="step" data-phase="invest">2. 人財投資</button>
+    <button class="step" data-phase="manage">3. 5年経営</button>
+    <button class="step" data-phase="result">4. 結果説明</button>
+  </div>
+</header>
+
+<section id="plan" class="phase">
+  <div class="panel">
+    <h2>1. 5年後の「予定された決算」を先に置く</h2>
+    <div class="callout">操作するのは売上・粗利率・販管費率の3つだけ。営業利益は自動計算します。</div>
+    <div class="grid kpis" id="planKpis"></div>
+    <div class="panel" style="margin-top:12px">
+      <h3>5年間の基準値</h3>
+      <table class="preview-table" id="planPath"></table>
+    </div>
+    <div class="controls"><button class="primary" data-go="invest">人財投資へ →</button></div>
+  </div>
+</section>
+
+<section id="invest" class="phase hidden">
+  <div class="panel">
+    <h2>2. 人財投資 — 目標・人財・予算・KPI・時間を同時に見る</h2>
+    <div class="grid kpis" id="targetStrip"></div>
+    <div class="panel">
+      <div class="budget" id="budgetBox"></div>
+      <div class="meter" style="margin-top:8px"><span id="budgetMeter"></span></div>
+      <div class="small" id="budgetHint" style="margin-top:5px"></div>
+    </div>
+    <div class="grid two">
+      <div>
+        <div class="grid three" id="deptCards"></div>
+      </div>
+      <div class="panel chart-wrap" style="margin-top:0">
+        <h3>人財ポートフォリオ — 現在 vs 5年後</h3>
+        <div class="small" id="selectedDeptLabel"></div>
+        <div class="legend"><span><i class="dot" style="background:#7b91ae"></i>現在</span><span><i class="dot" style="background:#2f6ab3"></i>5年後予測</span></div>
+        <div id="ageChart"></div>
+      </div>
+    </div>
+    <div class="grid two">
+      <div class="panel">
+        <h3>施策変更時のKPI・決算プレビュー</h3>
+        <table class="preview-table" id="previewTable"></table>
+      </div>
+      <div class="panel timeline">
+        <h3>5年タイムライン — 施策を打つ年と効く年を分ける（既存社員の人件費は毎年5%上昇）</h3>
+        <div class="years" id="timeline"></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="secondary" data-go="plan">← 目標へ</button>
+      <button class="primary" id="commitBtn" data-go="manage">この配分で5年経営を始める →</button>
+    </div>
+  </div>
+</section>
+
+<section id="manage" class="phase hidden">
+  <div class="panel">
+    <h2>3. 5年経営</h2>
+    <div class="callout" id="yearSummary"></div>
+    <div class="grid kpis" id="yearKpis"></div>
+    <div class="panel">
+      <h3>今年の人財変化</h3>
+      <div id="yearEvents"></div>
+    </div>
+    <div class="panel">
+      <h3>5年間の推移</h3>
+      <table class="preview-table" id="manageTable"></table>
+    </div>
+    <div class="controls">
+      <span class="small" style="margin-right:auto">配分は経営開始時に確定済み。過去実績を書き換えないため開始後は変更できません。</span>
+      <button class="primary" id="nextYearBtn">1年進める →</button>
+    </div>
+  </div>
+</section>
+
+<section id="result" class="phase hidden">
+  <div class="panel">
+    <h2>4. 結果説明 — 予定された決算と比べ、「なぜ」を人財判断から説明する</h2>
+    <div id="resultCompare"></div>
+    <div class="panel">
+      <h3>投資 → 人財変化 → KPI → 決算の因果</h3>
+      <div id="traces"></div>
+    </div>
+    <div class="panel">
+      <h3>振り返り4チェックポイント</h3>
+      <ol>
+        <li>5年後に何を達成しようとしたか。</li>
+        <li>限られた予算をどの部門・施策へ優先したか。その理由は何か。</li>
+        <li>投資はいつ効いたか。間に合わなかったものは何か。</li>
+        <li>予定された決算との差が生まれた最大の理由は何か。</li>
+      </ol>
+    </div>
+    <div class="controls"><button class="secondary" id="restartBtn">最初から</button></div>
+  </div>
+</section>
+</div>
+
+<script>
+const APP_VERSION='1.1.0-prototype';
+const YEARS=5;
+const BASE={revenue:8600,gross:27.0,sga:25.5};
+const NON_HUMAN_SGA=2200, EXISTING_PAYROLL=540;
+const ACTION_COST={store:{hire:8,train:5,transfer:2,motivate:3},md:{hire:10,train:6,transfer:2,motivate:3},admin:{hire:8,train:5,transfer:2,motivate:3}};
+const SENS={store:1.2,md:5.0,admin:7.5};
+const DEPT_META={
+  store:{name:'店舗',kpi:'売上',unit:'百万円',need:55,hc:50,skill:60,mot:65,payroll:220,ages:[12,23,12,3],risk:'店長候補不足'},
+  md:{name:'商品部',kpi:'粗利率',unit:'%',need:7,hc:6,skill:58,mot:58,payroll:38,ages:[1,1,2,2],risk:'ベテラン知識偏在'},
+  admin:{name:'管理部',kpi:'販管費率',unit:'%',need:7,hc:8,skill:62,mot:65,payroll:45,ages:[2,4,2,0],risk:'過剰人員・属人化'}
+};
+const AGE_LABELS=['〜34','35〜49','50〜59','60〜64'];
+let state;
+
+function resetState(){
+  state={
+    phase:'plan',selected:'store',year:1,committed:false,
+    plan:{revenue:12000,gross:29.0,sga:23.5},
+    actions:{
+      store:{hire:0,train:0,transfer:0,motivate:0},
+      md:{hire:0,train:0,transfer:0,motivate:0},
+      admin:{hire:0,train:0,transfer:0,motivate:0}
+    },
+    manager:{strength:50,type:'attack'}
+  };
+}
+function fmt(n,d=0){return Number(n).toLocaleString('ja-JP',{maximumFractionDigits:d,minimumFractionDigits:d})}
+function opProfit(rev,gross,sga){return rev*(gross-sga)/100}
+function planOp(){return opProfit(state.plan.revenue,state.plan.gross,state.plan.sga)}
+function budgetAvailable(){return Math.max(0,state.plan.revenue*state.plan.gross/100-NON_HUMAN_SGA-EXISTING_PAYROLL-planOp())}
+function actionCost(){let c=0;Object.keys(state.actions).forEach(d=>Object.keys(state.actions[d]).forEach(a=>c+=state.actions[d][a]*ACTION_COST[d][a]));return c}
+function motFactor(m){return Math.max(.8,Math.min(1.5,.8+(m/100)*.7))}
+function lin(a,b,y){return a+(b-a)*(y/YEARS)}
+
+function ageStep(ages){
+  let [young,mid,veteran,near]=ages.map(Number);
+  const retire=near/5;
+  const toNear=veteran/10;
+  const toVeteran=mid/15;
+  const toMid=young/15;
+  return [young-toMid,mid+toMid-toVeteran,veteran+toVeteran-toNear,near+toNear-retire].map(v=>Math.max(0,v));
+}
+function simulate(){
+  const d={};
+  for(const id of Object.keys(DEPT_META)){
+    const m=DEPT_META[id], a=state.actions[id];
+    d[id]={hc:m.hc,skill:m.skill,mot:m.mot,payroll:m.payroll,ages:m.ages.slice(),basePower:m.skill*motFactor(m.mot),history:[]};
+  }
+  const adminOut=state.actions.admin.transfer;
+  const want=state.actions.store.transfer+state.actions.md.transfer;
+  const transferScale=want?Math.min(1,adminOut/want):0;
+  const transferIn={store:state.actions.store.transfer*transferScale,md:state.actions.md.transfer*transferScale,admin:0};
+  const transferOut={admin:Math.min(adminOut,want),store:0,md:0};
+  // 配置転換は人数だけでなく年齢ポートフォリオも同時に移す。Year1開始時点の管理部構成を按分する。
+  const adminAgedAtY1=ageStep(DEPT_META.admin.ages);
+  const adminAgedTotal=adminAgedAtY1.reduce((p,v)=>p+v,0)||1;
+  const transferAgeVector=adminAgedAtY1.map(v=>transferOut.admin*v/adminAgedTotal);
+  const rows=[];
+  for(let y=1;y<=YEARS;y++){
+    for(const id of Object.keys(d)){
+      const x=d[id], a=state.actions[id], m=DEPT_META[id];
+      const events=[];
+      x.ages=ageStep(x.ages);
+      const targetHc=x.ages.reduce((p,v)=>p+v,0);
+      const ageRetire=Math.max(0,x.hc-targetHc);
+      if(ageRetire>0){x.hc-=ageRetire;if(ageRetire>.05)events.push(`退職 ${fmt(ageRetire,1)}名`)}
+      if(y===2 && a.hire>0){x.hc+=a.hire;x.ages[0]+=a.hire;events.push(`採用 ${a.hire}名着任`)}
+      if(y===1 && transferIn[id]){
+        const share=transferOut.admin?transferIn[id]/transferOut.admin:0;
+        x.hc+=transferIn[id];
+        x.ages=x.ages.map((v,i)=>v+transferAgeVector[i]*share);
+        events.push(`配置転換で+${fmt(transferIn[id],1)}名`);
+      }
+      if(y===1 && transferOut[id]){
+        x.hc-=transferOut[id];
+        x.ages=x.ages.map((v,i)=>Math.max(0,v-transferAgeVector[i]));
+        events.push(`他部門へ-${fmt(transferOut[id],1)}名`);
+      }
+      if(y===4 && a.train>0){x.skill=Math.min(100,x.skill+a.train*6);events.push(`育成が開花 +${a.train*6} skill`)}
+      if(y===4 && a.hire>0){x.skill=Math.min(100,x.skill+a.hire*2);events.push(`採用人財が成熟 +${a.hire*2} skill`)}
+      x.mot=Math.min(100,m.mot+a.motivate*6);
+      x.payroll*=1.05;
+      if(y===2 && a.hire>0)x.payroll+=a.hire*(id==='md'?7.0:id==='store'?4.5:5.0);
+      const power=x.skill*motFactor(x.mot);
+      const powerRatio=power/x.basePower;
+      const capacity=Math.max(.72,Math.min(1.18,x.hc/m.need));
+      x.history.push({year:y,hc:x.hc,skill:x.skill,mot:x.mot,payroll:x.payroll,ages:x.ages.slice(),power,powerRatio,capacity,events});
+    }
+    const store=d.store.history[y-1], md=d.md.history[y-1], admin=d.admin.history[y-1];
+    const naturalRevenue=BASE.revenue*Math.pow(1.05,y);
+    let revenue=naturalRevenue*(1+SENS.store*((store.powerRatio*store.capacity)-1));
+    const managerDelta=((state.manager.strength-50)/50)*.035;
+    if(state.manager.type==='attack') revenue*=1+managerDelta;
+    let gross=BASE.gross+SENS.md*((md.powerRatio*md.capacity)-1);
+    let sga=BASE.sga-SENS.admin*((admin.powerRatio*admin.capacity)-1);
+    if(state.manager.type==='defense')sga-=managerDelta*2.2;
+    const extraPayroll=(store.payroll+md.payroll+admin.payroll)-(DEPT_META.store.payroll+DEPT_META.md.payroll+DEPT_META.admin.payroll);
+    sga+=Math.max(0,extraPayroll)/Math.max(1,revenue)*100;
+    rows.push({year:y,revenue,gross,sga,op:opProfit(revenue,gross,sga),depts:JSON.parse(JSON.stringify(d))});
+  }
+  return {rows,depts:d,transferIn,transferOut};
+}
+function planPath(){
+  const a=[];
+  for(let y=1;y<=YEARS;y++){
+    const r=lin(BASE.revenue,state.plan.revenue,y);
+    const g=lin(BASE.gross,state.plan.gross,y);
+    const s=lin(BASE.sga,state.plan.sga,y);
+    a.push({year:y,revenue:r,gross:g,sga:s,op:opProfit(r,g,s)});
+  }
+  return a;
+}
+function resultClass(value,target,higher=true){
+  const ok=higher?value>=target:value<=target;
+  return ok?'good':'bad';
+}
+function renderPlan(){
+  const op=planOp();
+  const items=[
+    ['売上','revenue',state.plan.revenue,'百万円'],
+    ['粗利率','gross',state.plan.gross,'%'],
+    ['販管費率','sga',state.plan.sga,'%']
+  ];
+  document.getElementById('planKpis').innerHTML=items.map(([label,key,val,unit])=>`
+    <div class="kpi"><div class="label">${label}（5年後目標）</div>
+      <div class="metric-input"><input type="number" data-plan="${key}" value="${val}" step="${key==='revenue'?100:.1}" min="0"></div>
+      <div class="trip">現在 ${key==='revenue'?fmt(BASE[key]):fmt(BASE[key],1)}${unit}</div>
+    </div>`).join('')+`
+    <div class="kpi"><div class="label">営業利益（自動計算）</div><div class="value">${fmt(op)}</div><div class="trip">百万円 = 売上×(粗利率−販管費率)</div></div>`;
+  const rows=planPath();
+  document.getElementById('planPath').innerHTML='<tr><th>年</th><th>売上</th><th>粗利率</th><th>販管費率</th><th>営業利益</th></tr>'+rows.map(r=>`<tr><td>Year ${r.year}</td><td>${fmt(r.revenue)}</td><td>${fmt(r.gross,1)}%</td><td>${fmt(r.sga,1)}%</td><td>${fmt(r.op)}</td></tr>`).join('');
+  document.querySelectorAll('[data-plan]').forEach(el=>el.oninput=()=>{state.plan[el.dataset.plan]=+el.value;renderPlan()});
+}
+function targetKpis(){
+  const sim=simulate(), last=sim.rows.at(-1);
+  const defs=[
+    ['売上',BASE.revenue,state.plan.revenue,last.revenue,'百万円',true],
+    ['粗利率',BASE.gross,state.plan.gross,last.gross,'%',true],
+    ['販管費率',BASE.sga,state.plan.sga,last.sga,'%',false],
+    ['営業利益',opProfit(BASE.revenue,BASE.gross,BASE.sga),planOp(),last.op,'百万円',true]
+  ];
+  document.getElementById('targetStrip').innerHTML=defs.map(([l,now,t,p,u,h])=>`<div class="kpi"><div class="label">${l}</div><div class="value ${resultClass(p,t,h)}">${u==='%'?fmt(p,1):fmt(p)}${u}</div><div class="trip">現在 ${u==='%'?fmt(now,1):fmt(now)} → 目標 ${u==='%'?fmt(t,1):fmt(t)}</div></div>`).join('');
+}
+function renderBudget(){
+  const avail=budgetAvailable(), used=actionCost(), remain=avail-used, pct=avail?Math.min(100,used/avail*100):100;
+  document.getElementById('budgetBox').innerHTML=`<span>5年間の追加人財投資可能額 <strong>${fmt(avail,1)}百万円</strong></span><span>使用 <strong>${fmt(used,1)}</strong></span><span class="${remain<0?'bad':'good'}">残額 <strong>${fmt(remain,1)}</strong></span>`;
+  document.getElementById('budgetMeter').style.width=`${pct}%`;
+  document.getElementById('budgetMeter').style.background=remain<0?'var(--bad)':'var(--accent)';
+  document.getElementById('budgetHint').textContent=`逆算式：予定粗利益 − 非人財販管費 ${NON_HUMAN_SGA} − 既存人件費 ${EXISTING_PAYROLL} − 目標営業利益。予算超過では経営開始できません。`;
+  document.getElementById('commitBtn').disabled=remain<0;
+}
+function deptRisk(id,forecast){
+  const m=DEPT_META[id];
+  const near=forecast.ages[3];
+  if(forecast.hc<m.need-.5)return '人数不足';
+  if(near>=2)return '退職接近';
+  if(forecast.skill<65)return 'スキル不足';
+  return m.risk;
+}
+function renderDeptCards(){
+  const sim=simulate();
+  document.getElementById('deptCards').innerHTML=Object.keys(DEPT_META).map(id=>{
+    const m=DEPT_META[id], f=sim.depts[id].history.at(-1), a=state.actions[id];
+    const selected=state.selected===id?'selected':'';
+    const transferLabel=id==='admin'?'配置転換（転出）':'配置転換（転入）';
+    return `<div class="dept ${selected}" data-select="${id}">
+      <div class="dept-head"><span class="dept-title">${m.name}</span><span class="badge">${m.kpi}</span></div>
+      <div class="stats">
+        <div class="stat">人数<b>${fmt(m.hc,1)} → ${fmt(f.hc,1)} / 必要${m.need}</b></div>
+        <div class="stat">平均スキル<b>${m.skill} → ${fmt(f.skill,0)}</b></div>
+        <div class="stat">モチベ<b>${m.mot} → ${fmt(f.mot,0)}</b></div>
+        <div class="stat">人件費<b>${m.payroll} → ${fmt(f.payroll,0)}百万円</b></div>
+      </div>
+      <div class="small">3年以内リスク：<b>${deptRisk(id,f)}</b></div>
+      <div class="actions">
+        ${actionSlider(id,'hire','採用',a.hire)}
+        ${actionSlider(id,'train','育成',a.train)}
+        ${actionSlider(id,'transfer',transferLabel,a.transfer)}
+        ${actionSlider(id,'motivate','モチベーション',a.motivate)}
+      </div>
+      ${id==='store'?`<div class="actions"><div class="small">店長力量 / タイプ</div><div class="action"><span>力量</span><input type="range" min="0" max="100" step="10" value="${state.manager.strength}" id="managerStrength"><b>${state.manager.strength}</b></div><select id="managerType"><option value="attack" ${state.manager.type==='attack'?'selected':''}>攻め（売上寄与）</option><option value="defense" ${state.manager.type==='defense'?'selected':''}>守り（経費・利益寄与）</option></select></div>`:''}
+    </div>`;
+  }).join('');
+  document.querySelectorAll('[data-select]').forEach(el=>el.onclick=e=>{if(e.target.matches('input,select'))return;state.selected=el.dataset.select;renderInvest()});
+  document.querySelectorAll('[data-action]').forEach(el=>el.oninput=()=>{state.actions[el.dataset.dept][el.dataset.action]=+el.value;renderInvest()});
+  const ms=document.getElementById('managerStrength'); if(ms)ms.oninput=()=>{state.manager.strength=+ms.value;renderInvest()};
+  const mt=document.getElementById('managerType'); if(mt)mt.onchange=()=>{state.manager.type=mt.value;renderInvest()};
+}
+function actionSlider(dept,action,label,value){
+  return `<div class="action"><span>${label}</span><input type="range" min="0" max="3" step="1" value="${value}" data-dept="${dept}" data-action="${action}"><b>${value}</b></div>`;
+}
+function renderAgeChart(){
+  const id=state.selected,m=DEPT_META[id],f=simulate().depts[id].history.at(-1);
+  document.getElementById('selectedDeptLabel').textContent=`${m.name}｜年齢はKPIへ直接掛けず、退職・育成可能期間・人件費・承継リスクを通じて効く`;
+  const max=Math.max(...m.ages,...f.ages,1);
+  document.getElementById('ageChart').innerHTML=AGE_LABELS.map((l,i)=>`<div class="age-row"><span>${l}</span><div class="barbox"><div class="bar" style="width:${m.ages[i]/max*100}%"></div></div><b>${fmt(m.ages[i],1)}</b><div class="barbox"><div class="bar future" style="width:${f.ages[i]/max*100}%"></div></div><b>${fmt(f.ages[i],1)}</b></div>`).join('');
+}
+function renderPreview(){
+  const rows=simulate().rows;
+  document.getElementById('previewTable').innerHTML='<tr><th>年</th><th>売上</th><th>粗利率</th><th>販管費率</th><th>営業利益</th></tr>'+rows.map(r=>`<tr><td>Year ${r.year}</td><td>${fmt(r.revenue)}</td><td>${fmt(r.gross,1)}%</td><td>${fmt(r.sga,1)}%</td><td>${fmt(r.op)}</td></tr>`).join('');
+}
+function renderTimeline(){
+  const sim=simulate();
+  let cells='<div class="cell headcell">項目</div>'+[1,2,3,4,5].map(y=>`<div class="cell headcell">Year ${y}</div>`).join('');
+  for(const id of Object.keys(DEPT_META)){
+    cells+=`<div class="cell headcell">${DEPT_META[id].name}</div>`;
+    for(let y=1;y<=5;y++){
+      const h=sim.depts[id].history[y-1];
+      const ev=h.events.map(e=>`<span class="event ${e.includes('退職')?'risk':e.includes('開花')||e.includes('着任')?'plus':''}">${e}</span>`).join('');
+      cells+=`<div class="cell">${ev||'<span class="small">—</span>'}<span class="event cost">人件費 ${fmt(h.payroll,0)}</span></div>`;
+    }
+  }
+  cells+='<div class="cell headcell">KPI効果</div>'+sim.rows.map(r=>`<div class="cell">売上 ${fmt(r.revenue)}<br>粗利 ${fmt(r.gross,1)}%<br>販管費 ${fmt(r.sga,1)}%</div>`).join('');
+  document.getElementById('timeline').innerHTML=cells;
+}
+function renderInvest(){targetKpis();renderBudget();renderDeptCards();renderAgeChart();renderPreview();renderTimeline()}
+function renderManage(){
+  const sim=simulate(), idx=Math.min(state.year,5)-1,r=sim.rows[idx];
+  document.getElementById('yearSummary').innerHTML=`<span class="current-year">Year ${state.year}</span>｜計画との差を見て、人財施策がいつ効いたかを確認します。`;
+  const defs=[['売上',r.revenue,'百万円'],['粗利率',r.gross,'%'],['販管費率',r.sga,'%'],['営業利益',r.op,'百万円']];
+  document.getElementById('yearKpis').innerHTML=defs.map(([l,v,u])=>`<div class="kpi"><div class="label">${l}</div><div class="value">${u==='%'?fmt(v,1):fmt(v)}${u}</div></div>`).join('');
+  const ev=[];
+  for(const id of Object.keys(DEPT_META)){const h=sim.depts[id].history[idx];if(h.events.length)ev.push(`<b>${DEPT_META[id].name}</b>：${h.events.join('・')}`)}
+  document.getElementById('yearEvents').innerHTML=ev.length?ev.map(x=>`<div class="trace">${x}</div>`).join(''):'<div class="small">大きな人財イベントはありません。</div>';
+  document.getElementById('manageTable').innerHTML='<tr><th>年</th><th>売上</th><th>粗利率</th><th>販管費率</th><th>営業利益</th></tr>'+sim.rows.map(x=>`<tr class="${x.year===state.year?'current-year':''}"><td>Year ${x.year}</td><td>${fmt(x.revenue)}</td><td>${fmt(x.gross,1)}%</td><td>${fmt(x.sga,1)}%</td><td>${fmt(x.op)}</td></tr>`).join('');
+  document.getElementById('nextYearBtn').textContent=state.year>=5?'結果を見る →':'1年進める →';
+}
+function traceFor(id,sim){
+  const m=DEPT_META[id],a=state.actions[id],f=sim.depts[id].history.at(-1),r=sim.rows.at(-1);
+  const parts=[];
+  if(a.hire)parts.push(`採用${a.hire}`);
+  if(a.train)parts.push(`育成${a.train}（Year4開花）`);
+  if(a.transfer)parts.push(id==='admin'?`配置転換で転出${a.transfer}`:`配置転換で転入${a.transfer}`);
+  if(a.motivate)parts.push(`モチベ施策${a.motivate}`);
+  if(!parts.length)parts.push('追加投資なし');
+  const kpi=id==='store'?`売上 ${fmt(BASE.revenue)}→${fmt(r.revenue)}百万円`:id==='md'?`粗利率 ${fmt(BASE.gross,1)}→${fmt(r.gross,1)}%`:`販管費率 ${fmt(BASE.sga,1)}→${fmt(r.sga,1)}%`;
+  return `<div class="trace"><b>${m.name}</b>${parts.join(' / ')} → 人数 ${fmt(m.hc,1)}→${fmt(f.hc,1)}・skill ${m.skill}→${fmt(f.skill,0)}・mot ${m.mot}→${fmt(f.mot,0)} → <b>${kpi}</b></div>`;
+}
+function renderResult(){
+  const sim=simulate(),r=sim.rows.at(-1);
+  const target={revenue:state.plan.revenue,gross:state.plan.gross,sga:state.plan.sga,op:planOp()};
+  const rows=[
+    ['売上',target.revenue,r.revenue,'百万円',true],
+    ['粗利率',target.gross,r.gross,'%',true],
+    ['販管費率',target.sga,r.sga,'%',false],
+    ['営業利益',target.op,r.op,'百万円',true]
+  ];
+  document.getElementById('resultCompare').innerHTML=rows.map(([l,t,v,u,h])=>{
+    const diff=v-t, diffText=`差 ${diff>=0?'+':''}${u==='%'?fmt(diff,1):fmt(diff)}${u}`;
+    return `<div class="result-row"><b>${l}</b><span>予定 ${u==='%'?fmt(t,1):fmt(t)}${u}</span><span>実績 ${u==='%'?fmt(v,1):fmt(v)}${u}</span><span class="${resultClass(v,t,h)}">${diffText}｜${resultClass(v,t,h)==='good'?'達成':'未達'}</span></div>`;
+  }).join('')+`<div class="result-row"><b>人財投資</b><span>上限 ${fmt(budgetAvailable(),1)}百万円</span><span>実績 ${fmt(actionCost(),1)}百万円</span><span>${fmt(budgetAvailable()-actionCost(),1)}残</span></div>`;
+  document.getElementById('traces').innerHTML=['store','md','admin'].map(id=>traceFor(id,sim)).join('');
+}
+function switchPhase(p){
+  state.phase=p;
+  document.querySelectorAll('.phase').forEach(s=>s.classList.toggle('hidden',s.id!==p));
+  document.querySelectorAll('.step').forEach((b,i)=>{
+    const order=['plan','invest','manage','result'];
+    b.classList.toggle('active',b.dataset.phase===p);
+    b.classList.toggle('done',order.indexOf(b.dataset.phase)<order.indexOf(p));
+  });
+  if(p==='plan')renderPlan();
+  if(p==='invest')renderInvest();
+  if(p==='manage')renderManage();
+  if(p==='result')renderResult();
+  window.scrollTo({top:0,behavior:'instant'});
+}
+document.addEventListener('click',e=>{
+  const go=e.target.closest('[data-go]');
+  if(go){
+    const target=go.dataset.go;
+    if(state.committed && (target==='plan'||target==='invest'))return;
+    if(target==='manage' && !state.committed){
+      if(actionCost()>budgetAvailable())return;
+      state.committed=true;
+    }
+    if(target==='result' && (!state.committed||state.year<5))return;
+    switchPhase(target);
+  }
+  const st=e.target.closest('.step');
+  if(st){
+    const target=st.dataset.phase;
+    if(state.committed && (target==='plan'||target==='invest'))return;
+    if(target==='manage' && !state.committed)return;
+    if(target==='result' && (!state.committed||state.year<5))return;
+    switchPhase(target);
+  }
+});
+document.getElementById('nextYearBtn').onclick=()=>{if(state.year>=5)switchPhase('result');else{state.year++;renderManage()}};
+document.getElementById('restartBtn').onclick=()=>{resetState();switchPhase('plan')};
+resetState();renderPlan();
+</script>
+</body>
+</html>
