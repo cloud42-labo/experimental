@@ -1,1 +1,1982 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>人財ポートフォリオマネジメント</title></head><body><p>Loading prototype...</p><script src="./source-parts/01.js"></script><script src="./source-parts/02.js"></script><script src="./source-parts/03.js"></script><script src="./source-parts/04.js"></script><script src="./source-parts/05.js"></script><script src="./source-parts/06.js"></script><script src="./source-parts/07.js"></script><script>(async()=>{const b=atob(window.__HPM_GZ||"");const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);const ds=new DecompressionStream("gzip");const t=await new Response(new Blob([u]).stream().pipeThrough(ds)).text();document.open();document.write(t);document.close()})().catch(e=>{document.body.innerHTML='<pre>Prototype load failed: '+String(e)+'</pre>'})</script></body></html>
+<!-- Copyright (c) 2026 MitsunoriKomaba. All rights reserved. -->
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人財ポートフォリオマネジメント</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c22; --panel2:#1e242c; --line:#2b333d;
+    --text:#e7ecf1; --muted:#93a1af; --accent:#4a9eff; --accent2:#7c5cff;
+    --ok:#37c07a; --warn:#f0b429; --bad:#f0576b; --radius:14px;
+    --chart-a:#5aa9e6; --chart-b:#c48cff;
+    --shadow:0 6px 20px rgba(0,0,0,.35);
+    font-synthesis:none;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f4f6f9; --panel:#fff; --panel2:#f0f3f7; --line:#e2e8f0; --text:#1a2230; --muted:#5b6b7d; --shadow:0 6px 20px rgba(20,30,50,.08);}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+  #app{max-width:1080px;margin:0 auto;padding:20px 18px 80px}
+  h1{font-size:24px;margin:0 0 4px} h2{font-size:19px;margin:22px 0 10px}
+  h3{font-size:15px;margin:0 0 8px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+  p{margin:8px 0}
+  .muted{color:var(--muted)} .small{font-size:13px}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:9px 14px;border-radius:10px;transition:.15s}
+  button:hover{border-color:var(--accent);transform:translateY(-1px)}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;font-weight:700;padding:13px 20px;font-size:16px}
+  button.ghost{background:transparent}
+  button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  select,input{font:inherit;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+  .grid{display:grid;gap:14px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+  .kpi .box{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .kpi .v{font-size:22px;font-weight:800} .kpi .l{font-size:12px;color:var(--muted)}
+  header.bar{position:sticky;top:0;z-index:9;background:color-mix(in srgb,var(--bg) 88%, transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin:-20px -18px 16px;padding:12px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .pill{font-size:12px;padding:3px 10px;border-radius:999px;background:var(--panel2);border:1px solid var(--line)}
+  .phasebar{display:flex;gap:0;align-items:center;flex-wrap:wrap;margin:0 0 18px}
+  .phasebar .step{font-size:12px;padding:5px 12px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .phasebar .step.active{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff;font-weight:700}
+  .phasebar .step.done{color:var(--ok);border-color:var(--ok)}
+  .phasebar .arrow{color:var(--muted);margin:0 4px;font-size:12px}
+  .tag{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:700}
+  .tag.ok{background:rgba(55,192,122,.15);color:var(--ok)} .tag.warn{background:rgba(240,180,41,.15);color:var(--warn)} .tag.bad{background:rgba(240,87,107,.15);color:var(--bad)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  .meter{height:9px;border-radius:999px;background:var(--panel2);overflow:hidden}
+  .meter>span{display:block;height:100%;border-radius:999px}
+  .deptcard{cursor:pointer;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel2);transition:.15s}
+  .deptcard:hover{border-color:var(--accent)}
+  .deptcard.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,158,255,.25) inset}
+  .alert{border-left:3px solid var(--line);padding:8px 12px;border-radius:8px;background:var(--panel2);margin:8px 0;font-size:14px}
+  .alert.critical{border-color:var(--bad)} .alert.warning{border-color:var(--warn)} .alert.info{border-color:var(--accent)}
+  .channelbtn{display:grid;grid-template-columns:1fr auto;gap:2px 10px;text-align:left;padding:10px 12px;width:100%}
+  .channelbtn small{color:var(--muted);grid-column:1/-1}
+  .center{text-align:center}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (max-width:760px){ .split{grid-template-columns:1fr!important} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* =========================================================================
+   人財ポートフォリオマネジメント 5年計画版
+
+   設計思想の二本柱：
+   ①組織は戦略に従う（チャンドラーの命題） ②ゴーイングコンサーンという前提
+
+   コアループ（7フェーズ、詳細はPHASE_STEPS参照）：
+   ①事業戦略 → ②人財レントゲン(全体ポートフォリオ→放置シナリオ) →
+   ③組織設計(中期経営計画=組織再編+人事アーキテクチャ。②の現状データが判断材料) →
+   ④部門別ギャップ → ⑤投資配分(投資強度・部門シェア・build⇄buy・報酬水準) →
+   ⑥経営(毎年,5年。事業転換戦略では余剰↔不足のリスキリング/リストラ判断も) → ⑦結果
+
+   経営者が決めるのは「どこに・どれだけ・どんな方針で投資するか」。
+   誰を何人どの経路で採るかは現場が市場を見ながら執行する。
+   ①③は中期経営計画として期首に一度だけ決定し、5年間は原則動かさない。
+   ========================================================================= */
+
+// ---- 部門 ----
+const DEPTS = [
+  {id:'store', name:'店舗運営部', cat:'store',  desc:'店長・販売スタッフ。頭数と現場力。育成が長い'},
+  {id:'md',    name:'商品部',     cat:'expert', desc:'バイヤー/MD。少数精鋭の目利き'},
+  {id:'admin', name:'管理本部',   cat:'admin',  desc:'人事・経理・総務。安定需要'},
+  {id:'ec',    name:'EC・デジタル部', cat:'digital', desc:'EC運営・デジタルマーケティングに加え、POS/社内システムの保守も兼務。少人数のため市場が常に逼迫'},
+  {id:'mgmt',  name:'経営',       cat:'exec',   desc:'社長・後継者。5年で仕込めるか'},
+];
+const CAT_NAME = {store:'店舗系',expert:'専門職',admin:'管理系',digital:'デジタル',exec:'幹部'};
+// 部門に新しく加わった人財（外部採用・内部異動・リスキリング）に付与する既定の役職。
+const ROLE_BY_DEPT = {store:'販売',md:'MD',admin:'事務',ec:'情シス・デジタル担当',mgmt:'役員'};
+// 内部異動・緊急人員融通で引き抜かれると部門の機能そのものが崩壊する希少な専門職役職。
+// 対象部門にただ1人しかいない、育成に長い年月を要する目利き役割のため、他部門の頭数を
+// 埋めるための駒として動かさない（動かせば、育成した後継パイプラインの意味がなくなる）。
+const SCARCE_ROLES = ['バイヤー'];
+// 採用市場の初期逼迫度(0-100) — params_market.md 準拠
+const MARKET0 = {store:65, expert:75, admin:35, digital:85, exec:55};
+
+// ---- 調達6経路 ----
+// cost: 万円(概算 or 年収係数), lead: 戦力化までの年, base success率, fit(定着), build=内製
+const CHANNELS = {
+  develop:  {name:'内部育成',    build:true,  lead:2, success:.85, fit:.95, note:'既存社員を昇進・育成。安いが時間がかかる'},
+  newgrad:  {name:'新卒採用',    build:false, lead:1, success:.80, fit:.85, cost:100, cat:'store',  note:'頭数と土台。戦力化に時間'},
+  agency:   {name:'中途(エージェント)', build:false, lead:1, success:.80, fit:.85, feeRate:.33, note:'即戦力。手数料=想定年収の約33%'},
+  headhunt: {name:'ヘッドハント', build:false, lead:1, success:.75, fit:.90, feeRate:.45, note:'幹部・専門職の切り札。年収の約45%'},
+  referral: {name:'リファラル',   build:false, lead:0, success:.85, fit:.95, cost:25, note:'紹介。安く定着◎だが枠が社員数比例'},
+  transfer: {name:'内部異動',     build:true,  lead:0, success:.70, fit:.85, cost:0, note:'部門間で人を動かす。供給元が薄くなる'},
+};
+// 内部育成/異動は「カネ」ではなく「人（供給元・育成担当のキャパ）」で頭打ちになる、という設計思想は保ちつつ、
+// 積極出店のように需要曲線が急な戦略でも、配分を最大限に振り切れば追いつける範囲に上限を引き上げる
+// （旧数値2.2では、店舗シェア95%まで振り切っても店舗充足率が6割弱にしかならず「配分の巧拙に関わらず
+// 届かない天井」になっていた）。
+const BUILD_CAPACITY_MULT = 2.2;
+// 部門ごとの想定年収(万円) — エージェント/HH手数料の基準・給与総額の推定に使う
+const DEPT_SALARY = {store:400, md:650, admin:450, ec:800, mgmt:1200};
+const GRADE_MULT = {1:0.65, 2:0.85, 3:1.05, 4:1.35, 5:1.8}; // 等級による給与倍率(概算・正社員)
+const PART_TIME_ANNUAL = 140; // パートの年間人件費(万円、概算週20時間×時給1,100円程度)。等級による倍率は適用しない
+function empSalary(e){
+  if(e.role==='パート') return Math.round(PART_TIME_ANNUAL*COMP_LEVELS[state.compLevel].payrollMult);
+  return Math.round(DEPT_SALARY[e.dept]*GRADE_MULT[e.grade]*COMP_LEVELS[state.compLevel].payrollMult);
+}
+function payrollTotal(){return state.emps.reduce((s,e)=>s+empSalary(e),0)}
+// 経営者が決める「人財投資の強度」＝総人件費に対する年間投資予算の比率
+// 実務基準：採用+育成投資は人件費の3〜6%が目安(標準4%)。攻めるほど厚く張る。
+const INVEST_LEVELS = {
+  conservative:{name:'保守的',rate:0.03,desc:'人件費の3%。守りの経営。既存戦力の維持を優先'},
+  standard:    {name:'標準',   rate:0.04,desc:'人件費の4%。一般的な水準でバランス良く投資'},
+  aggressive:  {name:'積極',   rate:0.06,desc:'人件費の6%。攻めの経営。成長機会に厚く張る'},
+};
+// 報酬・処遇水準（新規レバー）：build/buyとは独立に「今いる人にいくら払うか」を決める。
+// 上げれば人件費(＝投資予算の原資)が増える一方、エンゲージメント・定着率を直接底上げする。
+const COMP_LEVELS = {
+  standard:  {name:'市場並み', payrollMult:1.0,  engBonus:0,  turnoverMult:1.0, desc:'業界水準の報酬。追加コストなし。'},
+  above:     {name:'やや高め', payrollMult:1.15, engBonus:5,  turnoverMult:0.85,desc:'人件費+15%。エンゲージメント・定着率が上がる。'},
+  aggressive:{name:'積極的',   payrollMult:1.3,  engBonus:10, turnoverMult:0.7, desc:'人件費+30%。強い引き止め効果があるが、コスト負担も大きい。'},
+};
+// 人事アーキテクチャ（新規）：ジョブローテーション型かジョブ型固定か。
+// 「内部異動」＝ローテーション的発想、「内部育成」＝ジョブ型的深化、という既存の区別を
+// 経営者が明示的に選べる方針に格上げする。
+const HR_ARCHITECTURE = {
+  rotation: {name:'ジョブローテーション型', developMult:0.8, transferMult:1.8, succBonus:8,
+    desc:'部門間異動を重視。経営層に必要な視野の広さが育ち、後継者育成が進みやすい。専門性の深掘りは遅くなる。'},
+  balanced: {name:'バランス型',           developMult:1.0, transferMult:1.0, succBonus:0,
+    desc:'内部異動と内部育成を半々で運用する標準的な方針。'},
+  jobtype:  {name:'ジョブ型固定',         developMult:1.3, transferMult:0.5, succBonus:-8,
+    desc:'専門領域での深化を重視。専門性は早く育つが、経営人材の視野が狭くなり後継者育成が遅れるリスク。市場価格への依存も強まる。'},
+};
+// 組織再編（軽い版）：重点事業に応じて対応部門を再編できる。「組織は戦略に従う」を体現する。
+const FOCUS_TO_DEPT = {ec:'ec', md:'md', store:'store', cost:'admin'};
+const ELEVATE_INFO = {
+  ec:    {label:'EC・デジタル部を独立事業部に格上げ', cost:80,  desc:'EC運営と社内システム保守の兼務を解消し、EC専任化で意思決定が速くなり需要の伸びが加速する。独立事業部運営の管理コストが年間80万円かかる。'},
+  md:    {label:'商品部を独立事業部に格上げ',         cost:50,  desc:'商品戦略の意思決定が速くなり伸びが加速する。管理コストが年間50万円かかる。'},
+  store: {label:'店舗運営部をエリア事業部制に再編',    cost:60,  desc:'エリアごとの意思決定が速くなり出店ペースに対応しやすくなる。管理コストが年間60万円かかる。'},
+  admin: {label:'管理本部をシェアードサービス化',      cost:-40, desc:'管理コストを圧縮できる（年間40万円の節約）が、各部門への専門的支援が薄くなるリスクがある。'},
+};
+
+// ---- 店舗運営部のリアル：女性比率・土日祝の壁・体力(30代)の壁 ----
+// 現場実態（既存女性比率80.5%）に基づき、女性は育児等の事情で土日祝シフトに入れない
+// 確率が相対的に高いという構造的制約を確率的にモデル化する（個人の属性で決め打ちはしない）。
+const WEEKEND_OK_PROB = {F:0.6, M:0.9};
+function assignWeekendOK(gender){ return rng() < (WEEKEND_OK_PROB[gender] ?? 0.8); }
+const STORE_WEEKEND_FILL_THRESHOLD = 0.65; // これを下回ると土日の現場力が足りず、接客品質が落ちる
+function weekendFillRate(){
+  const emps=deptEmps('store');
+  if(!emps.length) return 1;
+  if(state.orgDesign.flexWork) return 1; // 柔軟な勤務制度が土日の壁そのものを解消する
+  return emps.filter(e=>e.weekendOK).length / emps.length;
+}
+// 店舗現場の"30代の壁"：長時間の立ち仕事・品出し・レジ対応等の身体的負荷（腰痛等）により、
+// 35歳を境に自発的離職リスクが跳ね上がる。「接客コンシェルジュ」への資格転換投資
+// （単純作業から能動的な接客提案への転換）で、この身体的負荷への依存を解消できる。
+function physicalStrainMult(e){
+  if(e.dept!=='store' || state.orgDesign.concierge) return 1;
+  return e.age>35 ? 1.6 : 1;
+}
+// 現場対応レバー（③組織設計で選ぶ、一度きりの投資）の年間コスト
+const LEVER_INFO = {
+  flexWork:  {label:'柔軟な勤務制度（曜日・時間を選べるシフト）を導入する', cost:30,
+    desc:'土日祝に出られない社員が多くても、店舗運営に必要な現場力を確保できるようにする。土日の壁そのものを解消する一方、地域・時間を限定した働き方が広がる分、店舗運営部から次世代の管理職候補が育つペースが鈍る（全国異動・フル稼働を前提にした管理職登用と、柔軟な働き方は両立しにくいというトレードオフ）。'},
+  concierge: {label:'「接客コンシェルジュ」資格制度に投資する', cost:40,
+    desc:'単純作業員から、能動的にお客様へ提案する接客のプロへの転換。体力的負荷への依存が減り、35歳以降の離職リスクが解消される。'},
+};
+// 柔軟な勤務制度は店舗運営部の定着・現場力を助ける一方、店舗運営部からの管理職(等級4以上)への
+// 昇格ペースを鈍らせる。次世代経営層(後継者候補)のパイプラインが、働き方の柔軟性とトレードオフに
+// なるという現実を反映する。
+const LEADERSHIP_PIPELINE_PENALTY = 0.6;
+
+// ---- EC・デジタル部：システムベンダ丸投げ か 内製化・DXシナジー か ----
+// build/buyのスタンスと人事アーキテクチャの組み合わせで、EC部門が「ベンダー依存」
+// 「内製化途上」「DXシナジー達成」のどの状態にあるかを判定する。
+function ecFillRatio(){ const dem=demandAt('ec', state.year); return dem? headcount('ec')/dem : 1; }
+function ecState(){
+  const stance=state.alloc.ec.stance, fill=ecFillRatio();
+  if(state.orgDesign.hrArchitecture==='jobtype' && stance<=30 && fill>=0.65) return 'dx';
+  if(stance>=60 || fill<0.5) return 'vendor';
+  return 'building';
+}
+const EC_STATE_INFO = {
+  vendor:   {label:'⚠️ ベンダー丸投げ', color:'var(--bad)',  desc:'外部委託・パッケージ依存の状態。変化対応が遅く、市場逼迫の影響を直に受け、コストも高止まりする。'},
+  building: {label:'⚙️ 内製化途上',    color:'var(--warn)', desc:'内製化を進めている途中。もう一段、build比重と充足率を上げるとDXシナジーが狙える。'},
+  dx:       {label:'🚀 DXシナジー発動', color:'var(--ok)',   desc:'情シス・データ分析の内製化を達成。店舗・商品部へのデータ支援が発動し、全社の売上成長・粗利を押し上げる。'},
+};
+
+// ---- 事業成果（カネ）：人財の状態が年商・粗利率・営業利益に直結する ----
+// 年商8.6億円は、姉妹プロダクト「企業経営シミュレーション」の坪単価(竹=60坪,定常月商720万円)
+// ×10店舗×12ヶ月から逆算した基準値。粗利率は45〜54%のレンジで、店舗の土日充足率・商品部の
+// バイヤー承継・EC部のDX状態の3つによって毎年変動する（人財への投資と定着の失敗が、
+// そのまま数億円規模の機会損失＝カネの赤字を生むことを可視化するのが狙い）。
+const BASE_ANNUAL_REVENUE = 86400; // 万円(=8.64億円)
+const BASE_GROWTH = 0.03;          // 何も特筆すべき問題がなければ年3%の自然成長
+const MARGIN_BASE = 0.52, MARGIN_MIN = 0.45, MARGIN_MAX = 0.54;
+// 創業10年目＝すでに10年間安定運営してきた会社という前提のため、家賃・固定費は新規出店直後の
+// 水準ではなく、長期契約・運営効率化が進んだ後の水準とする。これにより開始時点の営業利益は
+// 黒字（約2,000万円）となる——「会社は回っている」という前提と矛盾しないようにするための調整。
+const RENT_PER_STORE_MONTH = 75;   // 万円/店舗/月
+const FIXED_SGA = 1800;            // 万円/年。家賃以外の固定的な販管費(概算)
+const IDEAL_GROWTH = 0.06, IDEAL_MARGIN = 0.54; // 人財投資が理想的に機能した場合の参考値(機会損失の算出基準)
+const BUYER_AGE_WARN_THRESHOLD = 50; // バイヤーの目利き承継が急務とみなす平均年齢の閾値(②④⑦の全画面で共通)
+function storeRentAnnual(){ return Math.round(storeCountNow()*RENT_PER_STORE_MONTH*12); }
+function mdSuccessionOk(){ return state.emps.some(e=>e.dept==='md'&&e.grade>=2&&e.age<40&&e.role!=='バイヤー'); }
+function computeYearFinance(){
+  const f=state.finance;
+  let growth=BASE_GROWTH, margin=MARGIN_BASE;
+  // 店舗運営部が壊滅的に不足すると、そもそも店舗が営業できず売上に直撃する。
+  // 土日充足率(現場品質)とは別に、頭数そのものの崩壊を売上成長率に直接反映させる。
+  const storeFillRatio = demandAt('store',state.year) ? headcount('store')/demandAt('store',state.year) : 1;
+  if(storeFillRatio<0.3){ growth-=0.09; state.log.push(`店舗運営部：要員充足率${Math.round(storeFillRatio*100)}%で、営業を維持できない店舗が発生しています。売上に深刻な打撃が出ています。`); }
+  else if(storeFillRatio<0.5){ growth-=0.045; state.log.push(`店舗運営部：要員充足率${Math.round(storeFillRatio*100)}%で複数店舗の営業に支障が出ており、売上が大きく落ち込んでいます。`); }
+  const wfr=weekendFillRate();
+  if(wfr<STORE_WEEKEND_FILL_THRESHOLD){ growth-=0.025; state.log.push(`店舗運営部：土日充足率${Math.round(wfr*100)}%で接客品質が低下し、機会損失が発生しています。`); }
+  else if(wfr>=0.85){ growth+=0.005; }
+  // 商品部：バイヤーが1人もいない状態は「高齢化」より悪い「目利きの完全消失」であり、別枠で重く扱う
+  const buyerCount=deptEmps('md').filter(e=>e.role==='バイヤー').length;
+  const buyerAvg=avg(deptEmps('md').filter(e=>e.role==='バイヤー').map(e=>e.age));
+  if(buyerCount===0){ margin-=0.04; state.log.push('商品部：バイヤーが不在です。仕入れの目利きが完全に失われ、商品力が大きく低下しています。'); }
+  else if(buyerAvg>=BUYER_AGE_WARN_THRESHOLD && !mdSuccessionOk()){ margin-=0.02; state.log.push('商品部：バイヤーの目利きの継承が進まず、商品力低下が粗利を圧迫しています。'); }
+  else if(mdSuccessionOk()){ margin+=0.005; }
+  const es=ecState();
+  if(es==='dx'){ growth+=0.03; margin+=0.03; state.log.push('EC・デジタル部：内製化によるDXシナジーが発動し、全社の売上・粗利を押し上げています。'); }
+  else if(es==='vendor'){ margin-=0.02; growth-=0.01; }
+  if(state.orgDesign.concierge) margin+=0.01;
+  if(state.praiseBoost){ growth+=0.01; state.praiseBoost=false; state.log.push('表彰制度で刺激されたアニマルスピリットが、今年の店舗運営品質を一時的に押し上げました。'); } // 表彰制度の一時バフ
+  margin=clamp(margin, MARGIN_MIN, MARGIN_MAX);
+  const prevRevenue=f.revenue;
+  f.revenue=Math.max(1000, Math.round(f.revenue*(1+growth)));
+  f.marginRate=margin;
+  f.grossProfit=Math.round(f.revenue*margin);
+  const overhead=storeRentAnnual()+FIXED_SGA;
+  f.opProfit=f.grossProfit-payrollTotal()-overhead;
+  const idealRevenue=Math.round(prevRevenue*(1+IDEAL_GROWTH));
+  const idealProfit=Math.round(idealRevenue*IDEAL_MARGIN)-payrollTotal()-overhead;
+  f.cumOppLossManYen=(f.cumOppLossManYen||0)+Math.max(0, idealProfit-f.opProfit);
+}
+
+// ---- 人心掌握度：計画と実行のギャップを埋めるウェットな力 ----
+// 人心掌握度は現場の実行成功率に「直接」は効かない。人心掌握度→エンゲージメント→現場の実行成功率
+// （採用成功率・内製化スピード）という一本の連鎖にする（社長の人望が直接現場を動かすのではなく、
+// 人望が現場のエンゲージメントを上げ、そのエンゲージメントが実際の採用・育成のしやすさを左右する）。
+function engagementMult(){ return clamp(0.7 + (state.engagement/100)*0.6, 0.7, 1.3); } // 0→0.7倍、50→1.0倍、100→1.3倍
+// エンゲージメントの「何もしなければ毎年目減りする」基礎項と、人心掌握度によるその緩和度合い。
+// 経営・管理本部(本社)は現場より社長との接点が多いため、感応度を現場の3.6倍に設定している。
+const ENGAGEMENT_BASE_DECAY = 4;       // 人心掌握度50(中立)のときの年間の基礎目減り
+const HQ_CHARISMA_SENSITIVITY = 1.8;   // 経営・管理本部の人心掌握度感応度
+const FIELD_CHARISMA_SENSITIVITY = 0.5; // 店舗・商品・ECの人心掌握度感応度
+const CHARISMA_ACTIONS = {
+  townhall: {label:'車座の泥臭い対話（タウンミーティング）', desc:'現場を回り、方針の「理由」を自分の言葉で伝える。エンゲージメント+10、人心掌握度+15。'},
+  praise:   {label:'大々的な表彰制度（やるぞ！社内報）',     desc:'現場の成果を美点凝視で褒めちぎり、アニマルスピリットを刺激する。今年の店舗運営品質に一時バフ、人心掌握度+10。'},
+  sashi:    {label:'エース人財・後継者へのサシ面談',         desc:'後継者を個別に厚遇・慰留する。後継者の忠誠度が大幅に上昇（来年反映）。'},
+};
+
+// ---- 「約束する力」：期首に掲げた戦略目標に対する5年後の達成率 ----
+const TARGET_GROWTH = {aggressive:0.35, standard:0.20, focus:0.08, pivot:0.15}; // 成長方針ごとの5年累計・年商目標成長率
+
+const APP_VERSION = "0.0.0"; // 姉妹プロダクト「企業経営シミュレーション」と同じsemver風の付番ルール
+const START_YEAR=10, END_YEAR=15;
+const PLAN_YEARS=END_YEAR-START_YEAR; // 中期計画の年数(5)
+function planYear(y){return (y??state.year)-START_YEAR+1} // 「Year12」ではなく「3年目」という相対表記のための変換
+const rng = mulberry32(20260712);
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function ri(a,b){return Math.floor(rng()*(b-a+1))+a}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+const FAM=['佐藤','鈴木','高橋','田中','渡辺','伊藤','山本','中村','小林','加藤','吉田','山田','松本','井上','木村'];
+const GIV={M:['翔太','大輔','健','拓也','涼','誠','直樹','浩','聡','剛'],F:['美咲','彩','麻衣','さくら','里奈','由美','愛','奈々','千夏','舞']};
+function name(g){const gv=(g==='F'?GIV.F:GIV.M);return FAM[ri(0,FAM.length-1)]+' '+gv[ri(0,gv.length-1)]}
+
+// ---- 事業戦略(見立て) → 部門別 需要カーブ(Y10..Y15) を生成 ----
+// 需要は固定値ではなく「経営者が描いた事業戦略」と「②で決めた組織設計」から生まれる。
+// これが本ゲームの前提：戦略が先、組織がそれに従い、人財需要はさらにその後。
+const STRATEGY_OPTIONS = {
+  expansion: [
+    {id:'aggressive', name:'積極出店', desc:'竹（60坪）クラスの店舗を年2店ペースで出店。店長・販売の需要が急増'},
+    {id:'standard',   name:'標準成長', desc:'竹（60坪）クラスの店舗を年1店ペースで着実に出店。バランス型'},
+    {id:'focus',      name:'既存強化', desc:'新規出店なし。今ある店舗の質と収益で勝負'},
+    {id:'pivot',      name:'事業転換（店舗→EC）', desc:'竹（60坪）クラスの店舗を段階的に縮小し、ECへ重心を移す。店舗は人員余剰、EC・デジタルは人員不足が同時に起きる'},
+  ],
+  focus: [
+    {id:'ec',    name:'EC・デジタル強化', desc:'ネット販売・DXに張る。EC運営と社内システム保守を兼ねる少人数チームのため、デジタル人財需要が跳ねる（市場は逼迫）'},
+    {id:'md',    name:'商品力（PB・バイヤー）', desc:'独自商品・目利きで差別化。バイヤー/MD需要増'},
+    {id:'store', name:'店舗運営品質', desc:'接客・現場力で勝つ。店舗人員を厚く'},
+    {id:'cost',  name:'コスト効率', desc:'本部スリム化・生産性。管理需要を抑える'},
+  ],
+};
+// 戦略＋組織設計から需要カーブを算出（Y10..Y15の6年分）
+// 店舗運営部は「年◯店ペースの出店計画」を明示的な起点にする（抽象的な成長率ではなく、
+// 経営者が具体的にイメージできる単位＝店舗数そのものを起点にする）。
+// 標準店舗サイズは姉妹プロダクト「企業経営シミュレーション」の坪単価基準に合わせ、
+// 竹（60坪・同作の推奨サイズ★）を基準店舗とする。人員構成（店長/副店長/販売/パート）は
+// 本作の後継者パイプライン診断に必要なため、姉妹プロダクトの最小構成には合わせず維持する。
+const STORE_SIZE_LABEL = '竹＝60坪クラス';
+const PRODUCT_LINE = '衣料品・生活雑貨';  // タイトル画面の会社プロフィール表示用（フレーバー、ロジックには影響しない）
+const BASE_STORE_COUNT = 10;      // Year10時点の店舗数
+const PEOPLE_PER_STORE = 5;       // 1店舗あたりの標準人員（店長1+副店長0.5+販売2.5+パート1程度の構成比）
+// Year10時点の初期従業員数（newGame()のロスター生成合計と一致させること：
+// 店舗50〈店長10+副店長5+販売25+パート10〉+商品6+管理本部8+EC2+経営3＝69）
+const INITIAL_EMPLOYEE_COUNT = 69;
+// タイトル画面（会社プロフィール）表示用の開始時点営業利益の目安。newGame()実行前は
+// state（＝実際のランダム化されたロスター）がまだ存在しないため、参考値として定数化する。
+// 一部ロール（店舗の販売職）の等級は個体差でランダムに決まるため実際の値とは若干ずれうるが、
+// 黒字基調が変わるほどの振れ幅ではない（実測 約+0.21億円、本定数はそれに合わせた参考値）。
+const INITIAL_OP_PROFIT_MANYEN = 2056;
+const STORES_PER_YEAR = { aggressive:2, standard:1, focus:0, pivot:-1 }; // 成長方針ごとの年間出店ペース（pivotは店舗を段階的に縮小）
+function storeOpenPace(s, org){
+  org = org || {elevated:{}};
+  return STORES_PER_YEAR[s.expansion] * (org.elevated.store ? 1.5 : 1); // エリア事業部制に再編すると出店ペースが加速
+}
+function computeDemand(s, org){
+  org = org || {elevated:{}};
+  const f = k => s.focuses.includes(k)?1:0;
+  const elevMult = dep => org.elevated[dep] ? 1.3 : 1; // 組織再編を実施した部門は、戦略の効果がさらに増幅する
+  const openPace = storeOpenPace(s, org);
+  const qualityBoost = f('store') ? 1.25 : 1; // 重点事業「店舗運営品質」は出店ペースではなく1店舗あたりの人員厚みに効く
+  const d = {store:[],md:[],admin:[],ec:[],mgmt:[]};
+  const isPivot = s.expansion==='pivot';
+  const chronicGap = isPivot ? 0 : 3; // pivot(店舗縮小)では「慢性的な採用不足」の前提が逆転するため外す
+  for(let i=0;i<6;i++){
+    const stores = Math.max(3, BASE_STORE_COUNT + openPace*i); // 縮小しても最低限の店舗網は残す
+    d.store.push(Math.max(0, Math.round(stores*PEOPLE_PER_STORE*qualityBoost) + chronicGap));
+    d.md.push(   Math.round(6  + i*(0.2 + f('md')*0.55*elevMult('md'))));
+    d.ec.push(   Math.round(3  + i*(0.5 + f('ec')*1.7*elevMult('ec') + (isPivot?0.9:0)))); // 事業転換はEC需要をそれ自体で押し上げる
+    d.admin.push(Math.max(4, Math.round(8 + i*0.25 - f('cost')*i*0.55*elevMult('admin'))));
+    d.mgmt.push(4);
+  }
+  return d;
+}
+// 店舗数：出店計画（年◯店ペース）から算出する目標トラジェクトリと、
+// 実際の人員（採用実績）から逆算した現在値を、あえて別の関数として分ける。
+// 「戦略で描いた出店計画」と「現場が実際に人を揃えられたか」のズレを、店舗数という単位でも見せるため。
+function storeCountAt(y){ return Math.max(3, Math.round(BASE_STORE_COUNT + storeOpenPace(state.strategy, state.orgDesign)*(y-START_YEAR))); }
+// 「約束する力」の判定基準となる5年後目標。①戦略の選択だけから決まる純粋関数のため、
+// ⑤投資配分でコミット前のプレビュー表示にも、commitPlan時の確定値にも同じ関数を使う。
+function computeCommitTargets(){
+  return {
+    revenue: Math.round(BASE_ANNUAL_REVENUE*(1+TARGET_GROWTH[state.strategy.expansion])),
+    stores: storeCountAt(END_YEAR),
+  };
+}
+function storeCountNow(){ return Math.max(1, Math.round(headcount('store')/PEOPLE_PER_STORE)); }
+
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function stripTags(s){return String(s).replace(/<[^>]*>/g,'')} // AI分析用テキストにHTML表示用の<b>タグ等を混ぜないため
+let state;
+let draftCompanyName='株式会社サンプルマート'; // 経営引き継ぎ(タイトル画面)の会社名入力欄。newGame()実行前は state が無いためモジュール変数で保持する
+function newGame(){
+  const emps=[];
+  let id=1;
+  const add=(dept,role,age,grade,g)=>{
+    const e={id:'e'+(id++),dept,role,age,grade,gender:g,pot:+(0.4+rng()*0.5).toFixed(2),name:name(g)};
+    if(dept==='store') e.weekendOK=assignWeekendOK(g); // 土日祝シフトに入れるか（育児等の時短制約を確率的に反映）
+    emps.push(e);
+  };
+  // 店舗運営部: 10店舗規模（店長=店舗数）。荒利50%・年商8.6億円想定で店舗人件費が粗利を圧迫し
+  // 黒字化を阻害しないよう、1店舗あたり平均5名（店長1+副店長0.5+販売2.5+パート1）に絞った。
+  // 副店長は半数の店舗にしか置かず、残りはパート・販売からの正社員登用/昇格で埋めていく想定
+  // （＝内部育成投資の見せ場。パートは正社員より低い人件費で計上する＝empSalary参照）。
+  // 女性比率は現場実態(既存80.5%)に合わせ、階層が上がるほど女性比率がやや下がる構成にしている。
+  for(let i=0;i<10;i++) add('store','店長',ri(46,56),4,rng()<.4?'M':'F');
+  for(let i=0;i<5;i++) add('store','副店長',ri(42,50),3,rng()<.3?'M':'F'); // 35歳未満ゼロ=候補枯れ
+  for(let i=0;i<25;i++) add('store','販売',ri(30,52),ri(1,2),rng()<.15?'M':'F');
+  for(let i=0;i<10;i++) add('store','パート',ri(28,60),1,rng()<.05?'M':'F');
+  // 商品部: 現有6。10店舗・年商規模なら本部機能としてバイヤー(高齢)・MD・若手育成枠は最低限必要
+  for(let i=0;i<2;i++) add('md','バイヤー',ri(50,58),4,'M'); // 高齢・後継バイヤーが育っていない
+  for(let i=0;i<2;i++) add('md','MD',ri(44,52),3,rng()<.7?'M':'F');
+  add('md','若手バイヤー候補',ri(28,35),2,rng()<.5?'M':'F');
+  add('md','MDプランナー',ri(26,33),2,rng()<.5?'M':'F');
+  // 管理本部: 現有8。75名規模の会社を支えるには経理・人事・総務の機能分化が最低限必要
+  for(let i=0;i<2;i++) add('admin','管理職',ri(45,55),4,rng()<.7?'M':'F');
+  for(let i=0;i<2;i++) add('admin','経理',ri(30,50),ri(1,2),rng()<.4?'M':'F');
+  for(let i=0;i<2;i++) add('admin','人事',ri(28,45),ri(1,2),rng()<.5?'M':'F');
+  for(let i=0;i<2;i++) add('admin','総務',ri(26,48),ri(1,2),rng()<.4?'M':'F');
+  // EC・デジタル部: 現有たった2（=需要3→12に全く追いつかない歪みの中核）。
+  // EC運営とPOS/社内システム保守を同じ小さなチームが兼務している想定で、役割名にもそれを明示する。
+  // 情シス・デジタル担当は、レガシーな社内システムを長年守ってきた古参社員という現場実態に
+  // 合わせ、年齢層を高めに設定する（新設のEC/デジタル戦略に対し、母体となる情シスは高齢という
+  // ギャップが、知の資産化＝標準化・形式知化投資の必要性をより切実にする）。
+  add('ec','ECマネージャー',ri(38,46),4,'M');
+  add('ec','情シス・デジタル担当',ri(46,58),2,rng()<.6?'M':'F');
+  // 経営: 社長60(Year15で引退), 役員2
+  emps.push({id:'e'+(id++),dept:'mgmt',role:'社長',age:60,grade:5,gender:'M',pot:0.5,name:name('M')});
+  for(let i=0;i<2;i++) add('mgmt','役員',ri(52,58),5,'M');
+  state={
+    year:START_YEAR, phase:'title',
+    budget:0, emps,
+    market:{...MARKET0},
+    pending:[], // {dept,role,arrive,label}
+    successor:null, succProgress:0,
+    log:[], history:[], selDept:'ec',
+    engagement:65, // 従業員エンゲージメント(0-100)。離職率・現場の実行成功率(採用成功率・内製化スピード)に効く
+    charisma:60, // 人心掌握度(0-100)。社長個人の人望・現場との関係構築力。エンゲージメントの目減りを緩和する形で間接的に効く
+    charismaActionUsed:false, // 今年すでに人心掌握アクションを使ったか(年1回まで)
+    plannedTransferUsed:false, // 今年すでに計画的な人財配転を使ったか(年1回まで)
+    commitTargets:null, // ③組織設計後に確定する「約束した」出店・年商目標（①約束する力の判定基準）
+    strategy:{expansion:'standard', focuses:['ec']}, // ①事業戦略の見立て（初期値）
+    orgDesign:{elevated:{}, hrArchitecture:'balanced', flexWork:false, concierge:false}, // ②組織設計（中期経営計画としてここで決める）
+    compLevel:'standard', // 報酬・処遇水準
+    demand:null,
+  };
+  state.demand = computeDemand(state.strategy, state.orgDesign);
+  // 経営者が決めるのは「配分」と「build/buyの方針」「報酬水準」。誰を何人どこから採るかは現場が実行する。
+  state.investLevel='standard';
+  state.alloc = {}; DEPTS.forEach(d=>state.alloc[d.id]={share:20, stance:50}); // shareは5部門で合計100%が基準、stance:0=内製寄り 100=外部調達寄り
+  state.actual = {}; DEPTS.forEach(d=>state.actual[d.id]=0); // 実行フェーズでの実際の調達数（現場の結果）
+  state.hireCarry = {}; // 部門×チャネルごとの採用人数の端数繰り越し。乱数での丸め(rng()<remで+1)だと
+  // 配分をわずかに変えただけで閾値をまたぎスコアが乱高下したため、端数を毎年蓄積して閾値を
+  // 超えたら+1人発生させる決定論的な丸めに統一し、配分の変化に対してなめらかに反応させる。
+  state.cum = {retired:0, left:0, failed:0, restructured:0, mdInternalYears:0}; // 想定外の累計（計画と現実の乖離）。mdInternalYearsは商品部が内部育成重視だった年数（⑤は毎年見直せるため、経営者力量審判「③繋ぐ力」は最終年のスナップショットではなく5年間の実績で判定する）
+  state.restructureShockYears=0; // リストラ直後は動揺で離職が増える(ショック期間)
+  state.planSnapshot = null; // 投資配分を確定した時点の期待値（結果画面で実績と比較）
+  // Year10時点の人財ポートフォリオを凍結保存（結果画面で「②で見せた現在の構成比が5年でどうなったか」を比較するため）
+  state.initialEmps = state.emps.map(e=>({...e}));
+  state.initialStats = portfolioStats(state.initialEmps);
+  // 事業成果（カネ）：年商8.6億円を起点に、粗利率50%で開始する
+  state.finance = {revenue:BASE_ANNUAL_REVENUE, marginRate:MARGIN_BASE, grossProfit:0, opProfit:0, cumOppLossManYen:0};
+  state.finance.grossProfit = Math.round(state.finance.revenue*state.finance.marginRate);
+  recomputeBudget();
+  state.finance.opProfit = state.finance.grossProfit - payrollTotal() - (storeRentAnnual()+FIXED_SGA);
+  state.initialFinance = {...state.finance};
+}
+function shareSum(){return DEPTS.reduce((s,d)=>s+state.alloc[d.id].share,0)}
+function orgOverheadCost(){
+  const leverCost=Object.keys(LEVER_INFO).filter(k=>state.orgDesign[k]).reduce((s,k)=>s+LEVER_INFO[k].cost,0);
+  return leverCost + Object.keys(state.orgDesign.elevated).filter(k=>state.orgDesign.elevated[k])
+    .reduce((s,k)=>s+(ELEVATE_INFO[k]?.cost||0),0);
+}
+function recomputeBudget(){ // 年間の人財投資予算(万円) = 総人件費 × 投資強度 − 組織再編の管理コスト（経営者が決める）
+  state.budget = Math.max(0, Math.round(payrollTotal()*INVEST_LEVELS[state.investLevel].rate) - orgOverheadCost());
+}
+function deptEmps(d){return state.emps.filter(e=>e.dept===d)}
+function headcount(d){return deptEmps(d).length}
+function demandAt(d,y){return state.demand[d][y-START_YEAR]}
+
+// 供給見込み(無策): 現有から毎年 定年(>=65)と離職(概算)を引く
+function supplyForecast(d){
+  const out=[]; let list=deptEmps(d).map(e=>({...e}));
+  for(let y=START_YEAR;y<=END_YEAR;y++){
+    if(y>START_YEAR){
+      list.forEach(e=>e.age++);
+      list=list.filter(e=>e.age<65); // 定年
+      const attr = d==='store'?0.12:0.09;
+      // 乱数(rng())は使わない：この関数は④部門別ギャップ画面のプレビュー計算として
+      // レンダリングのたびに何度も呼ばれるため、rng()を消費すると同じ乱数列を共有する
+      // 本編の採用成功率・離職判定・市場変動まで、見るだけの操作で結果が変わってしまう。
+      // projectRoster()と同じ「低ポテンシャル層から決定論的に間引く」方式に統一する。
+      // 30代の壁(physicalStrainMult)は③組織設計(接客コンシェルジュ投資)の直後に見る画面のため反映する。
+      const avgStrain = list.length ? list.reduce((s,e)=>s+physicalStrainMult(e),0)/list.length : 1;
+      const remove=Math.round(list.length*attr*0.6*avgStrain); // 概算離職(予測なので控えめ)
+      list=list.slice().sort((a,b)=>a.pot-b.pot).slice(remove);
+    }
+    out.push(list.length);
+  }
+  return out;
+}
+// 計画込み供給(pending着任を上乗せ)
+function supplyWithPlan(d){
+  const base=supplyForecast(d);
+  const arrivals={}; state.pending.filter(p=>p.dept===d).forEach(p=>{arrivals[p.arrive]=(arrivals[p.arrive]||0)+1});
+  let cum=0; return base.map((v,i)=>{const y=START_YEAR+i; cum+=arrivals[y]||0; return v+cum});
+}
+function gapAt(d,y){return demandAt(d,y)-headcount(d)} // 今年の即時ギャップ(簡易)
+
+/* ---------- 採用市場が調達に効く ---------- */
+function tight(cat){return clamp(state.market[cat],0,100)}
+function vendorAmplifier(dept){ return dept==='ec' && ecState()==='vendor' ? 1.35 : 1; } // ベンダー丸投げ状態は市場逼迫の影響をより強く受ける
+function channelCost(chId,dept){
+  const c=CHANNELS[chId]; const cat=DEPTS.find(d=>d.id===dept).cat; const t=tight(cat)/100*vendorAmplifier(dept);
+  if(c.build) return chId==='develop'?5:0;
+  if(c.feeRate) return Math.round(DEPT_SALARY[dept]*c.feeRate*(1+t*0.4));
+  return Math.round((c.cost||80)*(1+t*0.5));
+}
+function channelSuccess(chId,dept){
+  const c=CHANNELS[chId]; const cat=DEPTS.find(d=>d.id===dept).cat; const t=tight(cat)/100*vendorAmplifier(dept);
+  let s=c.success*(c.build?1:(1-t*0.45))*engagementMult(); return clamp(s,0.15,0.97);
+}
+function referralCap(){return Math.max(1,Math.round(state.emps.length*0.06))} // 枠=社員数の6%
+
+/* ============================ SIMULATION ============================ */
+// 現場の実行：経営者が決めた配分方針(share/stance)＋②で決めた人事アーキテクチャに沿って、
+// 実際に誰をどう採るかを執行する。経営者はこのロジックを直接操作しない＝「何人どこから」は現場の仕事。
+function allocWeights(stance){
+  const build=100-stance, buy=stance;
+  const arch=HR_ARCHITECTURE[state.orgDesign.hrArchitecture];
+  return { develop:build*1.0*arch.developMult, transfer:build*0.4*arch.transferMult, referral:30, newgrad:buy*0.5, agency:buy*0.6, headhunt:buy*0.3 };
+}
+function autoExecuteYear(){
+  const totalBudget=state.budget;
+  state._buildHiresThisYear=0;
+  DEPTS.forEach(d=>{
+    const dept=d.id; const stance=state.alloc[dept].stance;
+    const annualSpend=totalBudget*effectiveShare(dept)/100;
+    const w=allocWeights(stance); const sum=Object.values(w).reduce((a,b)=>a+b,0);
+    // 個々の採用試行を1件ずつログに出すと「現場からの報告」が数十行の羅列になり読めなくなるため、
+    // 部門ごとに1件のサマリー行へ集約する（誰が何をしたかの詳細はstate.actual/state.pendingで追える）。
+    let promote=0, transfer=0, hireSuccess=0, hireFail=0;
+    ['develop','transfer'].forEach(ch=>{
+      const frac=w[ch]/sum;
+      // 柔軟な勤務制度は店舗運営部の内部育成(昇格)ペースを鈍らせる（次世代経営層パイプラインとのトレードオフ）
+      const pipelinePenalty = (ch==='develop' && dept==='store' && state.orgDesign.flexWork) ? LEADERSHIP_PIPELINE_PENALTY : 1;
+      const capacity=frac*BUILD_CAPACITY_MULT*engagementMult()*pipelinePenalty; // エンゲージメントが内製化(育成・異動)のスピードを左右する
+      const carryKey=dept+':'+ch; const carryTotal=capacity+(state.hireCarry[carryKey]||0);
+      const n=Math.floor(carryTotal); state.hireCarry[carryKey]=carryTotal-n;
+      const promotedIds=new Set(); // 同じ人物がpotの高さゆえに同じ年に何度も昇格し続けないようにする
+      for(let i=0;i<n;i++){
+        if(ch==='develop'){
+          const t=deptEmps(dept).filter(e=>e.grade<4&&!promotedIds.has(e.id)).sort((a,b)=>b.pot-a.pot)[0];
+          if(t){
+            promotedIds.add(t.id);
+            const fromRole=t.role;
+            t.grade++;
+            // 店舗運営部：パート→販売(正社員登用)→副店長(昇格)というキャリアパスを内部育成で明示的に辿らせる
+            if(dept==='store'){
+              if(fromRole==='パート'&&t.grade>=2) t.role='販売';
+              else if(fromRole==='販売'&&t.grade>=3) t.role='副店長';
+            }
+            // 商品部：若手バイヤー候補/MDプランナー→MD→バイヤーというキャリアパスを内部育成で明示的に辿らせる
+            // （旧実装ではバイヤーが初期の2名にしか付与されず、退職・離職すると二度と補充されなかった）
+            else if(dept==='md'){
+              if((fromRole==='若手バイヤー候補'||fromRole==='MDプランナー')&&t.grade>=3) t.role='MD';
+              else if(fromRole==='MD'&&t.grade>=4) t.role='バイヤー';
+            }
+            state.actual[dept]=(state.actual[dept]||0)+1; state._buildHiresThisYear++; promote++;
+          }
+        } else {
+          const from=state.emps.filter(e=>e.dept!==dept&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.dept!=='mgmt').sort((a,b)=>headcount(b.dept)-headcount(a.dept))[0];
+          if(from){from.dept=dept; from.role=ROLE_BY_DEPT[dept]; state.actual[dept]=(state.actual[dept]||0)+1; state._buildHiresThisYear++; transfer++;}
+        }
+      }
+    });
+    ['newgrad','agency','headhunt','referral'].forEach(ch=>{
+      const frac=w[ch]/sum; const chBudget=annualSpend*frac; const unit=channelCost(ch,dept);
+      if(unit<=0) return;
+      const carryKey=dept+':'+ch; const carryTotal=chBudget/unit+(state.hireCarry[carryKey]||0);
+      let n=Math.floor(carryTotal); state.hireCarry[carryKey]=carryTotal-n;
+      if(ch==='referral'){ const capLeft=referralCap()-state.pending.filter(p=>p.ch==='referral').length; n=Math.min(n,Math.max(0,capLeft)); }
+      for(let i=0;i<n;i++){
+        const ok=rng()<channelSuccess(ch,dept);
+        if(ok){
+          const c=CHANNELS[ch]; const arrive=state.year+c.lead;
+          const hire={dept,ch,role:ROLE_BY_DEPT[dept],arrive,grade: ch==='headhunt'?4:2, age: ch==='newgrad'?23:ri(28,42)};
+          if(c.lead===0){
+            const gender = dept==='store' ? (rng()<.2?'M':'F') : (rng()<.5?'M':'F');
+            const ne={id:'e'+Math.floor(rng()*99999)+i,dept,role:hire.role,age:hire.age,grade:hire.grade,gender,pot:0.5,name:name(gender)};
+            if(dept==='store') ne.weekendOK=assignWeekendOK(gender);
+            state.emps.push(ne);
+          }
+          else { state.pending.push(hire); }
+          state.actual[dept]=(state.actual[dept]||0)+1; hireSuccess++;
+        } else { state.cum.failed++; hireFail++; }
+      }
+    });
+    const parts=[];
+    if(promote) parts.push(`内部育成${promote}名昇格`);
+    if(transfer) parts.push(`内部異動${transfer}名`);
+    if(hireSuccess) parts.push(`外部採用${hireSuccess}件成立`);
+    if(hireFail) parts.push(`採用${hireFail}件が市場逼迫で不成立`);
+    if(parts.length) state.log.push(`${d.name}：${parts.join('・')}`);
+  });
+  emergencyBackfill();
+}
+// 緊急対応：市場で採用できず・方針上も内部異動を絞っていても、業務が止まる寸前の部門には
+// 最低限の人員を強制的に融通する。「ジョブ型を標榜していても、現場は方針を破ってでも人を回す」
+// という現実を反映する。ジョブ型固定の場合は方針との矛盾としてログに残り、エンゲージメントも削れる。
+function emergencyBackfill(){
+  DEPTS.forEach(d=>{
+    if(d.id==='mgmt') return; // 経営(後継者)は個別の忠誠度で別途扱う
+    const dem=demandAt(d.id, state.year);
+    const fillRatio = dem? headcount(d.id)/dem : 1;
+    if(fillRatio>=0.6) return; // 致命的な不足でなければ通常運用のまま
+    const from=state.emps.filter(e=>e.dept!==d.id&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.dept!=='mgmt')
+      .sort((a,b)=>headcount(b.dept)-headcount(a.dept))[0];
+    if(!from) return;
+    const prevDept=from.dept; from.dept=d.id; from.role=ROLE_BY_DEPT[d.id];
+    state.actual[d.id]=(state.actual[d.id]||0)+1;
+    state.cum.emergencyTransfers=(state.cum.emergencyTransfers||0)+1;
+    const isJobtype=state.orgDesign.hrArchitecture==='jobtype';
+    const archName=HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name;
+    state.log.push(`${d.name}：要員充足率${Math.round(fillRatio*100)}%で業務継続が困難。${isJobtype?`「${archName}」方針に反してでも、`:''}${CAT_NAME[DEPTS.find(x=>x.id===prevDept).cat]}から緊急に人員を融通しました。`);
+    if(isJobtype) state.engagement=Math.round(clamp(state.engagement-3,5,95)); // 方針と現実の矛盾が組織に軋みを生む
+  });
+}
+function advanceYear(){
+  const y=state.year;
+  state.log=[];
+  // 経営者力量審判「③繋ぐ力」の商品部条件は、最終年のスナップショットではなくこの5年間で
+  // 実際に内部育成重視だった年数の積み上げで判定する（この年の執行前の時点のスタンスを計上）。
+  if(state.alloc.md.stance<=40) state.cum.mdInternalYears=(state.cum.mdInternalYears||0)+1;
+  // 現場が今年の配分方針を執行する（経営者は方針だけ決め、実行結果は事後に分かる）
+  autoExecuteYear();
+  // pending 着任
+  const arrived=state.pending.filter(p=>p.arrive===y+1);
+  // 加齢・退職・離職（エンゲージメントが低いほど離職率が上がる＝悪循環/好循環のフィードバック。
+  // 報酬・処遇水準(comp)も定着率に直接効く＝build/buyとは独立したもう1本のレバー）
+  let retired=0,left=0; const preCount=state.emps.length;
+  const engFactor=clamp(1.6-state.engagement/100, 0.6, 1.6);
+  const compTurnoverMult=COMP_LEVELS[state.compLevel].turnoverMult;
+  const restructureShockMult = state.restructureShockYears>0 ? 1.25 : 1; // リストラ直後は組織不安で自発的離職が増える
+  state.emps.forEach(e=>e.age++);
+  state.emps=state.emps.filter(e=>{
+    if(e.role==='社長') return true; // 社長は承継処理で扱う
+    if(e.id===state.successor) return true; // 後継者は定年の一律離脱対象からも除外し、個別の忠誠度だけで扱う(下で処理)
+    if(e.age>=65){retired++;return false}
+    const attr=(e.dept==='store'?0.12:0.09)*engFactor*compTurnoverMult*restructureShockMult*physicalStrainMult(e);
+    if(rng()<attr){left++;return false}
+    return true;
+  });
+  if(state.restructureShockYears>0) state.restructureShockYears--;
+  // 着任を反映（店舗運営部は現場の性別構成比に合わせ、土日可否も新規に割り当てる）
+  arrived.forEach(p=>{
+    const gender = p.dept==='store' ? (rng()<.2?'M':'F') : (rng()<.5?'M':'F');
+    const e={id:'e'+(Date.now()%100000)+Math.floor(rng()*999),dept:p.dept,role:p.role,age:p.age||ri(25,40),grade:p.grade||2,gender,pot:0.5,name:name(gender)};
+    if(p.dept==='store') e.weekendOK=assignWeekendOK(gender);
+    state.emps.push(e);
+  });
+  state.pending=state.pending.filter(p=>p.arrive>y+1);
+  state.cum.retired+=retired; state.cum.left+=left;
+  // エンゲージメントの更新：離職の多さ・要員不足の深刻さ・投資方針(build/buy)・報酬水準・実際の内製登用が効く
+  {
+    const leftRatio = preCount? left/preCount : 0;
+    const gapSeverity = avg(DEPTS.map(d=>{const dem=demandAt(d.id,Math.min(y+1,END_YEAR)); const need=Math.max(0,dem-headcount(d.id)); return dem? need/dem : 0;}));
+    const buyLean = DEPTS.reduce((s,d)=>s+effectiveShare(d.id)/100*state.alloc[d.id].stance,0); // 0(内製寄り)〜100(外部調達寄り)
+    const wfr=weekendFillRate();
+    const weekendPenalty = wfr<STORE_WEEKEND_FILL_THRESHOLD ? (STORE_WEEKEND_FILL_THRESHOLD-wfr)*40 : 0; // 頭数が足りていても土日の壁があれば現場品質が落ちる
+    // 何もしなければエンゲージメントは毎年じわじわ目減りする（組織の自然なエントロピー）。
+    // 人心掌握度が高いほどこの目減りが緩み、100近くではむしろ底上げに転じる。経営・管理本部(本社)は
+    // 現場(店舗・商品・EC)より社長との接点が多いため、この人心掌握度の効果をより強く受ける。
+    const hqCount = headcount('admin')+headcount('mgmt'), fieldCount = headcount('store')+headcount('md')+headcount('ec');
+    const hqShare = (hqCount+fieldCount)? hqCount/(hqCount+fieldCount) : 0;
+    const charismaRelief = clamp((state.charisma-50)/50, -1, 1); // -1(人心掌握度0)〜0(50)〜+1(100)
+    const decayMult = clamp(1 - charismaRelief*1.2, -0.5, 2.2); // 人心掌握度が高いほど目減りが緩む/むしろ上向く、低いほど目減りが加速する
+    const naturalDecay = hqShare*(ENGAGEMENT_BASE_DECAY*HQ_CHARISMA_SENSITIVITY*decayMult) + (1-hqShare)*(ENGAGEMENT_BASE_DECAY*FIELD_CHARISMA_SENSITIVITY*decayMult);
+    let engDelta = -leftRatio*60 - gapSeverity*20 + (50-buyLean)*0.12 + Math.min(5,(state._buildHiresThisYear||0)) + COMP_LEVELS[state.compLevel].engBonus - weekendPenalty - naturalDecay;
+    state.engagement = Math.round(clamp(state.engagement+engDelta, 5, 95));
+  }
+  // 後継者育成進捗 ＋ 個別の忠誠度（会社全体のエンゲージメントとは別に、
+  // このキーパーソン個人の定着リスクを可視化する。見えないサイコロで理不尽に消えないようにする）
+  if(state.successor){
+    const s=state.emps.find(e=>e.id===state.successor);
+    if(!s){ state.successor=null; state.succProgress=0; state.successorLoyalty=0; }
+    else {
+      // 経営(mgmt)への投資を内製(build)寄りにするほど後継者育成が進み、忠誠度も上がる。
+      // 人事アーキテクチャがジョブローテーション型だとさらに育成が進み(視野が育つ)、
+      // ジョブ型固定だと遅れる（専門特化を優先した代償）。あわせて後継者本人の潜在力(pot)も
+      // 一定の効果を持たせる（プロフィールで見せている以上、選ぶ意味を持たせるため）。
+      // ただし主役はあくまで経営者の投資判断であって天性の資質ではない、という設計思想を
+      // 保つため、影響は控えめに留める。
+      const mgmtStance=state.alloc.mgmt.stance;
+      const buildFrac=1-mgmtStance/100;
+      const archBonus=HR_ARCHITECTURE[state.orgDesign.hrArchitecture].succBonus;
+      const potBonus=Math.round((s.pot-0.5)*20); // pot0.4〜0.9の範囲でおよそ-2〜+8
+      const inc=Math.round(10+buildFrac*30+archBonus)+potBonus; // 内製寄り(stance=0)なら+40、外部寄り(stance=100)なら+10、これに人事方針・本人の潜在力の補正が乗る
+      state.succProgress=clamp(state.succProgress+inc,0,100);
+      let loyDelta = buildFrac*12 - Math.max(0,55-state.engagement)*0.4; // 会社全体の空気が悪いと個人の忠誠度も下がる(波及)
+      if(state.successorBoosted){ loyDelta+=15; state.successorBoosted=false; } // 「厚遇する」を使った年は上乗せ
+      state.successorLoyalty=Math.round(clamp((state.successorLoyalty??65)+loyDelta,0,100));
+      // 忠誠度が低いほど、この人個人が離脱するリスクが上がる（見える化された個別リスク）。
+      // 70以上を維持できていればリスクはゼロ＝正しく手を打てば確実に守れる、という納得感を優先する。
+      if(rng() < clamp((70-state.successorLoyalty)/100,0,1)*0.35){
+        state.log.push(`後継者（${s.name}）の忠誠度が限界に達し、離脱しました。`);
+        state.emps=state.emps.filter(e=>e.id!==state.successor);
+        state.successor=null; state.succProgress=0; state.successorLoyalty=0;
+      }
+    }
+  }
+  // 市場変動(小さくドリフト。デジタルは高止まり)
+  Object.keys(state.market).forEach(k=>{ let d=(rng()-0.5)*10; if(k==='digital')d=Math.max(d,0)*0.5+2; state.market[k]=clamp(state.market[k]+d, k==='digital'?70:20, 95)});
+  // 事業成果（カネ）：土日充足率・バイヤー承継・ECのDX状態が、今年の売上成長率と粗利率を左右する
+  computeYearFinance();
+  state.year++;
+  recomputeBudget();
+  if(retired)state.log.push(`定年退職 ${retired}名`); if(left)state.log.push(`離職 ${left}名`); if(arrived.length)state.log.push(`入社(着任) ${arrived.length}名`);
+  snapshot();
+  state.charismaActionUsed=false; // 人心掌握アクションは年1回まで。年が進んだらリセットする
+  state.plannedTransferUsed=false; // 計画的な人財配転も年1回まで。年が進んだらリセットする
+  if(state.year>=END_YEAR){ resolveEnding(); return; } // Year15到達＝5年分の実行が完了した時点で即終了（6年目分の"おまけラウンド"を発生させない）
+  state.phase='year';
+}
+function resolveEnding(){
+  // 承継判定
+  let succ = state.succProgress>=70?'smooth':state.succProgress>=30?'rocky':'fail';
+  state.ending = succ;
+  state.phase='result';
+}
+// state.year はこの時点ですでに翌年へ進んでいるため、concludedYear=state.year-1 が「今終わった年」
+function snapshot(){
+  const concludedYear=state.year-1;
+  state.history.push({
+    year:concludedYear, label:planYear(concludedYear)+'年目',
+    headcount:Object.fromEntries(DEPTS.map(d=>[d.id,headcount(d.id)])),
+    revenue:state.finance.revenue, marginRate:state.finance.marginRate, opProfit:state.finance.opProfit,
+    engagement:state.engagement, charisma:state.charisma,
+    log:state.log.slice(),
+  });
+}
+
+/* ============================ DIAGNOSIS ============================ */
+// 現状把握（③人財レントゲン）の診断：会社全体・後継者・エンゲージメントなど「今の状態」に関するもの。
+// ②組織設計の判断材料としても使われるため、組織設計より前のフェーズに置く。
+function diagnosePortfolio(){
+  const a=[];
+  const youngSM=state.emps.filter(e=>e.dept==='store'&&e.grade>=3&&e.age<38).length;
+  if(youngSM===0) a.push({s:'critical',m:'店舗運営部：38歳未満の店長・候補がゼロ。出店計画に対し内部昇進が枯れています。'});
+  const buyerCount=deptEmps('md').filter(e=>e.role==='バイヤー').length;
+  const buyerAvg=avg(deptEmps('md').filter(e=>e.role==='バイヤー').map(e=>e.age)); // バイヤー職のみの平均(MD/若手枠を含めない)
+  if(buyerCount===0) a.push({s:'critical',m:'商品部：バイヤーが不在です。仕入れの目利きが完全に失われています。至急補充してください。'});
+  else if(buyerAvg>=BUYER_AGE_WARN_THRESHOLD) a.push({s:'warning',m:`商品部：バイヤーの平均年齢が${buyerAvg.toFixed(0)}歳。目利きの承継が急務です。`});
+  if(!state.successor) a.push({s:'critical',m:`経営：社長引退まであと${END_YEAR-state.year}年。後継者トラックが空です。育成には数年かかります。`});
+  else if(state.successorLoyalty<50) a.push({s:'critical',m:`後継者の忠誠度が${state.successorLoyalty}まで低下。離脱のリスクが現実的に高まっています。厚遇するか、経営への投資を内部育成寄りに戻してください。`});
+  else if(state.successorLoyalty<70) a.push({s:'warning',m:`後継者の忠誠度が${state.successorLoyalty}です。70未満だと離脱のリスクが生じ始めます。`});
+  if(state.engagement<40) a.push({s:'critical',m:`エンゲージメントが${state.engagement}まで低下しています。離職がさらに増える悪循環に入るおそれがあります。外部調達偏重を見直し、内部育成に重心を戻すか、報酬水準を上げてください。`});
+  else if(state.engagement<55) a.push({s:'warning',m:`エンゲージメントが${state.engagement}に低下しています。離職率が上がり始めています。`});
+  const wfr=weekendFillRate();
+  if(wfr<STORE_WEEKEND_FILL_THRESHOLD) a.push({s:'warning',m:`店舗運営部：土日祝の充足率が${Math.round(wfr*100)}%と目安（${Math.round(STORE_WEEKEND_FILL_THRESHOLD*100)}%）を下回っています。頭数が足りていても、現場品質・売上に影響します。柔軟な勤務制度の導入を検討してください。`});
+  const es=ecState();
+  if(es==='vendor') a.push({s:'warning',m:'EC・デジタル部：システムベンダ丸投げ・パッケージ依存の状態です。変化対応が遅れ、コストも高止まりしています。ジョブ型固定＋内部育成寄りの投資でこの依存から脱却できます。'});
+  return a;
+}
+// 部門別ギャップ（④）の診断：戦略・組織設計が決まった後の需給・市場に関するもの。
+function diagnoseGap(){
+  const a=[];
+  DEPTS.forEach(d=>{
+    const g5=demandAt(d.id,END_YEAR)-supplyWithPlan(d.id)[END_YEAR-START_YEAR];
+    if(g5>=3) a.push({s:'critical',m:`${d.name}：5年後に約${g5}名の不足見込み。今から複数経路で手当てが必要です。`});
+    else if(g5>=1) a.push({s:'warning',m:`${d.name}：5年後に約${g5}名の不足見込み。`});
+    // 内部育成・異動は人数ベースで頭打ちになり、カネを積んでも増やせない。急成長には外部調達が要る、という判断材料
+    const growthNeed=demandAt(d.id,END_YEAR)-headcount(d.id);
+    if(d.id!=='mgmt' && growthNeed>0 && growthNeed/Math.max(1,headcount(d.id))>=0.4){
+      a.push({s:'info',m:`${d.name}：5年で現有比${Math.round(growthNeed/Math.max(1,headcount(d.id))*100)}%の急成長ペースです。内部育成・異動は人数ベースで頭打ちになるため、⑤投資配分では外部調達重視への配分を検討してください。`});
+    }
+    if(d.id!=='mgmt'){
+      const dem=demandAt(d.id, state.year); const fillRatio=dem? headcount(d.id)/dem : 1;
+      if(fillRatio<0.6){
+        const isJobtype=state.orgDesign.hrArchitecture==='jobtype';
+        a.push({s:'critical',m:`${d.name}：今年の充足率が${Math.round(fillRatio*100)}%と深刻です。業務が回らなければ、${isJobtype?'「ジョブ型固定」の方針に反してでも':''}緊急の人員融通が起きます（採用できないポジションは今いる人で埋めるしかありません）。`});
+      }
+    }
+  });
+  if(tight('digital')>=80) a.push({s:'warning',m:`EC・デジタル人財の採用市場が逼迫（逼迫度${Math.round(tight('digital'))}）。単一経路依存は危険。内部育成との併用を。`});
+  if(state.budget<=0) a.push({s:'warning',m:'年間投資予算が枯渇しています。組織再編の管理コストや報酬水準が重すぎる可能性があります。'});
+  return a;
+}
+function diagnose(){ return diagnosePortfolio().concat(diagnoseGap()); } // 経営フェーズ(⑤)で全体を見る用
+function avg(x){return x.length?x.reduce((a,b)=>a+b,0)/x.length:0}
+
+/* ============================ RENDER ============================ */
+const $=s=>document.querySelector(s);
+// ゲーム全体のフェーズ地図。「今どこにいるか」を常時表示するための単一情報源。
+const PHASE_STEPS=[
+  {key:'strategy', label:'① 事業戦略'},
+  {key:'portfolio',label:'② 人財レントゲン'},
+  {key:'orgdesign',label:'③ 組織設計'},
+  {key:'gap',      label:'④ 部門別ギャップ'},
+  {key:'invest',   label:'⑤ 投資配分'},
+  {key:'year',     label:'⑥ 経営（毎年）'},
+  {key:'result',   label:'⑦ 結果'},
+];
+function renderPhaseBar(){
+  const curIdx=PHASE_STEPS.findIndex(s=>s.key===state.phase);
+  return `<div class="phasebar">${PHASE_STEPS.map((s,i)=>{
+    const cls= i===curIdx?'active':(i<curIdx?'done':'');
+    const extra= s.key==='year'&&i===curIdx? `（${planYear()}年目/${PLAN_YEARS}）` : '';
+    return `<span class="step ${cls}">${s.label}${extra}</span>${i<PHASE_STEPS.length-1?'<span class="arrow">→</span>':''}`;
+  }).join('')}</div>`;
+}
+let lastRenderedPhase=null; // フェーズが実際に切り替わった時だけ先頭にスクロールする（同じ画面内での微調整のたびに
+                             // 先頭へ戻されると操作しづらいため、スクロール位置を保つ）
+function render(){
+  const p=state? state.phase : 'title';
+  let h='';
+  if(p==='title') h=vTitle();
+  else{
+    h=header()+(p==='result'?'':missionBanner())+renderPhaseBar();
+    if(p==='strategy') h+=vStrategy();
+    else if(p==='portfolio') h+=vPortfolio();
+    else if(p==='orgdesign') h+=vOrgDesign();
+    else if(p==='gap') h+=vGap();
+    else if(p==='invest') h+=vInvest();
+    else if(p==='year') h+=vYear();
+    else if(p==='result') h+=vResult();
+  }
+  h+='<p class="small muted" style="text-align:center;margin-top:32px">© 2026 MitsunoriKomaba.</p>';
+  const scrollY=window.scrollY;
+  $('#app').innerHTML=h; bind();
+  if(p!==lastRenderedPhase){
+    window.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});
+  } else {
+    window.scrollTo(0, scrollY); // innerHTML置換でブラウザが位置をずらすことがあるため明示的に復元
+  }
+  lastRenderedPhase=p;
+}
+function header(){
+  const showOrgSummary=!['strategy','portfolio','orgdesign'].includes(state.phase);
+  return `<header class="bar">
+    <div><b>${esc(state.companyName)}</b> <span class="pill" title="中期経営計画5年間のうち何年目か">${Math.min(planYear(),PLAN_YEARS)}年目 / ${PLAN_YEARS}年</span>
+    ${state.phase!=='strategy'?`<span class="pill" title="事業戦略">🧭 ${stratSummary()}</span>`:''}
+    ${showOrgSummary?`<span class="pill" title="人事アーキテクチャ">🏢 ${HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name}</span>`:''}</div>
+    <div class="row"><span class="pill" title="年商">💰 年商${(state.finance.revenue/10000).toFixed(2)}億円</span>
+    <span class="pill" title="粗利率">粗利率${Math.round(state.finance.marginRate*100)}%</span>
+    <span class="pill" title="営業利益" style="color:${state.finance.opProfit<0?'var(--bad)':'var(--ok)'}">営業利益${(state.finance.opProfit/10000).toFixed(2)}億円</span>
+    <span class="pill">年間投資予算 ${state.budget}万円</span>
+    <span class="pill">社員 ${state.emps.length}名</span>
+    <span class="pill" title="従業員エンゲージメント（離職率・現場の実行成功率を左右する）" style="color:${state.engagement<40?'var(--bad)':state.engagement<55?'var(--warn)':'var(--ok)'}">😊 ${state.engagement}</span>
+    <span class="pill" title="人心掌握度（社長個人の人望・現場との関係構築力。エンゲージメントの目減りを緩和する）" style="color:${state.charisma<40?'var(--bad)':state.charisma<60?'var(--warn)':'var(--ok)'}">🤝 ${state.charisma}</span>
+    <button class="ghost small" data-act="restart">最初から</button></div>
+  </header>`;
+}
+// 冒頭のミッションを常時1行で打ち出す（タイトル画面だけでなくゲーム中も）。文字量は最小限に抑える。
+// ただし⑦結果画面では任期がすでに終わっており、この先を戒める文言は文脈が合わないため表示しない
+// （結果画面には実際の戦略実現度に基づく評価文が別途あるため、そちらに任せる）。
+function missionBanner(){
+  return `<p class="small muted" style="text-align:center;margin:2px 0 14px">🏛 任期5年で、更に10年永続できる会社を。<b>人財で実現できない戦略は、すべて絵に描いた餅だ。</b></p>`;
+}
+function vTitle(){
+  const steps=[
+    {n:'①',t:'事業戦略',d:'成長方針と重点事業'},
+    {n:'②',t:'人財レントゲン',d:'現状把握'},
+    {n:'③',t:'組織設計',d:'組織再編と人事方針'},
+    {n:'④',t:'部門別ギャップ',d:'需給の差'},
+    {n:'⑤',t:'投資配分',d:'予算配分と育成⇄調達'},
+    {n:'⑥',t:'経営（毎年）',d:'実行しては見直す'},
+    {n:'⑦',t:'結果',d:'戦略実現度と承継の成否'},
+  ];
+  return `<div class="center" style="max-width:680px;margin:6vh auto">
+    <h1>人財ポートフォリオマネジメント <span class="small muted" style="font-weight:400">ver ${APP_VERSION}</span></h1>
+    <p class="muted">— 次の5年 人財投資計画 —</p>
+    <div class="card" style="text-align:left;margin:16px 0">
+      <p><b>あなたは社長。任期は5年。</b>この中期経営計画で、この企業が更に10年永続できる会社にしてください。</p>
+      <p><b>人財で実現できない戦略は、すべて絵に描いた餅だ。</b></p>
+      <p>あなたが挑むのは、単なる頭数合わせのパズルではありません。描いた事業戦略と、それを支える組織設計、そして人財への投資配分——この3つが美しく噛み合わなければ、現場は疲弊し、人財は流出し、<b>数億円規模の機会損失（赤字）</b>となって会社はもぬけの殻になります。</p>
+      <p>さらに、あなたには<b>「5年後の引退」</b>という絶対的な制約があります。自分が去った後も会社が存続できるか？ 孤独な決断の5年間が、今始まります。</p>
+    </div>
+    <div class="card" style="text-align:left;margin:0 0 20px">
+      <h3 style="margin-bottom:8px">あなたが引き継ぐ会社（創業10年目）</h3>
+      <p class="small muted" style="margin:0 0 10px">${PRODUCT_LINE}の店舗型小売業（非上場・現預金資産も潤沢）</p>
+      <div class="kpi">
+        ${kpiBox('年商', (BASE_ANNUAL_REVENUE/10000).toFixed(2)+'億円')}
+        ${kpiBox('店舗数', BASE_STORE_COUNT+'店舗')}
+        ${kpiBox('従業員数', INITIAL_EMPLOYEE_COUNT+'名')}
+        ${kpiBox('営業利益', '+'+(INITIAL_OP_PROFIT_MANYEN/10000).toFixed(2)+'億円')}
+      </div>
+      <p class="small muted" style="margin-top:8px">累積損失：なし。その他の重大な経営リスクも、現時点では見当たりません。</p>
+    </div>
+    <div class="card" style="text-align:left;margin:0 0 20px">
+      <h3 style="margin-bottom:12px">ゲームの流れ</h3>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px 16px">
+        ${steps.map(s=>`<div style="display:flex;align-items:center;gap:10px">
+          <span class="pill" style="flex:0 0 auto">${s.n}</span>
+          <div style="flex:1 1 auto;min-width:0"><b>${s.t}</b><span class="small muted"> — ${s.d}</span></div>
+        </div>`).join('')}
+      </div>
+      <p class="small muted" style="margin-top:12px">⑥は5年間繰り返します。①③は期首に一度だけ決め、5年間は原則動かしません。</p>
+    </div>
+    <div class="card" style="text-align:left;margin:0 0 20px">
+      <div class="row" style="gap:10px;align-items:center;flex-wrap:nowrap">
+        <label for="companyNameInput" class="small" style="font-weight:700;white-space:nowrap">会社名</label>
+        <input id="companyNameInput" type="text" value="${esc(draftCompanyName)}" maxlength="30" placeholder="例：株式会社サンプルマート"
+          style="flex:1 1 auto;min-width:0;padding:10px;border-radius:6px;border:1px solid var(--line);font-size:14px;outline:none;box-sizing:border-box;background:var(--panel);color:var(--text)"/>
+      </div>
+      <p class="small muted" style="margin-top:6px">※ ここでのみ決められます。5年間は変更できません。</p>
+    </div>
+    <div class="row center" style="justify-content:center">
+      <button class="primary" data-act="start">事業戦略を描く →</button>
+    </div>
+  </div>`;
+}
+function stratSummary(){
+  const e=STRATEGY_OPTIONS.expansion.find(x=>x.id===state.strategy.expansion).name;
+  const f=state.strategy.focuses.map(id=>STRATEGY_OPTIONS.focus.find(x=>x.id===id).name).join('・')||'重点なし';
+  return `${e} ／ ${f}`;
+}
+function vStrategy(){
+  const s=state.strategy;
+  const expBtns=STRATEGY_OPTIONS.expansion.map(o=>`<button class="channelbtn ${s.expansion===o.id?'primary':''}" data-exp="${o.id}"><span><b>${o.name}</b></span><span></span><small>${o.desc}</small></button>`).join('');
+  const focBtns=STRATEGY_OPTIONS.focus.map(o=>{const on=s.focuses.includes(o.id);return `<button class="channelbtn ${on?'primary':''}" data-focus="${o.id}"><span><b>${on?'✓ ':''}${o.name}</b></span><span></span><small>${o.desc}</small></button>`}).join('');
+  // 需要プレビュー(Y15) — 戦略→人財需要の因果を見せる
+  const prev=DEPTS.map(d=>{const now=headcount(d.id),dm=state.demand[d.id][END_YEAR-START_YEAR];return `<tr><td>${d.name}</td><td>${now}</td><td><b>${dm}</b></td><td>${dm-now>0?`<span class="tag warn">+${dm-now}必要</span>`:'<span class="tag ok">充足</span>'}</td></tr>`}).join('');
+  return `<h2>🧭 事業戦略（次の5年の見立て）</h2>
+  <p class="muted small">まず経営者として「どう戦うか」を決めます。この戦略が、次の組織・人財需要を生みます。<b>戦略が先、組織・人財は後</b>。</p>
+  <div class="grid split" style="grid-template-columns:1fr 1fr">
+    <div class="card"><h3>成長方針（出店ペース）</h3><div class="grid">${expBtns}</div></div>
+    <div class="card"><h3>重点事業（どこに張るか・最大2つ）</h3><div class="grid">${focBtns}</div></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>この見立てが求める人財（5年後の需要・組織再編前の暫定値）</h3>
+    <table><tr><th>部門</th><th>現有</th><th>5年後の必要人数</th><th></th></tr>${prev}</table>
+    <p class="small muted" style="margin-top:8px">↑ 戦略を変えると必要人財が変わります。次のフェーズで、この戦略に応じた組織設計を決めると数値がさらに動きます。</p>
+  </div>
+  <div class="center" style="margin-top:18px"><button class="primary" data-act="toPortfolio">この戦略で人財レントゲンへ →</button></div>`;
+}
+// 人事アーキテクチャ・組織再編の判断材料となる、自社の"今"のデータ。
+// これが無いと経営者は何も見ずに方針を選ぶことになってしまうため、②で見た内容をここに再掲する。
+function orgDesignInputs(){
+  const bench=state.emps.filter(e=>e.grade>=3&&e.role!=='社長');
+  const benchDepts=new Set(bench.map(e=>e.dept)).size;
+  const focusTightness=state.strategy.focuses.map(fid=>{
+    const dep=FOCUS_TO_DEPT[fid]; const d=DEPTS.find(x=>x.id===dep);
+    return {name:d.name, tight:Math.round(tight(d.cat))};
+  });
+  return { benchCount:bench.length, benchDepts, yearsToRetire:END_YEAR-state.year, focusTightness };
+}
+function vOrgDesign(){
+  const org=state.orgDesign;
+  const inputs=orgDesignInputs();
+  const elevateCards=state.strategy.focuses.map(fid=>{
+    const dep=FOCUS_TO_DEPT[fid]; const info=ELEVATE_INFO[dep]; if(!info) return '';
+    const on=!!org.elevated[dep];
+    return `<div class="card" style="margin-bottom:10px">
+      <div class="row" style="justify-content:space-between">
+        <b>${info.label}</b>
+        <button class="${on?'primary':''}" data-elevate-dept="${dep}">${on?'✓ 実施する':'実施しない'}</button>
+      </div>
+      <p class="small muted" style="margin-top:6px">${info.desc}</p>
+      <p class="small">年間コスト影響：<b style="color:${info.cost>0?'var(--warn)':'var(--ok)'}">${info.cost>0?'+':''}${info.cost}万円/年</b>（投資予算から増減）</p>
+    </div>`;
+  }).join('');
+  const archBtns=Object.keys(HR_ARCHITECTURE).map(k=>{const A=HR_ARCHITECTURE[k];return `<button class="channelbtn ${org.hrArchitecture===k?'primary':''}" data-hrarch="${k}"><span><b>${A.name}</b></span><span></span><small>${A.desc}</small></button>`}).join('');
+  return `<h2>🏢 組織設計（中期経営計画）</h2>
+  <p class="muted small"><b>組織は戦略に従う</b>——戦略「${stratSummary()}」と、直前の人財レントゲンで見た自社の現状に応じて、組織の形と人事の方針をここで決めます。組織再編・人事アーキテクチャはここで一度だけ決定し、5年間は原則動かしません（中期経営計画の考え方）。現場対応レバー（柔軟な勤務制度・接客コンシェルジュ）は、⑤投資配分の画面からいつでも見直せます。<button class="ghost small" data-act="backPortfolio" style="padding:2px 8px">レントゲンに戻る</button></p>
+  <div class="card" style="margin-bottom:14px">
+    <h3>この判断のための現状データ</h3>
+    <p class="small muted">人事アーキテクチャは、抽象的な好みではなく自社の現状データをもとに判断すべきもの。以下が今の材料です。</p>
+    <div class="kpi">
+      <div class="box"><div class="v">${inputs.benchCount}名</div><div class="l">昇進候補（等級3以上）の層の厚み</div></div>
+      <div class="box"><div class="v">${inputs.benchDepts}部門</div><div class="l">候補が分布する部門数（少ないほど視野が偏っている）</div></div>
+      <div class="box"><div class="v">${inputs.yearsToRetire}年</div><div class="l">社長引退までの残り年数</div></div>
+    </div>
+    <p class="small muted" style="margin-top:10px">重点事業の採用市場逼迫度：${inputs.focusTightness.map(f=>`${f.name} ${f.tight}`).join(' / ')||'（重点事業未選択）'}</p>
+    <div class="alert info" style="margin-top:6px">${inputs.benchDepts<=1
+      ? `候補が特定の部門に偏っています。<b>ジョブローテーション型</b>で視野を広げる価値が高い状況です。`
+      : `候補は複数部門に分散しており、視野の偏りリスクは相対的に低めです。専門性を深める<b>ジョブ型</b>を選んでも後継者育成への悪影響は限定的と考えられます。`}
+      社長引退まで${inputs.yearsToRetire}年——ローテーションによる育成は効果が出るまで数年かかるため、残り年数が少ないほどジョブ型寄りが現実的になります。</div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <h3>組織再編</h3>
+    <p class="small muted">選んだ重点事業に対応する部門を、組織として再編するかどうかを決めます。実施すると戦略の効果（需要の伸び／コスト圧縮）が強まりますが、年間の管理コストが投資予算に反映されます。</p>
+    ${elevateCards || '<p class="small muted">重点事業が選ばれていないため、組織再編の選択肢はありません（①戦略フェーズで重点事業を選ぶと表示されます）。</p>'}
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <h3>現場対応レバー（店舗運営部のリアル）</h3>
+    <p class="small muted">店舗運営部は女性比率${Math.round(portfolioStats(deptEmps('store')).femaleRatio*100)}%。育児等で土日祝シフトに入れない社員が一定数おり、頭数が足りていても「土日の壁」で現場品質が落ちることがあります。また体力的な負荷（腱鞘炎・腰痛等）により、35歳を境に離職リスクが跳ね上がる「30代の壁」もあります。ここでの設定は⑤投資配分の画面からいつでも見直せます。</p>
+    <div class="kpi" style="margin-bottom:10px">
+      <div class="box"><div class="v" ${weekendFillRate()<STORE_WEEKEND_FILL_THRESHOLD?'style="color:var(--warn)"':''}>${Math.round(weekendFillRate()*100)}%</div><div class="l">土日祝の充足率（目安${Math.round(STORE_WEEKEND_FILL_THRESHOLD*100)}%以上）</div></div>
+      <div class="box"><div class="v">${deptEmps('store').filter(e=>e.age>35).length}名</div><div class="l">35歳超（体力的負荷の影響を受けうる人数）</div></div>
+    </div>
+    ${Object.keys(LEVER_INFO).map(k=>{const info=LEVER_INFO[k]; const on=!!org[k];
+      return `<div class="row" style="justify-content:space-between;margin:8px 0;padding:10px;border:1px solid var(--line);border-radius:10px">
+        <div style="flex:1 1 auto;min-width:0"><b>${info.label}</b><div class="small muted">${info.desc}</div></div>
+        <button class="${on?'primary':''}" data-lever="${k}" style="flex:0 0 auto">${on?'✓ 実施する':'実施しない'}</button>
+      </div>
+      <p class="small" style="margin:0 0 8px">年間コスト影響：<b style="color:var(--warn)">+${info.cost}万円/年</b>（投資予算から増減）</p>`;
+    }).join('')}
+  </div>
+  <div class="card">
+    <h3>人事アーキテクチャ</h3>
+    <p class="small muted">ジョブローテーション（内部異動中心）か、ジョブ型（専門特化）か。実行フェーズでの内部育成/内部異動の比率と、後継者育成の速度に影響します。</p>
+    <div class="grid">${archBtns}</div>
+  </div>
+  <div class="center" style="margin-top:18px"><button class="primary" data-act="toGap">この組織設計で部門別ギャップへ →</button></div>`;
+}
+function vPortfolio(){
+  const alerts=diagnosePortfolio();
+  return `<h2>🩻 人財レントゲン（現状把握）</h2>
+  <p class="muted small">まず会社<b>全体</b>の人員構成（年齢・男女比・等級）を透視します。「このまま何もしなければ5年後どうなるか」も見せます。ここで見るデータが、次の②組織設計の判断材料になります。<button class="ghost small" data-act="backStrategy" style="padding:2px 8px">戦略を見直す</button></p>
+  ${portfolioSection()}
+  <h3 style="margin-top:18px">自動診断</h3>
+  <div>${alerts.map(a=>`<div class="alert ${a.s}">${a.m}</div>`).join('')}</div>
+  <div class="center" style="margin-top:20px"><button class="primary" data-act="toOrgDesign">この現状を踏まえて組織設計へ →</button></div>`;
+}
+function vGap(){
+  const alerts=diagnoseGap();
+  return `<h2>📊 部門別 需給ギャップ（戦略・組織設計に対して）</h2>
+  <p class="muted small">戦略・組織設計「${stratSummary()}」／${HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name}が求める需要と、供給見込み（加齢・退職で減る在籍数）の差＝この戦略の実現に足りない人財。<button class="ghost small" data-act="backOrgDesign" style="padding:2px 8px">組織設計に戻る</button></p>
+  <div class="grid" style="grid-template-columns:1fr 1fr" >
+    <div class="card">
+      <h3>部門別 需給ギャップ（今後5年間）</h3>
+      ${svgGap(state.selDept)}
+      <div class="row small" style="margin-top:8px">
+        <span><span style="color:var(--chart-a)">●</span> 需要</span>
+        <span><span style="color:var(--chart-b)">●</span> 供給見込み(無策)</span>
+        <span class="muted">部門カードをクリックで切替</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>採用市場の逼迫度</h3>
+      ${marketMeters()}
+      <p class="small muted" style="margin-top:10px">逼迫度が高いほど採用は<b>高コスト・低成功率・時間がかかる</b>。デジタルは常に売り手市場。</p>
+    </div>
+  </div>
+  <h3 style="margin-top:18px">部門（クリックで上のグラフを切替）</h3>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))">
+    ${DEPTS.map(d=>deptCard(d)).join('')}
+  </div>
+  <h3 style="margin-top:18px">自動診断</h3>
+  <div>${alerts.map(a=>`<div class="alert ${a.s}">${a.m}</div>`).join('')}</div>
+  <div class="center" style="margin-top:20px"><button class="primary" data-act="toInvest">人財投資の配分を決める →</button></div>`;
+}
+function deptCard(d){
+  const now=headcount(d.id), dem15=demandAt(d.id,END_YEAR), sup15=supplyWithPlan(d.id)[END_YEAR-START_YEAR];
+  const gap=dem15-sup15; const t= gap>=3?'bad':gap>=1?'warn':'ok';
+  const elevated=state.orgDesign.elevated[d.id];
+  const storeLine = d.id==='store' ? `<div class="small muted">🏬 現在約${storeCountNow()}店舗 → 5年後 約${storeCountAt(END_YEAR)}店舗（標準店舗＝${STORE_SIZE_LABEL}）</div>
+    <div class="small" style="margin-top:2px;color:${weekendFillRate()<STORE_WEEKEND_FILL_THRESHOLD?'var(--warn)':'var(--muted)'}">🗓️ 土日充足率 ${Math.round(weekendFillRate()*100)}%</div>` : '';
+  const ecLine = d.id==='ec' ? (()=>{const es=ecState(),info=EC_STATE_INFO[es];return `<div class="small" style="margin-top:2px;color:${info.color}">${info.label}</div>`})() : '';
+  return `<div class="deptcard ${state.selDept===d.id?'sel':''}" data-dept="${d.id}">
+    <div class="row" style="justify-content:space-between"><b>${d.name}${elevated?' 🏢':''}</b><span class="tag ${t}">${gap>0?'不足 '+gap:'充足'}</span></div>
+    <div class="small muted">${d.desc}</div>
+    ${storeLine}${ecLine}
+    <div class="small" style="margin-top:6px">現有 <b>${now}</b> → 5年後需要 <b>${dem15}</b>（見込み供給 ${sup15}）</div>
+  </div>`;
+}
+function marketMeters(){
+  return Object.keys(state.market).map(cat=>{
+    const t=tight(cat); const col= t>=75?'var(--bad)':t>=55?'var(--warn)':'var(--ok)';
+    return `<div style="margin:8px 0"><div class="row small" style="justify-content:space-between"><span>${CAT_NAME[cat]}</span><span class="muted">${Math.round(t)}</span></div>
+      <div class="meter"><span style="width:${t}%;background:${col}"></span></div></div>`;
+  }).join('');
+}
+// ===== 投資配分（経営者の意思決定）＝ どこに・どれだけ・build/buyどちらに・どんな報酬水準で張るか =====
+// 「誰を・何人・どの経路で採るか」は現場の実行判断。経営者が決めるのは資源配分の方針。
+function horizonYears(){return Math.max(1, END_YEAR-state.year)}
+// shareは「絶対%」ではなく相対ウェイトとして扱う（合計が100でなくても、比率で按分される）
+function effectiveShare(dept){const sum=shareSum(); return sum>0? state.alloc[dept].share/sum*100 : 100/DEPTS.length;}
+function projectDeptOutcome(dept, share, stance, annualTotalBudget){
+  const annualSpend = annualTotalBudget*share/100;
+  const w=allocWeights(stance); const sum=Object.values(w).reduce((a,b)=>a+b,0);
+  let hires=0, cost=0;
+  Object.keys(w).forEach(ch=>{
+    const frac=w[ch]/sum;
+    if(ch==='develop'||ch==='transfer'){
+      const pipelinePenalty = (ch==='develop' && dept==='store' && state.orgDesign.flexWork) ? LEADERSHIP_PIPELINE_PENALTY : 1;
+      const cap=frac*BUILD_CAPACITY_MULT*engagementMult()*pipelinePenalty; hires+=cap; cost+=cap*(ch==='develop'?5:0); // 人ベース(供給元の制約)。カネでは買えない。実行(autoExecuteYear)と同じエンゲージメント補正・柔軟な勤務制度のパイプライン減速を適用し、⑤の見込みと⑥の実績を一致させる
+    } else {
+      const chBudget=annualSpend*frac; const unit=channelCost(ch,dept); const suc=channelSuccess(ch,dept);
+      const n= unit>0? chBudget/unit : 0; hires+=n*suc; cost+=n*unit;
+    }
+  });
+  return {annualSpend, expectedHires:hires, cost};
+}
+function vInvest(){
+  const totalAnnual=state.budget, hz=horizonYears();
+  const levelBtns=Object.keys(INVEST_LEVELS).map(k=>{const L=INVEST_LEVELS[k];return `<button class="channelbtn ${state.investLevel===k?'primary':''}" data-invlvl="${k}">
+    <span><b>${L.name}</b></span><span class="small">人件費×${Math.round(L.rate*100)}%</span><small>${L.desc}</small></button>`}).join('');
+  const compBtns=Object.keys(COMP_LEVELS).map(k=>{const C=COMP_LEVELS[k];return `<button class="channelbtn ${state.compLevel===k?'primary':''}" data-complvl="${k}">
+    <span><b>${C.name}</b></span><span class="small">人件費×${C.payrollMult}</span><small>${C.desc}</small></button>`}).join('');
+  const rows=DEPTS.map(d=>{
+    const a=state.alloc[d.id]; const eff=effectiveShare(d.id);
+    const proj=projectDeptOutcome(d.id,eff,a.stance,totalAnnual);
+    const need5=Math.max(0, demandAt(d.id,END_YEAR)-headcount(d.id));
+    const projected5y=proj.expectedHires*hz;
+    const fill= need5? clamp(projected5y/need5,0,1.5) : 1; const fillPct=Math.round(fill*100);
+    const fillCol= fill>=1?'var(--ok)':fill>=0.7?'var(--warn)':'var(--bad)';
+    const stanceHint = a.stance<=25
+      ? '内部育成寄り：今いる社員の育成・異動が中心。時間はかかるが市場の逼迫に左右されにくい'
+      : a.stance>=75
+      ? '外部調達寄り：採用市場からの獲得が中心。速いが、市場が逼迫していると割高・不成立になりやすい'
+      : '内部育成と外部調達を半々で併用する';
+    const rapidGrowth = need5>0 && need5/Math.max(1,headcount(d.id))>=0.4;
+    const rapidGrowthWarn = rapidGrowth && a.stance<=25
+      ? `<p class="small" style="color:var(--warn);margin:2px 0 8px">⚠️ 5年で現有比${Math.round(need5/Math.max(1,headcount(d.id))*100)}%の急成長ペース。内部育成・異動はカネを積んでも増やせない人数ベースの上限があるため、このままでは供給が追いつきません。外部調達重視への転換を検討してください。</p>`
+      : '';
+    const ecTag = d.id==='ec' ? (()=>{const es=ecState(),info=EC_STATE_INFO[es];return ` <span class="small" style="color:${info.color}">${info.label}</span>`})() : '';
+    return `<div class="card" style="margin-bottom:12px">
+      <div class="row" style="justify-content:space-between">
+        <div><b>${d.name}${state.orgDesign.elevated[d.id]?' 🏢':''}</b> <span class="pill small">市場逼迫 ${Math.round(tight(d.cat))}</span>${ecTag}</div>
+        <div class="small">5年後ギャップ <b>${need5}</b>名</div>
+      </div>
+      <div class="row" style="gap:24px;margin:10px 0;flex-wrap:wrap">
+        <div>
+          <div class="small muted">予算配分（実際の取り分・自動で合計100%に正規化）</div>
+          <div class="row" style="gap:6px"><button class="small" data-share-dept="${d.id}" data-delta="-5" style="padding:2px 8px">−</button>
+          <b style="min-width:40px;display:inline-block;text-align:center">${Math.round(eff)}%</b>
+          <button class="small" data-share-dept="${d.id}" data-delta="5" style="padding:2px 8px">＋</button></div>
+        </div>
+        <div>
+          <div class="small muted">方針（内部人財育成 ⇄ 外部人財調達）</div>
+          <div class="row" style="gap:4px">
+            <button class="small ${a.stance<=25?'primary':''}" data-stance-set-dept="${d.id}" data-value="15" style="padding:4px 10px">内部育成重視</button>
+            <button class="small ${a.stance>25&&a.stance<75?'primary':''}" data-stance-set-dept="${d.id}" data-value="50" style="padding:4px 10px">半々</button>
+            <button class="small ${a.stance>=75?'primary':''}" data-stance-set-dept="${d.id}" data-value="85" style="padding:4px 10px">外部調達重視</button>
+          </div>
+        </div>
+      </div>
+      <p class="small muted" style="margin:2px 0 8px">${stanceHint}</p>
+      ${rapidGrowthWarn}
+      <div class="row" style="justify-content:space-between">
+        <span class="small">年間投資 ${Math.round(proj.annualSpend)}万円（予算${totalAnnual}万円の${Math.round(eff)}%） → 5年で期待調達 <b>${projected5y.toFixed(1)}名</b>（現場の実行結果次第で変動）</span>
+        <span class="small">充足見込み <b style="color:${fillCol}">${fillPct}%</b></span>
+      </div>
+      <div class="meter"><span style="width:${Math.min(100,fillPct)}%;background:${fillCol}"></span></div>
+    </div>`;
+  }).join('');
+  const leverBtns=Object.keys(LEVER_INFO).map(k=>{const info=LEVER_INFO[k]; const on=!!state.orgDesign[k];
+    return `<div class="row" style="justify-content:space-between;margin:8px 0;padding:10px;border:1px solid var(--line);border-radius:10px">
+      <div style="flex:1 1 auto;min-width:0"><b>${info.label}</b><div class="small muted">${info.desc}</div></div>
+      <button class="${on?'primary':''}" data-lever="${k}" style="flex:0 0 auto">${on?'✓ 実施する':'実施しない'}</button>
+    </div>
+    <p class="small" style="margin:0 0 8px">年間コスト影響：<b style="color:var(--warn)">+${info.cost}万円/年</b>（投資予算から増減）</p>`;
+  }).join('');
+  return `<h2>💰 人財投資の配分（経営者の意思決定）</h2>
+  <p class="muted small">経営者が決めるレバーは3つだけ：①<b>投資強度</b>（予算の総量）②部門ごとの<b>予算配分と内部人財育成⇄外部人財調達の方針</b>③<b>報酬水準</b>。誰を何人どの経路で採るかは現場が実行します。組織設計：${HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name} ／ 格上げ：${Object.keys(state.orgDesign.elevated).filter(k=>state.orgDesign.elevated[k]).map(k=>DEPTS.find(x=>x.id===k).name).join('・')||'なし'}<button class="ghost small" data-act="backGap" style="padding:2px 8px">部門別ギャップに戻る</button></p>
+  <div class="card" style="margin-bottom:12px">
+    <h3>① 投資強度（総人件費に対する比率＝予算の総量を決める）</h3>
+    <p class="small muted" style="margin-top:0">非上場で現預金は潤沢にありますが、投資予算はあえて人件費に対する比率で規律をもって決めます。現金があるからと青天井にはしません。</p>
+    <div class="grid" style="grid-template-columns:repeat(3,1fr)">${levelBtns}</div>
+    <div class="row" style="justify-content:space-between;margin-top:10px">
+      <span class="small">総人件費 ${payrollTotal()}万円 × ${Math.round(INVEST_LEVELS[state.investLevel].rate*100)}% − 組織再編コスト${orgOverheadCost()}万円 ＝ 年間投資予算 <b>${totalAnnual}万円</b></span>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <h3>③ 報酬・処遇水準（内部育成/外部調達とは独立したもう1つのレバー）</h3>
+    <p class="muted small">給与水準そのものを引き上げる。上げるほど人件費（＝投資予算の原資）が増えるが、エンゲージメント・定着率にも直接効く。</p>
+    <div class="grid" style="grid-template-columns:repeat(3,1fr)">${compBtns}</div>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <h3>現場対応レバー（毎年見直し可能）</h3>
+    <p class="muted small">組織再編・人事アーキテクチャは③組織設計で決定済み（変更不可）ですが、この2つの現場対応レバーだけは他のレバーと同じく毎年見直せます。</p>
+    ${leverBtns}
+  </div>
+  <h3>② 部門への配分方針（①の予算をどう配り、内部人財育成⇄外部人財調達のどちらに重心を置くか）</h3>
+  <p class="muted small">下の「−／＋」ボタンは各部門の<b>相対的な重み</b>を増減させます。表示している％は全部門の重みを自動的に合計100%へ正規化した<b>実際の配分割合</b>です（例：ある部門を+すれば、他部門の実効％は自動的に下がります）。内部人財育成⇄外部人財調達は、実際に「誰をどう採るか」を現場が市場状況を見ながら執行する際の方針です。</p>
+  ${rows}
+  ${(()=>{
+    const ct=state.commitTargets||computeCommitTargets();
+    const expName=STRATEGY_OPTIONS.expansion.find(o=>o.id===state.strategy.expansion).name;
+    return `<div class="card" style="margin-top:14px;border:2px solid var(--accent2)">
+      <h3 style="margin-top:0">🎯 5年後の目標宣言（約束する力）</h3>
+      <p class="small muted">中期経営計画として、この5年後の数字に<b>コミット</b>します。①事業戦略「${expName}」から導かれる目標です。この目標と実績の乖離は、⑦結果画面で「約束する力（コミットメント）」として評価されます——未達を曖昧にすれば、株主・金融機関からの信用を失います。予算へのコミットは経営の前提です。</p>
+      <div class="kpi">
+        ${kpiBox('年商目標（5年後）', (ct.revenue/10000).toFixed(2)+'億円')}
+        ${kpiBox('店舗数目標（5年後）', ct.stores+'店舗')}
+      </div>
+    </div>`;
+  })()}
+  <div class="center" style="margin-top:8px"><button class="primary" data-act="commitPlan">この目標にコミットして経営を始める（1年目→）→</button></div>`;
+}
+// 後継者選び：内部から抜擢するか、外部から招聘するか。
+// 内部候補はプロフィール（部門・役職・年齢・潜在力）を見て選ぶ——忠誠度は高く始まるが候補が限られる。
+// 外部招聘はいつでも候補を用意できる（社歴不問で潜在力の高い人を連れてこられる）が、
+// 社歴ゼロのため忠誠度は低く始まる、というbuild/buyと同じ構造のトレードオフにする。
+function potLabel(pot){ return pot>=0.75?'非常に高い':pot>=0.6?'高い':pot>=0.45?'普通':'要育成'; }
+function successorCandidates(){
+  return state.emps.filter(e=>e.grade>=4 && e.role!=='社長').sort((a,b)=>b.pot-a.pot).slice(0,5);
+}
+function successorCandidatesCard(){
+  const cands=successorCandidates();
+  return `<div class="alert" style="margin-top:10px">
+    <b>後継者候補：内部から抜擢するか、外部から招聘するか</b>
+    <p class="small muted" style="margin:4px 0 8px">内部昇格は忠誠度が高く始まるが候補が限られ、<b>指名すると元の部門から経営(mgmt)へ引き抜く</b>ため、その部門の人員・後継体制が1名分薄くなる（例：商品部の有望株を選べばバイヤー承継が手薄になる）。外部招聘はいつでも候補を用意でき他部門への影響もないが、社歴ゼロのため忠誠度は低く始まり、関係構築が必要になる。潜在力が高い人財ほど育成の進みがわずかに早いが、決め手はあくまで経営(mgmt)への投資方針と人事アーキテクチャ。</p>
+    ${cands.length? cands.map(e=>`<div class="row" style="justify-content:space-between;margin:4px 0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;flex-wrap:wrap">
+      <span class="small">${esc(e.name)}（${DEPTS.find(d=>d.id===e.dept).name}／${e.role}／${e.age}歳／潜在力:${potLabel(e.pot)}）</span>
+      <button class="small" data-act="nominate:${e.id}">この人財を指名</button>
+    </div>`).join('') : '<p class="small muted">内部に等級4以上の候補がいません。外部招聘を検討してください。</p>'}
+    <div class="row" style="justify-content:space-between;margin-top:8px;padding:6px 8px;border:1px dashed var(--line);border-radius:8px;flex-wrap:wrap">
+      <span class="small">外部から後継者候補を招聘（初期忠誠度は低め・育成進捗はやや高めでスタート）</span>
+      <button class="small" data-act="nominate:external">外部招聘する</button>
+    </div>
+  </div>`;
+}
+function vYear(){
+  const alerts=diagnose().slice(0,4);
+  const dashCards=DEPTS.map(d=>{
+    const a=state.alloc[d.id]; const gap=gapAt(d.id,state.year);
+    const extra = d.id==='store' ? ` ／ 🏬約${storeCountNow()}店舗 ／ 🗓️土日充足${Math.round(weekendFillRate()*100)}%`
+      : d.id==='ec' ? ` ／ ${EC_STATE_INFO[ecState()].label}` : '';
+    return `<div class="deptcard" style="margin-bottom:6px">
+      <div class="row" style="justify-content:space-between"><span><b>${d.name}${state.orgDesign.elevated[d.id]?' 🏢':''}</b></span>
+      <span class="tag ${gap>0?'warn':'ok'}">${gap>0?'不足'+gap:'OK'}</span></div>
+      <div class="small muted">現有 ${headcount(d.id)} / 今年需要 ${demandAt(d.id,state.year)} ／ 配分${a.share}% ・ ${a.stance<=25?'内部育成寄り':a.stance>=75?'外部調達寄り':'内部育成/外部調達 半々'}${extra}</div>
+      <div class="small muted">今年の実績調達：累計 ${state.actual[d.id]||0}名</div>
+    </div>`;
+  }).join('');
+  const mismatchPanel = (()=>{
+    const surplus = DEPTS.filter(d=>d.id!=='mgmt' && (headcount(d.id)-demandAt(d.id,state.year))>=3);
+    const short = DEPTS.filter(d=>d.id!=='mgmt' && gapAt(d.id,state.year)>=3);
+    if(!surplus.length || !short.length) return '';
+    const rows = surplus.map(d=>{
+      const sN = headcount(d.id)-demandAt(d.id,state.year);
+      const target = [...short].sort((a,b)=>gapAt(b.id,state.year)-gapAt(a.id,state.year))[0];
+      return `<div class="deptcard" style="margin-bottom:6px">
+        <div class="row" style="justify-content:space-between"><b>${d.name}</b><span class="tag warn">余剰 ${sN}</span></div>
+        <div class="small muted">${target.name}は不足${gapAt(target.id,state.year)}。戦略転換で生まれた過剰人員をどう扱いますか。</div>
+        <div class="row" style="margin-top:6px;gap:6px">
+          <button data-act="reskill:${d.id}:${target.id}">🔁 リスキリングで${target.name}へ異動（1名・研修1年）</button>
+          <button data-act="restructure:${d.id}">✂️ リストラ（即時削減・エンゲージメント大幅悪化）</button>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="card" style="margin-top:12px"><h3>⚖️ 部門間ミスマッチ：戦略転換による余剰と不足</h3>${rows}
+      <p class="small muted">リスキリングは時間がかかる代わりにエンゲージメントへの悪影響がほぼない。リストラは即時に頭数を減らせる代わりに、エンゲージメントが大きく悪化し、後継者の忠誠度にも波及します。</p></div>`;
+  })();
+  const charismaCard = `<div class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between"><h3 style="margin:0">🤝 人心掌握アクション（年1回まで）</h3></div>
+    <p class="small muted">社長個人の人望・現場との関係構築力。エンゲージメントの目減りを緩和し、そのエンゲージメントが現場の実行成功率（採用成功率・内部育成のスピード）を左右します。</p>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      ${Object.keys(CHARISMA_ACTIONS).map(k=>{
+        const A=CHARISMA_ACTIONS[k];
+        const disabled = state.charismaActionUsed || (k==='sashi' && !state.successor);
+        return `<button ${disabled?'disabled':''} data-act="${k}" style="text-align:left;height:auto;padding:10px 12px">
+          <b>${A.label}</b><div class="small muted" style="margin-top:4px">${A.desc}</div>
+        </button>`;
+      }).join('')}
+    </div>
+    ${state.charismaActionUsed?'<p class="small muted" style="margin-top:6px">今年のアクションは実行済みです。</p>':''}
+  </div>`;
+  // ジョブローテーション型・バランス型は、部門間異動を前向きに運用する方針であるため、
+  // 重点事業に向けて経営者が明示的に「どの部門から動かすか」を選べる計画的な配転レバーを持つ。
+  // 従来「部門間ミスマッチ」パネルの一時凌ぎのリスキリングしかなく、重点事業を強化するための
+  // 能動的な配転手段が無かった（「柔軟な勤務制度って...」等と同じく、ユーザー指摘で発覚）。
+  // ジョブ型固定（専門性重視・異動を避ける方針）はこのレバーの対象外とする。
+  const plannedTransferCard = (()=>{
+    const arch=state.orgDesign.hrArchitecture;
+    if(arch==='jobtype' || !state.strategy.focuses.length) return '';
+    const targetDepts=[...new Set(state.strategy.focuses.map(f=>FOCUS_TO_DEPT[f]))];
+    const rows=targetDepts.map(to=>{
+      const toName=DEPTS.find(d=>d.id===to).name;
+      const fromBtns=DEPTS.filter(d=>d.id!==to && d.id!=='mgmt').map(d=>
+        `<button ${state.plannedTransferUsed?'disabled':''} data-act="plannedTransfer:${d.id}:${to}">${d.name}→${toName}</button>`
+      ).join('');
+      return `<div style="margin:8px 0"><div class="small muted" style="margin-bottom:4px">重点事業「${toName}」へ配転元を選ぶ</div><div class="row" style="gap:6px">${fromBtns}</div></div>`;
+    }).join('');
+    return `<div class="card" style="margin-top:12px">
+      <h3>🔄 計画的な人財配転（年1回まで）</h3>
+      <p class="small muted">${HR_ARCHITECTURE[arch].name}は部門間異動を前向きに運用する方針。重点事業を強化するため、経営者の判断で他部門から人財（潜在力が最も高い1名・等級は維持）を計画的に配転できます。方針に沿った異動のため、緊急の人員融通と違いエンゲージメントへの悪影響はありません。</p>
+      ${rows}
+      ${state.plannedTransferUsed?'<p class="small muted" style="margin-top:6px">今年の配転は実行済みです。</p>':''}
+    </div>`;
+  })();
+  const trendCard = (()=>{
+    const i=state.initialStats, f=portfolioStats(state.emps);
+    const pct=v=>Math.round(v*100);
+    return `<div class="card" style="margin-top:12px">
+      <h3>📈 人財の変化（1年目→現在）</h3>
+      <table><tr><th></th><th>1年目</th><th>現在</th><th>変化</th></tr>
+        ${numRow('総人数', i.n, f.n, '名', 'up')}
+        ${numRow('平均年齢', +i.avgAge.toFixed(1), +f.avgAge.toFixed(1), '歳', 'down')}
+        ${numRow('35歳未満', i.under35, f.under35, '名', 'up')}
+        ${numRow('管理職比率', pct(i.mgrRatio), pct(f.mgrRatio), '%', null)}
+      </table>
+    </div>`;
+  })();
+  return `<h2>${planYear()}年目 / ${PLAN_YEARS} — 経営ダッシュボード</h2>
+  <p class="muted small">組織設計：${HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name} ／ 報酬水準：${COMP_LEVELS[state.compLevel].name}（②④は中計期間中は固定。投資配分のみ見直せます）</p>
+  ${trendCard}
+  <div class="grid split" style="grid-template-columns:1fr 1fr">
+    <div class="card">
+      <h3>部門の状況</h3>
+      ${dashCards}
+    </div>
+    <div class="card">
+      <h3>今年の診断</h3>
+      <div>${alerts.map(a=>`<div class="alert ${a.s}">${a.m}</div>`).join('')}</div>
+      ${state.log.length?`<div class="alert info" style="margin-top:8px"><b>現場からの報告</b>：${state.log.join(' / ')}</div>`:''}
+      <div class="row" style="margin-top:12px;gap:8px">
+        <button data-act="toInvest">投資配分を見直す</button>
+      </div>
+      ${state.successor?(()=>{const l=state.successorLoyalty??65; const col=l>=70?'var(--ok)':l>=50?'var(--warn)':'var(--bad)';
+        const s=state.emps.find(e=>e.id===state.successor);
+        const origin=s&&s.role==='外部招聘幹部'?'外部招聘':'内部昇格';
+        return `<div class="alert" style="margin-top:10px">
+          <div class="row" style="justify-content:space-between"><b>後継者：${s?esc(s.name):''}（${origin}） 育成進捗 ${state.succProgress}%</b><b style="color:${col}">忠誠度 ${l}</b></div>
+          <div class="meter" style="margin:4px 0"><span style="width:${l}%;background:${col}"></span></div>
+          <p class="small muted" style="margin-top:4px">忠誠度を上げるには、下の「人心掌握アクション」の<b>サシ面談</b>を使ってください。</p>
+        </div>`})():successorCandidatesCard()}
+      <p class="small muted" style="margin-top:8px">誰をどう採るかは現場（HR）が配分方針に沿って自動で執行します。経営者は投資配分の見直しと、後継者（自身の後任）だけを直接判断します。忠誠度は、会社全体のエンゲージメントとは別に、この個人の定着リスクを可視化する指標です。</p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <h3>💰 事業成果（カネ）</h3>
+    <div class="kpi">
+      ${kpiBox('年商', (state.finance.revenue/10000).toFixed(2)+'億円')}
+      ${kpiBox('粗利率', Math.round(state.finance.marginRate*100)+'%')}
+      ${kpiBox('営業利益', (state.finance.opProfit/10000).toFixed(2)+'億円', '', state.finance.opProfit<0)}
+      ${kpiBox('累計機会損失', (state.finance.cumOppLossManYen/10000).toFixed(2)+'億円', '', state.finance.cumOppLossManYen>0)}
+    </div>
+    <p class="small muted" style="margin-top:8px">土日充足率・バイヤーの目利き承継・EC部のDX状態が、毎年の売上成長率と粗利率を左右します。累計機会損失は「人財投資が理想的に機能していた場合」との営業利益の差の累計です。</p>
+    ${state.commitTargets ? `<p class="small" style="margin-top:6px">🎯 期首にコミットした5年後目標への進捗：年商 ${(state.finance.revenue/10000).toFixed(2)}/${(state.commitTargets.revenue/10000).toFixed(2)}億円（${Math.round(state.finance.revenue/state.commitTargets.revenue*100)}%） ・ 店舗 ${storeCountNow()}/${state.commitTargets.stores}店舗</p>` : ''}
+  </div>
+  ${charismaCard}
+  ${plannedTransferCard}
+  ${mismatchPanel}
+  <div class="center" style="margin-top:18px"><button class="primary" data-act="advance">${state.year+1>=END_YEAR?'5年間の経営を終える（結果を見る）→':`年を進める（${planYear()}年目→${planYear(state.year+1)}年目）→`}</button></div>`;
+}
+// 結果画面の各種スコア計算。vResult()（表示）とbuildAiReport()（AI分析用テキスト）の両方から
+// 参照する単一の計算元（同じロジックが2箇所でずれないようにするため）。
+function computeResultScores(){
+  const end=state.ending;
+  // 戦略実現度：戦略が求めた各部門のYear15需要を、実際に人財で満たせたか
+  const realize = DEPTS.reduce((s,d)=>s+Math.min(1, headcount(d.id)/Math.max(1,demandAt(d.id,END_YEAR))),0)/DEPTS.length;
+  const stratScore = Math.round(realize*100);
+  // 表示（結果画面・AI分析レポート）ではこのgapScoreをそのまま0-100で見せるため、ここで
+  // クランプしてから重み付けする。以前はここをクランプせずtotalの計算に使い、表示だけ
+  // clamp(gapScore,0,100)していたため、表示された内訳から総合スコアを検算すると
+  // 実際の総合スコアと合わない（生のgapScoreが大きくマイナスになるほどズレが広がる）不整合があった。
+  const gapScore = clamp(100 - DEPTS.reduce((s,d)=>s+Math.max(0,demandAt(d.id,END_YEAR)-headcount(d.id)),0)*6, 0, 100);
+  const succScore = end==='smooth'?100:end==='rocky'?60:0;
+  const engScore = clamp(state.engagement, 0, 100); // 現場を疲弊させずに経営できたか
+  const total=Math.round(clamp(stratScore*0.35+gapScore*0.15+succScore*0.30+engScore*0.20,0,100));
+  // ---- 経営者力量審判：3つの力による冷徹な審判。「仕組み」だけでも「人心」だけでもSは取れない ----
+  const ct=state.commitTargets || {revenue:BASE_ANNUAL_REVENUE, stores:storeCountAt(END_YEAR)};
+  const revRatio=state.finance.revenue/ct.revenue, storeRatio=storeCountNow()/Math.max(1,ct.stores);
+  const commitScore=Math.round(clamp((revRatio*0.6+storeRatio*0.4)*100,0,100));
+  const spiritScore=({aggressive:100,standard:80,pivot:90,focus:30})[state.strategy.expansion]??60;
+  // 商品部の内部育成重視は「⑤投資配分を見直した最終年時点のスタンス」ではなく、
+  // 5年間で実際に内部育成重視だった年数(state.cum.mdInternalYears、advanceYear()で毎年計上)の
+  // 過半数(3年以上)で判定する。⑤は毎年見直せるため、最終年だけ切り替えれば満点が取れてしまう
+  // 「最後だけ帳尻合わせ」を防ぎ、5年間の一貫した投資姿勢を評価する。
+  const knowledgeScore=Math.round(clamp((mdSuccessionOk()?50:0)+((state.cum.mdInternalYears||0)>=3?30:0)+(state.orgDesign.concierge?20:0),0,100));
+  const execScore=Math.round((commitScore+spiritScore+knowledgeScore)/3);
+  let rank= total>=88?'S':total>=76?'A':total>=62?'B':total>=48?'C':'D';
+  if(rank==='S' && execScore<70) rank='A'; // 仕組み(スコア)だけでなく人心(経営者力量スコア)も伴っていなければSは取れない
+  const endMsg = end==='smooth'?`後継者が十分に育ち、円滑に承継できました（人事アーキテクチャ：${HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name}）。`:end==='rocky'?'後継者はいたが準備不足で、承継後の経営が一時ぐらつきました。':'社長引退時に後継者が育っておらず、経営承継に失敗しました（存続危機）。';
+  const stratMsg = stratScore>=85?'描いた戦略を人財で実現できました。戦略・組織・人財が整合していた証拠です。':stratScore>=60?'戦略の多くは実現できましたが、一部の部門で人財が不足しました。':'戦略に対して人財が足りず、描いた事業は実現しきれませんでした。<b>人財で実現できない戦略は絵に描いた餅</b>——次は戦略・組織設計・投資配分を最初から整合させましょう。';
+  return {end, stratScore, gapScore, succScore, engScore, total, ct, commitScore, spiritScore, knowledgeScore, execScore, rank, endMsg, stratMsg};
+}
+// 姉妹プロダクト「企業経営シミュレーション」の「📋 経営レポートをコピー（AI分析用）」と同じ発想：
+// 外部APIは呼ばず、ゲームの意思決定ログ・組織/財務データをテキスト化してクリップボードにコピーし、
+// プレイヤー自身がAIチャットに貼り付けて分析させる（単一HTML・外部依存ゼロの制約を保つため）。
+function buildAiReport(){
+  const R=computeResultScores();
+  const exp=STRATEGY_OPTIONS.expansion.find(o=>o.id===state.strategy.expansion);
+  const focusNames=state.strategy.focuses.map(id=>STRATEGY_OPTIONS.focus.find(o=>o.id===id).name).join('・')||'なし';
+  const elevatedNames=Object.keys(state.orgDesign.elevated).filter(k=>state.orgDesign.elevated[k]).map(k=>DEPTS.find(d=>d.id===k).name).join('・')||'なし';
+  const arch=HR_ARCHITECTURE[state.orgDesign.hrArchitecture];
+  const lines=[];
+  lines.push('あなたは組織人事・経営戦略分析の専門家です。以下は「人財ポートフォリオマネジメント」というHR経営研修ゲームの結果レポートです。5年間の意思決定と組織・財務データをもとに、(1)各年にどんな判断をしたか、(2)「組織は戦略に従う」の原則・内部人財育成⇄外部人財調達のバランス・後継者育成・人心掌握の観点から何が良くて何が問題だったか、(3)最終ランクと経営者力量審判に影響した要因と次回への具体的な改善点、(4)このゲームの本来のミッション「5年の任期後、さらに10年この会社が永続できる状態にすること」に対し、下記【この体制のまま10年運用した場合の投影】のデータをもとに、Year15時点で作り上げた人財の陣容が追加の採用・育成なしでも10年先まで持ちこたえられる構成になっているか（管理職の空洞化・後継者パイプラインの枯渇・特定部門の壊滅等が起きないか）、を分析してください。');
+  lines.push('\n【ゲーム概要】');
+  lines.push('創業10年目の店舗型小売業（非上場・現預金潤沢）を、社長として次の5年間（Year10→15、任期満了で引退）経営するシミュレーションです。経営者が決めるのは①事業戦略(成長方針+重点事業)②組織設計(組織再編+人事アーキテクチャ+現場対応レバー)③人財投資配分(投資強度+部門シェア+内部人財育成⇄外部人財調達スタンス+報酬水準)の3点のみ。実際の採用・育成は現場が自動執行し、市場変動・離職・採用失敗などの不確実性がある。');
+  lines.push('ランク基準：総合スコア=戦略実現度35%+需給ギャップ15%+後継者承継30%+エンゲージメント20%。S=88以上（ただし経営者力量総合70以上が必須）/A=76以上/B=62以上/C=48以上/D=それ未満。');
+  lines.push('経営者力量審判＝①約束する力(コミットメント：期首目標と実績の乖離)②攻める力(アニマルスピリット：成長方針の積極性)③繋ぐ力(知の資産化：ベテラン技能の形式知化投資)の3軸平均。');
+  lines.push(`\n===== 経営レポート ${state.companyName||'新規会社'} (v${APP_VERSION}) =====`);
+  lines.push('\n【会社プロフィール】');
+  lines.push(`業態: ${PRODUCT_LINE}の店舗型小売業（非上場）`);
+  lines.push(`開始時点(創業10年目): 年商${(BASE_ANNUAL_REVENUE/10000).toFixed(2)}億円 / 店舗${BASE_STORE_COUNT} / 従業員${INITIAL_EMPLOYEE_COUNT}名 / 営業利益+${(INITIAL_OP_PROFIT_MANYEN/10000).toFixed(2)}億円`);
+  lines.push('\n【意思決定】');
+  lines.push(`① 事業戦略: 成長方針=${exp.name} / 重点事業=${focusNames}`);
+  lines.push(`② 組織設計: 組織再編=${elevatedNames} / 人事アーキテクチャ=${arch.name} / 柔軟な勤務制度=${state.orgDesign.flexWork?'導入':'未導入'} / 接客コンシェルジュ=${state.orgDesign.concierge?'導入':'未導入'}`);
+  lines.push(`③ 投資配分: 投資強度=${INVEST_LEVELS[state.investLevel].name}(人件費×${Math.round(INVEST_LEVELS[state.investLevel].rate*100)}%) / 報酬水準=${COMP_LEVELS[state.compLevel].name}`);
+  DEPTS.forEach(d=>{
+    const a=state.alloc[d.id];
+    const stanceLabel=a.stance<=25?'内部育成重視':a.stance>=75?'外部調達重視':'半々';
+    lines.push(`   ${d.name}: 配分${Math.round(effectiveShare(d.id))}% / ${stanceLabel}`);
+  });
+  lines.push('\n【年次推移】');
+  state.history.forEach(h=>{
+    lines.push(`${h.label}: 年商${(h.revenue/10000).toFixed(2)}億円 粗利率${Math.round(h.marginRate*100)}% 営業利益${(h.opProfit/10000).toFixed(2)}億円 エンゲージメント${h.engagement} 人心掌握度${h.charisma}`);
+    lines.push(`  部門別headcount: ${DEPTS.map(d=>`${d.name}${h.headcount[d.id]}`).join(' / ')}`);
+    if(h.log.length) lines.push(`  出来事: ${h.log.join(' / ')}`);
+  });
+  lines.push('\n【最終結果】');
+  lines.push(`ランク: ${R.rank}（総合スコア${R.total}/100）`);
+  lines.push(`経営者力量総合: ${R.execScore}/100（①約束する力${R.commitScore} ②攻める力${R.spiritScore} ③繋ぐ力${R.knowledgeScore}）`);
+  lines.push(`戦略実現度: ${R.stratScore}%（${stripTags(R.stratMsg)}）`);
+  lines.push(`人員ギャップ（5年目時点の未充足）: ${R.gapScore}/100`);
+  lines.push(`期末エンゲージメント: ${R.engScore}/100`);
+  lines.push(`後継者: ${stripTags(R.endMsg)}`);
+  lines.push(`5年間の想定外: 定年${state.cum.retired}名 / 離職${state.cum.left}名 / 採用失敗${state.cum.failed}回 / 緊急人員融通${state.cum.emergencyTransfers||0}回 / リストラ${state.cum.restructured||0}名`);
+  lines.push('\n【財務（1年目→5年目）】');
+  lines.push(`年商: ${(state.initialFinance.revenue/10000).toFixed(2)}億円 → ${(state.finance.revenue/10000).toFixed(2)}億円`);
+  lines.push(`粗利率: ${Math.round(state.initialFinance.marginRate*100)}% → ${Math.round(state.finance.marginRate*100)}%`);
+  lines.push(`営業利益: ${(state.initialFinance.opProfit/10000).toFixed(2)}億円 → ${(state.finance.opProfit/10000).toFixed(2)}億円`);
+  lines.push(`累計機会損失: ${(state.finance.cumOppLossManYen/10000).toFixed(2)}億円`);
+  lines.push('\n【部門別 5年後の充足】');
+  DEPTS.forEach(d=>{
+    const n=headcount(d.id), dm=demandAt(d.id,END_YEAR);
+    lines.push(`${d.name}: 現有${n} / 需要${dm} / 過不足${n-dm>=0?'+':''}${n-dm}`);
+  });
+  lines.push('\n【人財ポートフォリオの変化（1年目→5年目）】');
+  const i=state.initialStats, f=portfolioStats(state.emps);
+  lines.push(`総人数: ${i.n}名 → ${f.n}名`);
+  lines.push(`平均年齢: ${i.avgAge.toFixed(1)}歳 → ${f.avgAge.toFixed(1)}歳`);
+  lines.push(`女性比率: ${Math.round(i.femaleRatio*100)}% → ${Math.round(f.femaleRatio*100)}%`);
+  lines.push(`管理職比率: ${Math.round(i.mgrRatio*100)}% → ${Math.round(f.mgrRatio*100)}%`);
+  lines.push(`女性管理職比率: ${Math.round(i.femaleMgrRatio*100)}% → ${Math.round(f.femaleMgrRatio*100)}%`);
+  lines.push(`35歳未満: ${i.under35}名 → ${f.under35}名`);
+  // ゲームの本来のミッション（さらに10年永続できる会社にする）に対する判定材料：
+  // Year15時点の陣容(state.emps)を、追加の採用・育成なしでさらに10年運用したら
+  // どうなるかを、既存のprojectRoster()（②人財レントゲンの放置シナリオと同じロジック、
+  // 決定論的・乱数消費なし）でそのまま流用して投影する。
+  const proj10=projectRoster(10), ps10=portfolioStats(proj10);
+  lines.push('\n【追加の採用・育成を一切行わなかった場合の10年後投影（Year15の陣容→Year25相当。加齢・定年・部門別の固定離職率のみで計算した最悪ケースのストレステストであり、通常運営の予測ではない）】');
+  lines.push(`総人数: ${f.n}名 → ${ps10.n}名（${ps10.n-f.n>=0?'+':''}${ps10.n-f.n}名）`);
+  lines.push(`平均年齢: ${f.avgAge.toFixed(1)}歳 → ${ps10.avgAge.toFixed(1)}歳`);
+  lines.push(`管理職比率: ${Math.round(f.mgrRatio*100)}% → ${Math.round(ps10.mgrRatio*100)}%`);
+  lines.push(`35歳未満: ${f.under35}名 → ${ps10.under35}名`);
+  lines.push(`部門別headcount: ${DEPTS.map(d=>`${d.name}${headcount(d.id)}→${proj10.filter(e=>e.dept===d.id).length}`).join(' / ')}`);
+  const youngSMFuture=proj10.filter(e=>e.dept==='store'&&e.grade>=3&&e.age<38).length;
+  const buyerFuture=proj10.filter(e=>e.dept==='md'&&e.role==='バイヤー').length;
+  const mgmtFuture=proj10.filter(e=>e.dept==='mgmt').length;
+  lines.push(`店舗の次世代店長候補(38歳未満・等級3以上): ${youngSMFuture}名 / 商品部バイヤー: ${buyerFuture}名 / 経営(mgmt)人員: ${mgmtFuture}名`);
+  // 「採用ゼロで放置」という極端な最悪ケースだけでは、Sランクの経営でも必ず組織が縮小して見え、
+  // スコアと10年後投影が無関係になってしまう。この5年間の投資配分方針・組織設計・到達した
+  // エンゲージメント水準をそのまま10年続けた場合の投影(projectContinuedPolicy())も併記し、
+  // 「今の経営が本当に持続可能な仕組みになっているか」を判断できるようにする。
+  const projC=projectContinuedPolicy(10), psC=portfolioStats(projC);
+  const youngSMCont=projC.filter(e=>e.dept==='store'&&e.grade>=3&&e.age<38).length;
+  const buyerCont=projC.filter(e=>e.dept==='md'&&e.role==='バイヤー').length;
+  const mgmtCont=projC.filter(e=>e.dept==='mgmt').length;
+  lines.push('\n【同じ投資配分方針・組織設計をそのまま10年継続した場合の投影（Year15の陣容→Year25相当。エンゲージメント水準・予算・方針を維持したまま内部育成・異動・外部採用を10年分繰り返した決定論的な期待値）】');
+  lines.push(`総人数: ${f.n}名 → ${psC.n}名（${psC.n-f.n>=0?'+':''}${psC.n-f.n}名）`);
+  lines.push(`平均年齢: ${f.avgAge.toFixed(1)}歳 → ${psC.avgAge.toFixed(1)}歳`);
+  lines.push(`管理職比率: ${Math.round(f.mgrRatio*100)}% → ${Math.round(psC.mgrRatio*100)}%`);
+  lines.push(`35歳未満: ${f.under35}名 → ${psC.under35}名`);
+  lines.push(`部門別headcount: ${DEPTS.map(d=>`${d.name}${headcount(d.id)}→${projC.filter(e=>e.dept===d.id).length}`).join(' / ')}`);
+  lines.push(`店舗の次世代店長候補(38歳未満・等級3以上): ${youngSMCont}名 / 商品部バイヤー: ${buyerCont}名 / 経営(mgmt)人員: ${mgmtCont}名`);
+  return lines.join('\n');
+}
+function copyAiReport(){
+  const text=buildAiReport();
+  const done=()=>alert('経営レポートをコピーしました。AIに貼り付けて分析させましょう。');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(()=>fallbackCopy(text,done));
+  } else fallbackCopy(text,done);
+}
+function fallbackCopy(text,done){
+  const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select();
+  document.execCommand('copy'); document.body.removeChild(ta); done();
+}
+function vResult(){
+  const {end, stratScore, gapScore, engScore, total, ct, commitScore, spiritScore, knowledgeScore, execScore, rank, endMsg, stratMsg} = computeResultScores();
+  return `<div class="center" style="max-width:720px;margin:0 auto">
+    <h2>5年経営の結果</h2>
+    <div class="card"><div style="font-size:56px;font-weight:900;color:${end==='fail'?'var(--bad)':'var(--accent)'}">${rank}</div>
+      <div class="muted">総合スコア ${total}/100</div></div>
+    <div class="card" style="text-align:left">
+      <h3>💰 事業成果（カネ）— 人財への投資と定着の失敗は、そのまま機会損失になる</h3>
+      <table><tr><th></th><th>1年目（開始時）</th><th>5年目（現在）</th></tr>
+        <tr><td>年商</td><td>${(state.initialFinance.revenue/10000).toFixed(2)}億円</td><td><b>${(state.finance.revenue/10000).toFixed(2)}億円</b></td></tr>
+        <tr><td>粗利率</td><td>${Math.round(state.initialFinance.marginRate*100)}%</td><td><b>${Math.round(state.finance.marginRate*100)}%</b></td></tr>
+        <tr><td>営業利益</td><td>${(state.initialFinance.opProfit/10000).toFixed(2)}億円</td><td><b style="color:${state.finance.opProfit<0?'var(--bad)':'var(--ok)'}">${(state.finance.opProfit/10000).toFixed(2)}億円</b></td></tr>
+      </table>
+      <div class="alert ${state.finance.cumOppLossManYen>3000?'critical':state.finance.cumOppLossManYen>0?'warning':'info'}" style="margin-top:10px">
+        ${state.finance.cumOppLossManYen>0
+          ? `この5年間で、土日の壁・バイヤーの目利き承継・ECのベンダー依存などにより、人財投資が理想的に機能していた場合と比べて<b>累計 約${(state.finance.cumOppLossManYen/10000).toFixed(2)}億円の機会損失</b>が発生しました。人財の問題は、最終的にカネの問題として跳ね返ってきます。`
+          : `土日の壁・バイヤー承継・ECのDX化など、人財のリアルな課題にうまく対応でき、機会損失はほぼ発生しませんでした。`}
+      </div>
+    </div>
+    <div class="card" style="text-align:left">
+      <h3>🏛 経営者力量審判 — 「仕組み」と「人心」、両方を回せたか</h3>
+      <p class="small muted">力量総合スコア <b>${execScore}</b>/100（Sランクには70以上が必要。仕組み〈カネ・IT内製化・制度〉と人心〈人心掌握・共感・誠実さ〉の両輪がなければSは取れません）</p>
+      <table><tr><th>力</th><th>スコア</th><th>評価</th></tr>
+        <tr><td>①約束する力<br><span class="small muted">コミットメント</span></td><td><b>${commitScore}</b></td><td class="small">${
+          commitScore>=85 ? '期首に掲げた年商・出店目標をほぼ達成しました。有言実行の経営者です。'
+          : commitScore>=60 ? '目標にはやや届きませんでしたが、致命的な乖離ではありません。'
+          : `期首に約束した年商${(ct.revenue/10000).toFixed(2)}億円・${ct.stores}店舗に対し、実績は${(state.finance.revenue/10000).toFixed(2)}億円・${storeCountNow()}店舗。目標未達を曖昧にする<b>矮小化の逃げ</b>——株主・取引金融機関から見ればペテン師です。非上場でも、<b>次の資金調達力・信用格付けの低下</b>という形で必ず跳ね返ってきます。`
+        }</td></tr>
+        <tr><td>②攻める力<br><span class="small muted">アニマルスピリット</span></td><td><b>${spiritScore}</b></td><td class="small">${
+          spiritScore>=85 ? '大胆な戦略で勝負に出ました。攻めの経営者です。'
+          : spiritScore<=40 ? '新規出店なし・既存強化に終始——<b>保守化して戦いを逃れた、組織の凡庸化ルート</b>です。'
+          : '標準的なペースで着実に経営しました。'
+        }</td></tr>
+        <tr><td>③繋ぐ力<br><span class="small muted">知の資産化</span></td><td><b>${knowledgeScore}</b></td><td class="small">${
+          knowledgeScore>=70 ? 'ベテランの目利き・現場技を標準化・形式知化する投資を怠りませんでした。'
+          : `商品部の目利き承継や現場ノウハウの形式知化への投資が不足しています。このままでは<b>暗黙知の消失で即座に経営破綻する</b>未来が待っています。`
+        }</td></tr>
+      </table>
+    </div>
+    <div class="card" style="text-align:left">
+      <h3>あなたの戦略：${stratSummary()}　／　組織設計：${HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name}</h3>
+      <div class="row" style="justify-content:space-between"><b>戦略実現度</b><b style="color:${stratScore>=85?'var(--ok)':stratScore>=60?'var(--warn)':'var(--bad)'}">${stratScore}%</b></div>
+      <div class="meter" style="margin:6px 0"><span style="width:${stratScore}%;background:${stratScore>=85?'var(--ok)':stratScore>=60?'var(--warn)':'var(--bad)'}"></span></div>
+      <p class="small">${stratMsg}</p>
+      <div class="row" style="justify-content:space-between"><b>人員ギャップ（5年目時点の未充足）</b><b style="color:${gapScore>=85?'var(--ok)':gapScore>=60?'var(--warn)':'var(--bad)'}">${gapScore}/100</b></div>
+      <div class="meter" style="margin:6px 0"><span style="width:${gapScore}%;background:${gapScore>=85?'var(--ok)':gapScore>=60?'var(--warn)':'var(--bad)'}"></span></div>
+      <p class="small muted">見えるリスクはマネジメントできる——総合スコアの15%を占める指標です。部門ごとの過不足は「④部門別ギャップ」の考え方と同じ計算式です。</p>
+      <h3 style="margin-top:14px">従業員エンゲージメント</h3>
+      <div class="row" style="justify-content:space-between"><b>期末エンゲージメント</b><b style="color:${engScore>=65?'var(--ok)':engScore>=45?'var(--warn)':'var(--bad)'}">${engScore}/100</b></div>
+      <div class="meter" style="margin:6px 0"><span style="width:${engScore}%;background:${engScore>=65?'var(--ok)':engScore>=45?'var(--warn)':'var(--bad)'}"></span></div>
+      <p class="small">${engScore>=65?'離職を抑えながら経営できました。内部育成投資・報酬水準・適切な要員配置がエンゲージメントを支えました。':engScore>=45?'エンゲージメントはやや低下しました。外部調達への偏りや要員不足が響いた可能性があります。':'エンゲージメントが大きく低下しました。外部調達偏重・要員不足による疲弊が離職を招き、さらに悪化する悪循環に陥っていた可能性があります。'}</p>
+      <h3 style="margin-top:14px">投資の意図と現場の執行結果 — 人事は計画通りにいかない</h3>
+      ${(()=>{const planned=state.planSnapshot?state.planSnapshot.totalHires:0;
+        const actual=DEPTS.reduce((a,d)=>a+(state.actual[d.id]||0),0);
+        const emerg=state.cum.emergencyTransfers||0;
+        return `<p class="small">経営者として配分した投資が生むと見込んだ調達 <b>${planned}名</b>（意図）に対し、現場が実際に確保できたのは <b>${actual}名</b>（結果）。<br>
+        この5年で想定外に失ったのは —— 定年 <b>${state.cum.retired}名</b>／離職 <b>${state.cum.left}名</b>、そして市場で<b>採れなかった採用 ${state.cum.failed}回</b>。<br>
+        ${emerg>0?`さらに、業務継続のため方針を曲げて実施した<b>緊急の人員融通 ${emerg}回</b>——${HR_ARCHITECTURE[state.orgDesign.hrArchitecture].name}を標榜していても、採用できなければ今いる人で埋めるしかありませんでした。<br>`:''}
+        ${(state.cum.restructured||0)>0?`戦略転換で生まれた余剰人員のうち<b>${state.cum.restructured}名をリストラ</b>——即時に頭数は減らせましたが、エンゲージメントの悪化という代償を払いました。<br>`:''}
+        <span class="muted">経営者が決めた配分方針も、現場での執行では市場・離職・時間に裏切られる。だからこそ、投資は早めに・複数の部門/経路に分散し、結果を見て配分そのものを機動的に見直すことが経営の要になる。</span></p>`})()}
+      <h3 style="margin-top:14px">後継者</h3><p>${endMsg}</p>
+      <h3 style="margin-top:12px">部門別 5年後の充足</h3>
+      <table><tr><th>部門</th><th>現有</th><th>需要</th><th>過不足</th></tr>
+      ${DEPTS.map(d=>{const n=headcount(d.id),dm=demandAt(d.id,END_YEAR),g=n-dm;return `<tr><td>${d.name}${state.orgDesign.elevated[d.id]?' 🏢':''}</td><td>${n}</td><td>${dm}</td><td><span class="tag ${g>=0?'ok':g>=-2?'warn':'bad'}">${g>=0?'+'+g:g}</span></td></tr>`}).join('')}
+      </table>
+      ${(()=>{
+        const i=state.initialStats, f=portfolioStats(state.emps);
+        const pct=v=>Math.round(v*100);
+        const pMax=Math.max(bandMax(state.initialEmps), bandMax(state.emps));
+        return `<h3 style="margin-top:14px">人財ポートフォリオ：5年間の変化</h3>
+        <p class="small muted">②で見た開始時点（1年目）の会社全体の構成が、5年間の経営でどう変わったか。</p>
+        <table><tr><th></th><th>1年目（開始時）</th><th>5年目（現在）</th><th>変化</th></tr>
+          ${numRow('総人数', i.n, f.n, '名', 'up')}
+          ${numRow('平均年齢', +i.avgAge.toFixed(1), +f.avgAge.toFixed(1), '歳', 'down')}
+          ${numRow('女性比率', pct(i.femaleRatio), pct(f.femaleRatio), '%', null)}
+          ${numRow('管理職比率', pct(i.mgrRatio), pct(f.mgrRatio), '%', null)}
+          ${numRow('女性管理職比率', pct(i.femaleMgrRatio), pct(f.femaleMgrRatio), '%', 'up')}
+          ${numRow('35歳未満', i.under35, f.under35, '名', 'up')}
+        </table>
+        <div class="grid split" style="grid-template-columns:1fr 1fr;margin-top:10px">
+          <div>
+            <div class="small muted" style="margin-bottom:4px">年齢構成：1年目（開始時）</div>
+            ${svgPyramid(state.initialEmps, pMax)}
+          </div>
+          <div>
+            <div class="small muted" style="margin-bottom:4px">年齢構成：5年目（現在）</div>
+            ${svgPyramid(state.emps, pMax)}
+          </div>
+        </div>
+        <div class="grid split" style="grid-template-columns:1fr 1fr;margin-top:10px">
+          <div>
+            <div class="small muted" style="margin-bottom:4px">等級構成：1年目（開始時）</div>
+            ${gradeBars(state.initialEmps)}
+          </div>
+          <div>
+            <div class="small muted" style="margin-bottom:4px">等級構成：5年目（現在）</div>
+            ${gradeBars(state.emps)}
+          </div>
+        </div>`;
+      })()}
+    </div>
+    <div class="card" style="text-align:left">
+      ${(()=>{
+        const f=portfolioStats(state.emps);
+        const doNothing=projectRoster(10), continued=projectContinuedPolicy(10);
+        const pick=(list,pred)=>list.filter(pred).length;
+        const rows=[
+          ['総人数', f.n, pick(doNothing,()=>true), pick(continued,()=>true)],
+          ['店舗の次世代店長候補<br><span class="small muted">(38歳未満・等級3以上)</span>', pick(state.emps,e=>e.dept==='store'&&e.grade>=3&&e.age<38), pick(doNothing,e=>e.dept==='store'&&e.grade>=3&&e.age<38), pick(continued,e=>e.dept==='store'&&e.grade>=3&&e.age<38)],
+          ['商品部バイヤー', pick(state.emps,e=>e.dept==='md'&&e.role==='バイヤー'), pick(doNothing,e=>e.dept==='md'&&e.role==='バイヤー'), pick(continued,e=>e.dept==='md'&&e.role==='バイヤー')],
+          ['経営(mgmt)人員', pick(state.emps,e=>e.dept==='mgmt'), pick(doNothing,e=>e.dept==='mgmt'), pick(continued,e=>e.dept==='mgmt')],
+        ];
+        return `<h3>🔭 この先10年、組織は持続できるか</h3>
+        <p class="small muted">経営者力量審判は直近5年間の実行力の評価。ここでは5年目の陣容を起点に、①何も採用・育成をしなかった場合の最悪ケースと、②この5年間の投資配分方針・組織設計・到達したエンゲージメント水準をそのまま10年続けた場合、の2通りを投影する。</p>
+        <table><tr><th></th><th>5年目（現在）</th><th>①採用ゼロで放置</th><th>②同じ方針を継続</th></tr>
+        ${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><b>${r[3]}</b></td></tr>`).join('')}
+        </table>
+        <p class="small muted" style="margin-top:8px">経営者力量審判の評価が高くても、②の数字が細っているなら、それは「良い5年」であって「持続する組織」ではない、ということ。</p>`;
+      })()}
+    </div>
+    <button style="width:100%;margin-bottom:12px;background:linear-gradient(135deg,#1e293b,#334155);color:#fff;border:none" data-act="copyReport">📋 経営レポートをコピー（AI分析用）</button>
+    <button class="primary" data-act="restart">もう一度</button>
+  </div>`;
+}
+// ===== 全体ポートフォリオ（会社全体の人の構成）=====
+// 放置シナリオ：現在の人財を years 年ぶん進めた予測ロスター（採用ゼロ・加齢・定年・離職）。
+// プレビュー用に決定論的（ゲーム乱数を消費しない）に計算する。
+function projectRoster(years){
+  let list=state.emps.map(e=>({...e}));
+  for(let y=0;y<years;y++){
+    list.forEach(e=>e.age++);
+    list=list.filter(e=>e.age<65); // 定年
+    const byd={}; list.forEach(e=>{(byd[e.dept]=byd[e.dept]||[]).push(e)});
+    let keep=[];
+    Object.keys(byd).forEach(dep=>{
+      const arr=byd[dep]; const attr= dep==='store'?0.12:0.09;
+      const remove=Math.round(arr.length*attr);
+      arr.sort((a,b)=>a.pot-b.pot); // 定着しにくい層(低ポテンシャル)から抜ける想定で決定論化
+      keep=keep.concat(arr.slice(remove));
+    });
+    list=keep;
+  }
+  return list;
+}
+// 「同じ方針を継続」した場合の10年後投影：projectRoster()の「採用ゼロで放置」という
+// 最悪ケースとは異なり、Year15時点の投資配分方針（alloc/stance・組織設計・報酬水準）と
+// 到達したエンゲージメント水準を維持したまま、autoExecuteYear()と同じ内部育成・異動・
+// 役職遷移・外部採用のロジックを years 年分繰り返す。乱数は一切消費せず、外部採用の
+// 成功確率(channelSuccess)も期待値として扱う（⑤投資配分のprojectDeptOutcome()と同じ考え方）。
+// 「S評価＝短期5年の実行力」と「その方針のまま10年後も持続できるか」を分けて見せるための投影。
+function projectContinuedPolicy(years){
+  let emps=state.emps.map(e=>({...e}));
+  const carry={};
+  const engMult=engagementMult(); // エンゲージメントは最終年の水準を維持すると仮定
+  const engFactor=clamp(1.6-state.engagement/100,0.6,1.6);
+  const compTurnoverMult=COMP_LEVELS[state.compLevel].turnoverMult;
+  const budget=state.budget; // 投資予算も維持
+  const hc=(id)=>emps.filter(e=>e.dept===id).length;
+  for(let y=0;y<years;y++){
+    emps.forEach(e=>e.age++);
+    emps=emps.filter(e=>e.age<65); // 定年
+    // 離職：advanceYear()の離職率式(engFactor・報酬水準・体力的負荷)を、部門ごとの
+    // 期待離職率として決定論的に適用し、低ポテンシャル層から間引く
+    const byd={}; emps.forEach(e=>{(byd[e.dept]=byd[e.dept]||[]).push(e)});
+    let survivors=[];
+    DEPTS.forEach(d=>{
+      const arr=byd[d.id]||[]; if(!arr.length) return;
+      const avgStrain=avg(arr.map(e=>physicalStrainMult(e)));
+      const attr=clamp((d.id==='store'?0.12:0.09)*engFactor*compTurnoverMult*avgStrain,0,0.9);
+      const remove=Math.round(arr.length*attr);
+      arr.sort((a,b)=>a.pot-b.pot);
+      survivors=survivors.concat(arr.slice(remove));
+    });
+    emps=survivors;
+    // 内部育成・異動・外部採用：autoExecuteYear()と同じ配分ロジック
+    DEPTS.forEach(d=>{
+      const dept=d.id; const stance=state.alloc[dept].stance;
+      const annualSpend=budget*effectiveShare(dept)/100;
+      const w=allocWeights(stance); const sum=Object.values(w).reduce((a,b)=>a+b,0);
+      ['develop','transfer'].forEach(ch=>{
+        const frac=w[ch]/sum;
+        const pipelinePenalty=(ch==='develop'&&dept==='store'&&state.orgDesign.flexWork)?LEADERSHIP_PIPELINE_PENALTY:1;
+        const capacity=frac*BUILD_CAPACITY_MULT*engMult*pipelinePenalty;
+        const key=dept+':'+ch; const total=capacity+(carry[key]||0);
+        const n=Math.floor(total); carry[key]=total-n;
+        const promoted=new Set();
+        for(let i=0;i<n;i++){
+          if(ch==='develop'){
+            const t=emps.filter(e=>e.dept===dept&&e.grade<4&&!promoted.has(e.id)).sort((a,b)=>b.pot-a.pot)[0];
+            if(t){
+              promoted.add(t.id);
+              const fromRole=t.role; t.grade++;
+              if(dept==='store'){
+                if(fromRole==='パート'&&t.grade>=2) t.role='販売';
+                else if(fromRole==='販売'&&t.grade>=3) t.role='副店長';
+              } else if(dept==='md'){
+                if((fromRole==='若手バイヤー候補'||fromRole==='MDプランナー')&&t.grade>=3) t.role='MD';
+                else if(fromRole==='MD'&&t.grade>=4) t.role='バイヤー';
+              }
+            }
+          } else {
+            const from=emps.filter(e=>e.dept!==dept&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.dept!=='mgmt').sort((a,b)=>hc(b.dept)-hc(a.dept))[0];
+            if(from){ from.dept=dept; from.role=ROLE_BY_DEPT[dept]; }
+          }
+        }
+      });
+      ['newgrad','agency','headhunt','referral'].forEach(ch=>{
+        const frac=w[ch]/sum; const chBudget=annualSpend*frac; const unit=channelCost(ch,dept);
+        if(unit<=0) return;
+        const expected=(chBudget/unit)*channelSuccess(ch,dept); // 成功確率込みの期待値（乱数を消費しない）
+        const key=dept+':'+ch; const total=expected+(carry[key]||0);
+        let n=Math.floor(total); carry[key]=total-n;
+        if(ch==='referral') n=Math.min(n,referralCapFor(emps.length));
+        for(let i=0;i<n;i++){
+          const gender = dept==='store' ? (i%5===0?'M':'F') : (i%2===0?'M':'F');
+          emps.push({id:'proj'+y+dept+ch+i, dept, role:ROLE_BY_DEPT[dept], age: ch==='newgrad'?23:35, grade: ch==='headhunt'?4:2, gender, pot:0.5});
+        }
+      });
+    });
+  }
+  return emps;
+}
+function referralCapFor(n){return Math.max(1,Math.round(n*0.06))}
+function portfolioStats(a){
+  a=a||state.emps;
+  const n=a.length;
+  const female=a.filter(e=>e.gender==='F').length;
+  const mgr=a.filter(e=>e.grade>=4);
+  const femaleMgr=mgr.filter(e=>e.gender==='F').length;
+  return {
+    n, avgAge:avg(a.map(e=>e.age)),
+    femaleRatio: n? female/n : 0,
+    mgrRatio: n? mgr.length/n : 0,
+    femaleMgrRatio: mgr.length? femaleMgr/mgr.length : 0,
+    over55: a.filter(e=>e.age>=55).length,
+    under35: a.filter(e=>e.age<35).length,
+  };
+}
+// 2時点間の増減を色付きで見せる行（bv=起点の値、av=現在値、dir='up'なら増加が好ましい、'down'なら減少が好ましい、nullなら良し悪しなし）
+function numRow(label,bv,av,unit,dir){
+  const d=av-bv; const improved= dir==='down'?d<0:dir==='up'?d>0:null;
+  const col= improved===null?'var(--muted)':improved?'var(--ok)':(d===0?'var(--muted)':'var(--warn)');
+  const sign= d>0?'+':''; const dtxt = Number.isInteger(d)? `${sign}${d}`:`${sign}${d.toFixed(1)}`;
+  return `<tr><td>${label}</td><td>${bv}${unit}</td><td>${av}${unit}</td><td><span style="color:${col}">${dtxt}${unit}</span></td></tr>`;
+}
+function bandMax(emps){
+  const lo=[0,25,30,35,40,45,50,55,60,65], hi=[24,29,34,39,44,49,54,59,64,200];
+  const c=lo.map(()=>({M:0,F:0}));
+  emps.forEach(e=>{for(let i=0;i<lo.length;i++){if(e.age>=lo[i]&&e.age<=hi[i]){c[i][e.gender]++;break}}});
+  return Math.max(1,...c.map(x=>Math.max(x.M,x.F)));
+}
+// 会社全体の平均だけでは、特定部門の高齢化・若手枯渇が隠れてしまう
+// （例：店舗が若く商品部が高齢でも、平均すると"普通"に見える）。
+// ③組織設計・⑤投資配分は部門ごとに判断するため、部門別の年齢構成をここで可視化する。
+function deptAgeTable(){
+  return `<table><tr><th>部門</th><th>人数</th><th>平均年齢</th><th>55歳以上</th><th>35歳未満</th></tr>
+    ${DEPTS.map(d=>{
+      const st=portfolioStats(deptEmps(d.id));
+      const ageWarn = st.n>0 && st.avgAge>=48;
+      const youngWarn = st.n>0 && st.under35===0;
+      return `<tr><td>${d.name}</td><td>${st.n}名</td>
+        <td style="${ageWarn?'color:var(--warn);font-weight:700':''}">${st.n?st.avgAge.toFixed(1)+'歳':'—'}</td>
+        <td>${st.over55}名</td>
+        <td style="${youngWarn?'color:var(--warn);font-weight:700':''}">${st.under35}名</td></tr>`;
+    }).join('')}
+  </table>`;
+}
+function gradeBars(emps){
+  return [5,4,3,2,1].map(g=>{const c=emps.filter(e=>e.grade===g).length;const w=emps.length?c/emps.length*100:0;
+    const gname={5:'経営/幹部(G5)',4:'管理職(G4)',3:'主任/専門(G3)',2:'中堅(G2)',1:'一般/新人(G1)'}[g];
+    return `<div style="margin:5px 0"><div class="row small" style="justify-content:space-between"><span>${gname}</span><span class="muted">${c}名</span></div><div class="meter"><span style="width:${w}%;background:var(--accent)"></span></div></div>`}).join('');
+}
+function kpiBox(l,v,sub,warn){return `<div class="box"><div class="v" ${warn?'style="color:var(--warn)"':''}>${v}</div><div class="l">${l}${sub?` <span style="opacity:.7">${sub}</span>`:''}</div></div>`}
+// 放置シナリオを、数値の羅列ではなく「アナリストが書いた所見」のような複数文の分析にする。
+// 総論(頭数・年齢) → 最も痛手を負う部門 → 階層(管理職)の空洞化 → 店舗の次世代店長候補 →
+// 商品部バイヤーの目利き承継 → 長期(10年)シナリオ → 結論(組織は戦略に従う、の裏返し)、の順で構成。
+function neglectAnalysis(hz, s, ps, proj, proj10){
+  const byDept = DEPTS.filter(d=>d.id!=='mgmt').map(d=>{
+    const cur=headcount(d.id), future=proj.filter(e=>e.dept===d.id).length;
+    return {name:d.name, cur, future, pct: cur? Math.round((future-cur)/cur*100) : 0};
+  });
+  const worstDept = byDept.slice().sort((a,b)=>a.pct-b.pct)[0];
+  const mgrNow = state.emps.filter(e=>e.grade>=4).length;
+  const mgrProj = proj.filter(e=>e.grade>=4).length;
+  const youngSMNow = state.emps.filter(e=>e.dept==='store'&&e.grade>=3&&e.age<38).length;
+  const youngSMProj = proj.filter(e=>e.dept==='store'&&e.grade>=3&&e.age<38).length;
+  const buyerCountNow = deptEmps('md').filter(e=>e.role==='バイヤー').length;
+  const buyerCountProj = proj.filter(e=>e.dept==='md'&&e.role==='バイヤー').length;
+  const buyerAvgNow = avg(deptEmps('md').filter(e=>e.role==='バイヤー').map(e=>e.age));
+  const buyerAvgProj = avg(proj.filter(e=>e.dept==='md'&&e.role==='バイヤー').map(e=>e.age));
+  const lines=[];
+  lines.push(`何も手を打たなければ、${hz}年後には総人数が${s.n}名から<b>${ps.n}名</b>（${ps.n-s.n>=0?'+':''}${ps.n-s.n}名）へ、平均年齢は${s.avgAge.toFixed(0)}歳から<b>${ps.avgAge.toFixed(0)}歳</b>まで上がる見込みです。`);
+  if(worstDept && worstDept.pct<0){
+    lines.push(`とりわけ<b>${worstDept.name}</b>の目減りが顕著で、現有${worstDept.cur}名 → ${worstDept.future}名（${worstDept.pct}%）まで縮小する見込みです。`);
+  }
+  lines.push(`階層面では、管理職（等級4以上）が${mgrNow}名 → ${mgrProj}名${mgrNow>mgrProj?`へと<b>${mgrNow-mgrProj}名減少</b>し、意思決定を支える層が薄くなります`:'とほぼ維持され、階層構造への影響は限定的です'}。`);
+  if(youngSMNow<=2){
+    lines.push(`店舗運営部の38歳未満・店長候補は現在<b>${youngSMNow}名</b>しかおらず、${hz}年後も${youngSMProj}名の見込み——出店計画を支える次世代の店長が育っていません。`);
+  }
+  if(buyerCountProj===0){
+    lines.push(`商品部のバイヤーは${hz}年後に<b>0名</b>になる見込みです——高齢化どころか、仕入れの目利きそのものが消失します。`);
+  } else if(buyerAvgNow>=BUYER_AGE_WARN_THRESHOLD-5){ // 放置シナリオは早期警戒目的のため通常閾値よりやや早めに言及する
+    lines.push(`商品部のバイヤーは平均<b>${buyerAvgNow.toFixed(0)}歳</b>。${hz}年後には平均${buyerAvgProj?buyerAvgProj.toFixed(0):'—'}歳に達し、目利きの承継が一段と切迫します。`);
+  }
+  lines.push(proj10.n<s.n*0.7
+    ? `このペースを10年続ければ、総人数は<b>${proj10.n}名</b>・平均<b>${proj10.avgAge.toFixed(0)}歳</b>まで縮小し、組織として立ち行かなくなります。`
+    : `10年放置しても総人数の急激な縮小は避けられますが、高齢化・中堅空洞化という質的な劣化は着実に進みます。`);
+  lines.push(`<b>組織は戦略に従う</b>——裏を返せば、支える組織構造がなければどんな戦略も絵に描いた餅です。次の②組織設計・⑤投資配分は、この放置シナリオをどこまで押し返せるかの勝負になります。`);
+  return lines;
+}
+function portfolioSection(){
+  const s=portfolioStats();
+  const hz=Math.max(1, END_YEAR-state.year);         // 放置シナリオの見通し年数(ゲーム期間)
+  const proj=projectRoster(hz), ps=portfolioStats(proj);
+  const proj10=portfolioStats(projectRoster(10));    // 10年放置の参考値
+  const pMax=Math.max(bandMax(state.emps), bandMax(proj)); // 現在と放置後で目盛りを揃える
+  const analysisLines=neglectAnalysis(hz, s, ps, proj, proj10);
+  return `<div class="card">
+    <h3>人員ポートフォリオ（会社全体の構成）</h3>
+    <div class="kpi" style="margin-bottom:12px">
+      ${kpiBox('総人数',s.n+'名')}
+      ${kpiBox('平均年齢',s.avgAge.toFixed(1)+'歳','', s.avgAge>=45)}
+      ${kpiBox('女性比率',Math.round(s.femaleRatio*100)+'%')}
+      ${kpiBox('管理職比率',Math.round(s.mgrRatio*100)+'%')}
+      ${kpiBox('女性管理職',Math.round(s.femaleMgrRatio*100)+'%','', s.femaleMgrRatio<0.15)}
+      ${kpiBox('35歳未満',s.under35+'名','', s.under35<=Math.round(s.n*0.15))}
+    </div>
+    <div class="grid split" style="grid-template-columns:1fr 1fr">
+      <div>
+        <div class="small muted" style="margin-bottom:4px">年齢構成（現在 ／ <span style="color:var(--chart-a)">■</span>男 <span style="color:var(--chart-b)">■</span>女）</div>
+        ${svgPyramid(state.emps, pMax)}
+      </div>
+      <div>
+        <div class="small" style="margin-bottom:4px;color:var(--bad)">▶ このまま放置すると ${hz}年後</div>
+        ${svgPyramid(proj, pMax)}
+      </div>
+    </div>
+    <div class="small muted" style="margin-top:12px;margin-bottom:4px">部門別 年齢構成（③組織設計・⑤投資配分の判断材料——全社平均だけでは部門ごとの偏りが見えない）</div>
+    ${deptAgeTable()}
+    <div class="card" style="margin-top:10px;border-left:3px solid var(--warn);background:var(--panel2)">
+      <h3 style="margin-top:0">📝 放置シナリオ分析</h3>
+      ${analysisLines.map(l=>`<p class="small" style="margin:6px 0">${l}</p>`).join('')}
+    </div>
+    <div class="small muted" style="margin-top:10px;margin-bottom:4px">等級構成（現在の階層バランス）</div>
+    ${gradeBars(state.emps)}
+  </div>`;
+}
+function svgPyramid(emps, maxOverride){
+  emps=emps||state.emps;
+  const bands=['～24','25-29','30-34','35-39','40-44','45-49','50-54','55-59','60-64','65～'];
+  const lo=[0,25,30,35,40,45,50,55,60,65], hi=[24,29,34,39,44,49,54,59,64,200];
+  const cnt=bands.map((_,i)=>({M:0,F:0}));
+  emps.forEach(e=>{for(let i=0;i<bands.length;i++){if(e.age>=lo[i]&&e.age<=hi[i]){cnt[i][e.gender]++;break}}});
+  const maxV=maxOverride||Math.max(1,...cnt.map(c=>Math.max(c.M,c.F)));
+  const W=440,H=250,cx=W/2,pad=8,bandH=(H-24)/bands.length, scale=(cx-46)/maxV;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="人員ピラミッド">`;
+  sv+=`<line x1="${cx}" y1="4" x2="${cx}" y2="${H-16}" stroke="var(--line)"/>`;
+  cnt.forEach((c,i)=>{
+    const y=6+i*bandH, h=bandH*0.72;
+    sv+=`<rect x="${cx-c.M*scale}" y="${y}" width="${c.M*scale}" height="${h}" rx="2" fill="var(--chart-a)"/>`;
+    sv+=`<rect x="${cx}" y="${y}" width="${c.F*scale}" height="${h}" rx="2" fill="var(--chart-b)"/>`;
+    sv+=`<text x="${cx}" y="${y+h-2}" fill="var(--muted)" font-size="9" text-anchor="middle" dy="-1">${bands[i]}</text>`;
+    if(c.M)sv+=`<text x="${cx-c.M*scale-3}" y="${y+h*0.75}" fill="var(--muted)" font-size="9" text-anchor="end">${c.M}</text>`;
+    if(c.F)sv+=`<text x="${cx+c.F*scale+3}" y="${y+h*0.75}" fill="var(--muted)" font-size="9">${c.F}</text>`;
+  });
+  sv+=`</svg>`; return sv;
+}
+function svgGap(d){
+  const W=440,H=220,pad=34;
+  const dem=state.demand[d], sup=supplyWithPlan(d);
+  const maxV=Math.max(...dem,...sup, 5)*1.15;
+  const x=i=>pad+ i*( (W-pad-10)/(dem.length-1) );
+  const y=v=>H-pad - v/maxV*(H-pad-14);
+  const line=(arr,col)=>`<path d="${arr.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ')}" fill="none" stroke="${col}" stroke-width="2.5"/>`+
+    arr.map((v,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" fill="${col}"/>`).join('');
+  // gap面(需要>供給の差)
+  const area=`<path d="${dem.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ')} ${sup.slice().reverse().map((v,i)=>'L'+x(sup.length-1-i).toFixed(1)+' '+y(v).toFixed(1)).join(' ')} Z" fill="rgba(240,87,107,.14)"/>`;
+  const gy=[0,Math.round(maxV/2),Math.round(maxV)];
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="需給ギャップ">
+    ${gy.map(v=>`<line x1="${pad}" y1="${y(v)}" x2="${W-10}" y2="${y(v)}" stroke="var(--line)"/><text x="4" y="${y(v)+4}" fill="var(--muted)" font-size="10">${v}</text>`).join('')}
+    ${dem.map((_,i)=>`<text x="${x(i)}" y="${H-pad+14}" fill="var(--muted)" font-size="10" text-anchor="middle">Y${START_YEAR+i}</text>`).join('')}
+    ${area}
+    ${line(sup,'var(--chart-b)')}
+    ${line(dem,'var(--chart-a)')}
+  </svg>`;
+}
+
+/* ============================ EVENTS ============================ */
+function bind(){
+  document.querySelectorAll('[data-exp]').forEach(b=>b.onclick=()=>{state.strategy.expansion=b.dataset.exp;state.demand=computeDemand(state.strategy,state.orgDesign);render()});
+  document.querySelectorAll('[data-focus]').forEach(b=>b.onclick=()=>{toggleFocus(b.dataset.focus)});
+  document.querySelectorAll('[data-elevate-dept]').forEach(b=>b.onclick=()=>{
+    const d=b.dataset.elevateDept; state.orgDesign.elevated[d]=!state.orgDesign.elevated[d];
+    state.demand=computeDemand(state.strategy,state.orgDesign); recomputeBudget(); render();
+  });
+  document.querySelectorAll('[data-hrarch]').forEach(b=>b.onclick=()=>{state.orgDesign.hrArchitecture=b.dataset.hrarch;render()});
+  document.querySelectorAll('[data-lever]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.lever; state.orgDesign[k]=!state.orgDesign[k]; recomputeBudget(); render();
+  });
+  document.querySelectorAll('[data-invlvl]').forEach(b=>b.onclick=()=>{state.investLevel=b.dataset.invlvl;recomputeBudget();render()});
+  document.querySelectorAll('[data-complvl]').forEach(b=>b.onclick=()=>{state.compLevel=b.dataset.complvl;recomputeBudget();render()});
+  document.querySelectorAll('[data-share-dept]').forEach(b=>b.onclick=()=>{
+    const dep=b.dataset.shareDept, dl=+b.dataset.delta;
+    state.alloc[dep].share=clamp(state.alloc[dep].share+dl,0,100); render();
+  });
+  document.querySelectorAll('[data-stance-set-dept]').forEach(b=>b.onclick=()=>{
+    state.alloc[b.dataset.stanceSetDept].stance=+b.dataset.value; render();
+  });
+  document.querySelectorAll('[data-dept]').forEach(b=>b.onclick=()=>{state.selDept=b.dataset.dept;render()});
+  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>act(b.dataset.act));
+  const cni=document.getElementById('companyNameInput');
+  if(cni) cni.oninput=()=>{draftCompanyName=cni.value}; // render()を呼ばず変数だけ同期し、入力中のカーソル位置を保つ
+}
+function toggleFocus(id){
+  const f=state.strategy.focuses; const i=f.indexOf(id);
+  if(i>=0) f.splice(i,1); else { if(f.length>=2){state.log=['重点事業は最大2つまで'];} else f.push(id); }
+  state.demand=computeDemand(state.strategy,state.orgDesign); render();
+}
+function act(a){
+  if(a==='restart'){state=undefined;render();return}
+  if(a==='copyReport'){copyAiReport();return}
+  if(a==='start'){newGame();state.companyName=draftCompanyName.trim()||'株式会社サンプルマート';state.phase='strategy';render();return}
+  if(a==='toPortfolio'){state.phase='portfolio';render();return}
+  if(a==='backStrategy'){state.phase='strategy';render();return}
+  if(a==='backPortfolio'){state.phase='portfolio';render();return}
+  if(a==='toOrgDesign'){
+    // 戦略で選ばれなくなった重点事業の組織再編フラグは無効化する
+    const validDepts=new Set(state.strategy.focuses.map(f=>FOCUS_TO_DEPT[f]));
+    Object.keys(state.orgDesign.elevated).forEach(k=>{ if(!validDepts.has(k)) delete state.orgDesign.elevated[k]; });
+    state.demand=computeDemand(state.strategy,state.orgDesign); recomputeBudget();
+    state.phase='orgdesign';render();return;
+  }
+  if(a==='backOrgDesign'){state.phase='orgdesign';render();return}
+  if(a==='toGap'){state.phase='gap';render();return}
+  if(a==='backGap'){state.phase='gap';render();return}
+  if(a==='toInvest'){state.phase='invest';render();return}
+  if(a==='commitPlan'){
+    // この時点の投資配分方針を「意図」としてスナップショットし、結果画面で実績と比較する
+    if(!state.planSnapshot){
+      const hz=horizonYears();
+      let totalHires=0;
+      DEPTS.forEach(d=>{const p=projectDeptOutcome(d.id,effectiveShare(d.id),state.alloc[d.id].stance,state.budget);
+        totalHires+=p.expectedHires*hz;});
+      state.planSnapshot={totalHires:Math.round(totalHires*10)/10};
+    }
+    // 期首に掲げた「約束」（年商・出店目標）を固定する。①約束する力の判定基準になる
+    if(!state.commitTargets) state.commitTargets=computeCommitTargets();
+    state.phase='year';render();return;
+  }
+  if(a==='advance'){advanceYear();render();return}
+  if(a.startsWith('nominate:')){
+    const target=a.slice('nominate:'.length);
+    if(target==='external'){
+      // 外部招聘：社歴不問でいつでも候補を用意できる代わりに、忠誠度は低く始まる(build/buyと同じ構造)
+      const gender=rng()<.5?'M':'F';
+      const ext={id:'e'+Math.floor(rng()*99999),dept:'mgmt',role:'外部招聘幹部',age:ri(38,50),grade:4,gender,pot:+(0.5+rng()*0.4).toFixed(2),name:name(gender)};
+      state.emps.push(ext);
+      state.successor=ext.id; state.succProgress=25; state.successorLoyalty=35+Math.round(rng()*15);
+      state.log.push(`外部から${ext.name}を後継者候補として招聘しました（社歴ゼロのため忠誠度は低め。関係構築が必要です）`);
+    } else {
+      const cand=state.emps.find(e=>e.id===target && e.grade>=4 && e.role!=='社長');
+      if(cand){
+        const fromDept=DEPTS.find(d=>d.id===cand.dept).name;
+        cand.dept='mgmt'; cand.role='後継者候補'; // 経営を学ばせるため元の部門から引き抜く＝元の部門の人員・後継体制が薄くなるという現実の代償を伴う
+        state.successor=cand.id; state.succProgress=10; state.successorLoyalty=60+Math.round(rng()*20);
+        state.log.push(`${cand.name}を${fromDept}から引き抜き、後継者に指名しました（元の部門の人員が1名減ります）`);
+      }
+    }
+    render(); return;
+  }
+  // 人心掌握アクション：年1回まで。社長個人の人心掌握度を上げ、エンゲージメントの目減りを緩和する
+  // （エンゲージメントを通じて現場の実行成功率を左右する）
+  if(a==='townhall'){
+    if(state.charismaActionUsed) return;
+    state.engagement=Math.round(clamp(state.engagement+10,5,95));
+    state.charisma=Math.round(clamp(state.charisma+15,0,100));
+    state.charismaActionUsed=true;
+    state.log.push('車座のタウンミーティングを実施：現場を回り、方針の「理由」を自分の言葉で伝えました。');
+    render(); return;
+  }
+  if(a==='praise'){
+    if(state.charismaActionUsed) return;
+    state.praiseBoost=true;
+    state.charisma=Math.round(clamp(state.charisma+10,0,100));
+    state.charismaActionUsed=true;
+    state.log.push('大々的な表彰制度で現場の成果を称え、アニマルスピリットを刺激しました（今年の店舗運営品質に一時バフ）。');
+    render(); return;
+  }
+  if(a==='sashi'){
+    if(state.charismaActionUsed || !state.successor) return;
+    state.successorBoosted=true;
+    state.charisma=Math.round(clamp(state.charisma+5,0,100));
+    state.charismaActionUsed=true;
+    state.log.push('後継者とサシで向き合い、個別に厚遇・慰留しました（来年の忠誠度に大きく反映されます）。');
+    render(); return;
+  }
+  // ジョブローテーション型・バランス型の経営者が、重点事業を強化するために能動的に行う計画的配転。
+  // 部門間ミスマッチへの受動的なリスキリングとは異なり、方針に沿った異動のため即時反映・等級維持・
+  // エンゲージメントへの悪影響なし。年1回まで。
+  if(a.startsWith('plannedTransfer:')){
+    if(state.plannedTransferUsed) return;
+    const [,from,to]=a.split(':');
+    const cand=state.emps.filter(e=>e.dept===from&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.id!==state.successor).sort((x,y)=>y.pot-x.pot)[0];
+    if(cand){
+      cand.dept=to; cand.role=ROLE_BY_DEPT[to];
+      state.actual[to]=(state.actual[to]||0)+1;
+      state.plannedTransferUsed=true;
+      state.log.push(`${DEPTS.find(d=>d.id===from).name}から${DEPTS.find(d=>d.id===to).name}へ、重点事業強化のため計画的に1名を配転しました。`);
+    }
+    render(); return;
+  }
+  // 戦略転換（店舗縮小×EC急伸等）で生まれた「余剰部門→不足部門」のミスマッチへの経営者の直接対応。
+  // 現場の自動執行(採用チャネル)とは別枠：頭数の増減を経営者自身が判断する例外的なアクション。
+  if(a.startsWith('reskill:')){
+    const [,from,to]=a.split(':');
+    const cand=state.emps.filter(e=>e.dept===from&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.id!==state.successor).sort((x,y)=>y.pot-x.pot)[0];
+    if(cand){
+      state.emps=state.emps.filter(e=>e.id!==cand.id);
+      state.pending.push({dept:to,role:ROLE_BY_DEPT[to],arrive:state.year+1,age:cand.age,grade:Math.max(1,cand.grade-1),gender:cand.gender});
+      state.engagement=Math.round(clamp(state.engagement+2,5,95)); // 自発的な再配置は雇用不安を和らげる
+      state.log.push(`${DEPTS.find(d=>d.id===from).name}から${DEPTS.find(d=>d.id===to).name}へ1名がリスキリング異動（来年配属）`);
+    }
+    render(); return;
+  }
+  if(a.startsWith('restructure:')){
+    const from=a.split(':')[1];
+    const targets=state.emps.filter(e=>e.dept===from&&e.role!=='社長'&&e.id!==state.successor).sort((x,y)=>x.pot-y.pot).slice(0,2);
+    if(targets.length){
+      const ids=new Set(targets.map(t=>t.id));
+      state.emps=state.emps.filter(e=>!ids.has(e.id));
+      state.engagement=Math.round(clamp(state.engagement-20,5,95)); // 即時削減の代償：エンゲージメントが大きく悪化(→後継者忠誠度にも波及)
+      state.restructureShockYears=2;
+      state.cum.restructured=(state.cum.restructured||0)+targets.length;
+      state.log.push(`${DEPTS.find(d=>d.id===from).name}でリストラを実施：${targets.length}名が退職。エンゲージメントが大きく悪化しました。`);
+    }
+    render(); return;
+  }
+}
+
+render();
+</script>
+</body>
+</html>
