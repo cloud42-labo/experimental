@@ -131,3 +131,26 @@ h1 {
 #empty-message.hidden {
   display: none;
 }
+
+#clear-completed-btn {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px 16px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+}
+
+#clear-completed-btn:hover:not(:disabled) {
+  background: #f4f5f7;
+  border-color: #999;
+}
+
+#clear-completed-btn:disabled {
+  color: #ccc;
+  cursor: default;
+}
