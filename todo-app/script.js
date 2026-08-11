@@ -4,6 +4,7 @@ const form = document.getElementById("todo-form");
 const input = document.getElementById("todo-input");
 const list = document.getElementById("todo-list");
 const emptyMessage = document.getElementById("empty-message");
+const remainingCount = document.getElementById("remaining-count");
 const clearCompletedBtn = document.getElementById("clear-completed-btn");
 
 let tasks = loadTasks();
@@ -23,6 +24,10 @@ function saveTasks() {
 function render() {
   list.innerHTML = "";
   emptyMessage.classList.toggle("hidden", tasks.length > 0);
+
+  const remaining = tasks.filter((t) => !t.completed).length;
+  remainingCount.textContent =
+    tasks.length === 0 ? "" : `残り ${remaining} 件`;
   clearCompletedBtn.disabled = !tasks.some((t) => t.completed);
 
   for (const task of tasks) {
