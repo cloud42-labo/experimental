@@ -4,6 +4,7 @@ const form = document.getElementById("todo-form");
 const input = document.getElementById("todo-input");
 const list = document.getElementById("todo-list");
 const emptyMessage = document.getElementById("empty-message");
+const clearCompletedBtn = document.getElementById("clear-completed-btn");
 
 let tasks = loadTasks();
 
@@ -22,6 +23,7 @@ function saveTasks() {
 function render() {
   list.innerHTML = "";
   emptyMessage.classList.toggle("hidden", tasks.length > 0);
+  clearCompletedBtn.disabled = !tasks.some((t) => t.completed);
 
   for (const task of tasks) {
     const li = document.createElement("li");
@@ -66,6 +68,14 @@ function deleteTask(id) {
   saveTasks();
   render();
 }
+
+function clearCompleted() {
+  tasks = tasks.filter((t) => !t.completed);
+  saveTasks();
+  render();
+}
+
+clearCompletedBtn.addEventListener("click", clearCompleted);
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
