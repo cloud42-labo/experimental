@@ -1,0 +1,92 @@
+name: One-time HPM v1 review fix
+
+on:
+  push:
+    branches:
+      - chatgpt/hpm-v1-cockpit
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix portfolio transfer and rebalance reachable target
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('human-capital-portfolio-management/v1-prototype.html')
+          s=p.read_text()
+          s=s.replace("const ACTION_COST={store:{hire:10,train:8,transfer:2,motivate:4},md:{hire:15,train:10,transfer:2,motivate:4},admin:{hire:10,train:8,transfer:2,motivate:4}};","const ACTION_COST={store:{hire:8,train:5,transfer:2,motivate:3},md:{hire:10,train:6,transfer:2,motivate:3},admin:{hire:8,train:5,transfer:2,motivate:3}};")
+          s=s.replace("md:{name:'商品部',kpi:'粗利率',unit:'%',need:8,hc:6", "md:{name:'商品部',kpi:'粗利率',unit:'%',need:7,hc:6")
+          old="""  const transferIn={store:state.actions.store.transfer*transferScale,md:state.actions.md.transfer*transferScale,admin:0};
+            const transferOut={admin:Math.min(adminOut,want),store:0,md:0};
+            const rows=[];"""
+          new="""  const transferIn={store:state.actions.store.transfer*transferScale,md:state.actions.md.transfer*transferScale,admin:0};
+            const transferOut={admin:Math.min(adminOut,want),store:0,md:0};
+            // 配置転換は人数だけでなく年齢ポートフォリオも同時に移す。Year1開始時点の管理部構成を按分する。
+            const adminAgedAtY1=ageStep(DEPT_META.admin.ages);
+            const adminAgedTotal=adminAgedAtY1.reduce((p,v)=>p+v,0)||1;
+            const transferAgeVector=adminAgedAtY1.map(v=>transferOut.admin*v/adminAgedTotal);
+            const rows=[];"""
+          assert old in s
+          s=s.replace(old,new)
+          old="""      const ageRetire=Math.max(0,x.hc-targetHc);
+                if(ageRetire>.05){x.hc-=ageRetire;events.push(`退職 ${fmt(ageRetire,1)}名`)}
+                if(y===2 && a.hire>0){x.hc+=a.hire;x.ages[0]+=a.hire;events.push(`採用 ${a.hire}名着任`)}
+                if(y===1 && transferIn[id]){x.hc+=transferIn[id];events.push(`配置転換で+${fmt(transferIn[id],1)}名`)}
+                if(y===1 && transferOut[id]){x.hc-=transferOut[id];events.push(`他部門へ-${fmt(transferOut[id],1)}名`)}"""
+          new="""      const ageRetire=Math.max(0,x.hc-targetHc);
+                if(ageRetire>0){x.hc-=ageRetire;if(ageRetire>.05)events.push(`退職 ${fmt(ageRetire,1)}名`)}
+                if(y===2 && a.hire>0){x.hc+=a.hire;x.ages[0]+=a.hire;events.push(`採用 ${a.hire}名着任`)}
+                if(y===1 && transferIn[id]){
+                  const share=transferOut.admin?transferIn[id]/transferOut.admin:0;
+                  x.hc+=transferIn[id];
+                  x.ages=x.ages.map((v,i)=>v+transferAgeVector[i]*share);
+                  events.push(`配置転換で+${fmt(transferIn[id],1)}名`);
+                }
+                if(y===1 && transferOut[id]){
+                  x.hc-=transferOut[id];
+                  x.ages=x.ages.map((v,i)=>Math.max(0,v-transferAgeVector[i]));
+                  events.push(`他部門へ-${fmt(transferOut[id],1)}名`);
+                }"""
+          assert old in s
+          s=s.replace(old,new)
+          old="""  document.getElementById('resultCompare').innerHTML=rows.map(([l,t,v,u,h])=>`<div class=\"result-row\"><b>${l}</b><span>予定 ${u==='%'?fmt(t,1):fmt(t)}${u}</span><span>実績 ${u==='%'?fmt(v,1):fmt(v)}${u}</span><span class=\"${resultClass(v,t,h)}\">${h?v-t:t-v>=0?0:0}${resultClass(v,t,h)==='good'?'達成':'未達'}</span></div>`).join('')+`<div class=\"result-row\"><b>人財投資</b><span>上限 ${fmt(budgetAvailable(),1)}百万円</span><span>実績 ${fmt(actionCost(),1)}百万円</span><span>${fmt(budgetAvailable()-actionCost(),1)}残</span></div>`;"""
+          new="""  document.getElementById('resultCompare').innerHTML=rows.map(([l,t,v,u,h])=>{
+              const diff=v-t, diffText=`差 ${diff>=0?'+':''}${u==='%'?fmt(diff,1):fmt(diff)}${u}`;
+              return `<div class=\"result-row\"><b>${l}</b><span>予定 ${u==='%'?fmt(t,1):fmt(t)}${u}</span><span>実績 ${u==='%'?fmt(v,1):fmt(v)}${u}</span><span class=\"${resultClass(v,t,h)}\">${diffText}｜${resultClass(v,t,h)==='good'?'達成':'未達'}</span></div>`;
+            }).join('')+`<div class=\"result-row\"><b>人財投資</b><span>上限 ${fmt(budgetAvailable(),1)}百万円</span><span>実績 ${fmt(actionCost(),1)}百万円</span><span>${fmt(budgetAvailable()-actionCost(),1)}残</span></div>`;"""
+          assert old in s
+          s=s.replace(old,new)
+          p.write_text(s)
+          a=s.index('<script>')+len('<script>'); b=s.rindex('</script>')
+          js=s[a:b]
+          Path('/tmp/hpm-v1.js').write_text(js)
+          prefix=js[:js.index('function renderPlan')]
+          test=r'''
+          resetState();
+          state.actions={store:{hire:0,train:3,transfer:0,motivate:0},md:{hire:3,train:2,transfer:0,motivate:1},admin:{hire:0,train:3,transfer:0,motivate:0}};
+          state.manager.strength=100; state.manager.type='attack';
+          let r=simulate().rows.at(-1);
+          if(actionCost()>budgetAvailable() || r.revenue<state.plan.revenue || r.gross<state.plan.gross || r.sga>state.plan.sga || r.op<planOp()) throw new Error('80百万円内で4指標同時達成できない');
+          resetState(); state.actions.store.transfer=1; state.actions.admin.transfer=1; let sim=simulate();
+          for(let y=0;y<5;y++) for(const id of ['store','admin']){const h=sim.depts[id].history[y];const ages=h.ages.reduce((a,b)=>a+b,0);if(Math.abs(h.hc-ages)>1e-8)throw new Error('配置転換後の人数と年齢構成が不一致');}
+          console.log('business invariants: OK');
+          '''
+          Path('/tmp/hpm-business.js').write_text(prefix+test)
+          PY
+          node --check /tmp/hpm-v1.js
+          node /tmp/hpm-business.js
+      - name: Commit fix and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add human-capital-portfolio-management/v1-prototype.html
+          git rm .github/workflows/one-time-hpm-v1-review-fix.yml
+          git commit -m 'fix(hpm): keep transfers consistent and restore reachable targets'
+          git push origin HEAD:${GITHUB_REF_NAME}
