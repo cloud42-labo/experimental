@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Recover payload from first workflow
+      - name: Recover payload and improve labels
         shell: bash
         run: |
           python - <<'PY'
@@ -24,10 +24,12 @@ jobs:
           assert m, 'payload not found'
           data=gzip.decompress(base64.b64decode(m.group(1)))
           assert hashlib.sha256(data).hexdigest()=='f9b2a0974543c717b2ffc97b51711c323bd5913dd95326b5a452f7ba49094ea7'
-          p=Path('human-capital-portfolio-management/v1-prototype.html')
-          p.write_bytes(data)
           s=data.decode()
-          for token in ['予定された決算','人財ポートフォリオ','Year4開花','5%','採用','育成','配置転換','モチベーション','投資 → 人財変化 → KPI → 決算']:
+          s=s.replace("actionSlider(id,'motivate','モチベ',a.motivate)","actionSlider(id,'motivate','モチベーション',a.motivate)")
+          s=s.replace('5年タイムライン — 施策を打つ年と効く年を分ける','5年タイムライン — 施策を打つ年と効く年を分ける（既存社員の人件費は毎年5%上昇）')
+          p=Path('human-capital-portfolio-management/v1-prototype.html')
+          p.write_text(s)
+          for token in ['予定された決算','人財ポートフォリオ','Year4開花','毎年5%上昇','採用','育成','配置転換','モチベーション','投資 → 人財変化 → KPI → 決算']:
             assert token in s, token
           a=s.index('<script>')+len('<script>'); b=s.rindex('</script>')
           Path('/tmp/hpm-v1.js').write_text(s[a:b])
