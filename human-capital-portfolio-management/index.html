@@ -280,7 +280,8 @@ const APP_VERSION = "0.0.0"; // 姉妹プロダクト「企業経営シミュレ
 const START_YEAR=10, END_YEAR=15;
 const PLAN_YEARS=END_YEAR-START_YEAR; // 中期計画の年数(5)
 function planYear(y){return (y??state.year)-START_YEAR+1} // 「Year12」ではなく「3年目」という相対表記のための変換
-const rng = mulberry32(20260712);
+const RNG_SEED = 20260712;
+let rng = mulberry32(RNG_SEED);
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function ri(a,b){return Math.floor(rng()*(b-a+1))+a}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
@@ -366,6 +367,7 @@ function stripTags(s){return String(s).replace(/<[^>]*>/g,'')} // AI分析用テ
 let state;
 let draftCompanyName='株式会社サンプルマート'; // 経営引き継ぎ(タイトル画面)の会社名入力欄。newGame()実行前は state が無いためモジュール変数で保持する
 function newGame(){
+  rng = mulberry32(RNG_SEED); // 新しいゲームは同じseedから開始し、同一操作列を再現可能にする
   const emps=[];
   let id=1;
   const add=(dept,role,age,grade,g)=>{
@@ -407,6 +409,7 @@ function newGame(){
     budget:0, emps,
     market:{...MARKET0},
     pending:[], // {dept,role,arrive,label}
+    developmentQueue:[], // {empId,dept,arrive} 内部育成はlead経過後に昇格する
     successor:null, succProgress:0,
     log:[], history:[], selDept:'ec',
     engagement:65, // 従業員エンゲージメント(0-100)。離職率・現場の実行成功率(採用成功率・内製化スピード)に効く
@@ -505,16 +508,33 @@ function allocWeights(stance){
   const arch=HR_ARCHITECTURE[state.orgDesign.hrArchitecture];
   return { develop:build*1.0*arch.developMult, transfer:build*0.4*arch.transferMult, referral:30, newgrad:buy*0.5, agency:buy*0.6, headhunt:buy*0.3 };
 }
+function completeDevelopment(t){
+  const dept=t.dept; const fromRole=t.role;
+  t.grade++;
+  // 店舗運営部：パート→販売(正社員登用)→副店長(昇格)
+  if(dept==='store'){
+    if(fromRole==='パート'&&t.grade>=2) t.role='販売';
+    else if(fromRole==='販売'&&t.grade>=3) t.role='副店長';
+  }
+  // 商品部：若手候補→MD→バイヤー
+  else if(dept==='md'){
+    if((fromRole==='若手バイヤー候補'||fromRole==='MDプランナー')&&t.grade>=3) t.role='MD';
+    else if(fromRole==='MD'&&t.grade>=4) t.role='バイヤー';
+  }
+}
 function autoExecuteYear(){
   const totalBudget=state.budget;
   state._buildHiresThisYear=0;
+  const referralAnnualCap=referralCap();
+  let referralAttemptsThisYear=0;
+  const developmentQueuedIds=new Set(state.developmentQueue.map(p=>p.empId));
   DEPTS.forEach(d=>{
     const dept=d.id; const stance=state.alloc[dept].stance;
     const annualSpend=totalBudget*effectiveShare(dept)/100;
     const w=allocWeights(stance); const sum=Object.values(w).reduce((a,b)=>a+b,0);
     // 個々の採用試行を1件ずつログに出すと「現場からの報告」が数十行の羅列になり読めなくなるため、
     // 部門ごとに1件のサマリー行へ集約する（誰が何をしたかの詳細はstate.actual/state.pendingで追える）。
-    let promote=0, transfer=0, hireSuccess=0, hireFail=0;
+    let developStarted=0, transfer=0, hireSuccess=0, hireFail=0;
     ['develop','transfer'].forEach(ch=>{
       const frac=w[ch]/sum;
       // 柔軟な勤務制度は店舗運営部の内部育成(昇格)ペースを鈍らせる（次世代経営層パイプラインとのトレードオフ）
@@ -522,29 +542,17 @@ function autoExecuteYear(){
       const capacity=frac*BUILD_CAPACITY_MULT*engagementMult()*pipelinePenalty; // エンゲージメントが内製化(育成・異動)のスピードを左右する
       const carryKey=dept+':'+ch; const carryTotal=capacity+(state.hireCarry[carryKey]||0);
       const n=Math.floor(carryTotal); state.hireCarry[carryKey]=carryTotal-n;
-      const promotedIds=new Set(); // 同じ人物がpotの高さゆえに同じ年に何度も昇格し続けないようにする
       for(let i=0;i<n;i++){
         if(ch==='develop'){
-          const t=deptEmps(dept).filter(e=>e.grade<4&&!promotedIds.has(e.id)).sort((a,b)=>b.pot-a.pot)[0];
+          // 内部育成はCHANNELS.develop.leadを必ず待つ。同年昇格させず、育成中の同一人物を重複登録しない。
+          const t=deptEmps(dept).filter(e=>e.grade<4&&!developmentQueuedIds.has(e.id)).sort((a,b)=>b.pot-a.pot)[0];
           if(t){
-            promotedIds.add(t.id);
-            const fromRole=t.role;
-            t.grade++;
-            // 店舗運営部：パート→販売(正社員登用)→副店長(昇格)というキャリアパスを内部育成で明示的に辿らせる
-            if(dept==='store'){
-              if(fromRole==='パート'&&t.grade>=2) t.role='販売';
-              else if(fromRole==='販売'&&t.grade>=3) t.role='副店長';
-            }
-            // 商品部：若手バイヤー候補/MDプランナー→MD→バイヤーというキャリアパスを内部育成で明示的に辿らせる
-            // （旧実装ではバイヤーが初期の2名にしか付与されず、退職・離職すると二度と補充されなかった）
-            else if(dept==='md'){
-              if((fromRole==='若手バイヤー候補'||fromRole==='MDプランナー')&&t.grade>=3) t.role='MD';
-              else if(fromRole==='MD'&&t.grade>=4) t.role='バイヤー';
-            }
-            state.actual[dept]=(state.actual[dept]||0)+1; state._buildHiresThisYear++; promote++;
+            developmentQueuedIds.add(t.id);
+            state.developmentQueue.push({empId:t.id,dept,arrive:state.year+CHANNELS.develop.lead});
+            developStarted++;
           }
         } else {
-          const from=state.emps.filter(e=>e.dept!==dept&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.dept!=='mgmt').sort((a,b)=>headcount(b.dept)-headcount(a.dept))[0];
+          const from=state.emps.filter(e=>e.dept!==dept&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.dept!=='mgmt'&&!developmentQueuedIds.has(e.id)).sort((a,b)=>headcount(b.dept)-headcount(a.dept))[0];
           if(from){from.dept=dept; from.role=ROLE_BY_DEPT[dept]; state.actual[dept]=(state.actual[dept]||0)+1; state._buildHiresThisYear++; transfer++;}
         }
       }
@@ -554,7 +562,7 @@ function autoExecuteYear(){
       if(unit<=0) return;
       const carryKey=dept+':'+ch; const carryTotal=chBudget/unit+(state.hireCarry[carryKey]||0);
       let n=Math.floor(carryTotal); state.hireCarry[carryKey]=carryTotal-n;
-      if(ch==='referral'){ const capLeft=referralCap()-state.pending.filter(p=>p.ch==='referral').length; n=Math.min(n,Math.max(0,capLeft)); }
+      if(ch==='referral'){ const capLeft=referralAnnualCap-referralAttemptsThisYear; n=Math.min(n,Math.max(0,capLeft)); referralAttemptsThisYear+=n; }
       for(let i=0;i<n;i++){
         const ok=rng()<channelSuccess(ch,dept);
         if(ok){
@@ -572,7 +580,7 @@ function autoExecuteYear(){
       }
     });
     const parts=[];
-    if(promote) parts.push(`内部育成${promote}名昇格`);
+    if(developStarted) parts.push(`内部育成${developStarted}名開始（${CHANNELS.develop.lead}年後に昇格）`);
     if(transfer) parts.push(`内部異動${transfer}名`);
     if(hireSuccess) parts.push(`外部採用${hireSuccess}件成立`);
     if(hireFail) parts.push(`採用${hireFail}件が市場逼迫で不成立`);
@@ -626,6 +634,19 @@ function advanceYear(){
     if(rng()<attr){left++;return false}
     return true;
   });
+  // CHANNELS.develop.leadを満たした内部育成だけを昇格へ反映する。途中離職した人は昇格しない。
+  const developed=state.developmentQueue.filter(p=>p.arrive===y+1);
+  let developmentCompleted=0;
+  developed.forEach(p=>{
+    const t=state.emps.find(e=>e.id===p.empId);
+    if(!t) return;
+    completeDevelopment(t);
+    state.actual[t.dept]=(state.actual[t.dept]||0)+1;
+    state._buildHiresThisYear=(state._buildHiresThisYear||0)+1;
+    developmentCompleted++;
+  });
+  const liveIds=new Set(state.emps.map(e=>e.id));
+  state.developmentQueue=state.developmentQueue.filter(p=>p.arrive>y+1&&liveIds.has(p.empId));
   if(state.restructureShockYears>0) state.restructureShockYears--;
   // 着任を反映（店舗運営部は現場の性別構成比に合わせ、土日可否も新規に割り当てる）
   arrived.forEach(p=>{
@@ -690,6 +711,7 @@ function advanceYear(){
   computeYearFinance();
   state.year++;
   recomputeBudget();
+  if(developmentCompleted)state.log.push(`内部育成 ${developmentCompleted}名が昇格`);
   if(retired)state.log.push(`定年退職 ${retired}名`); if(left)state.log.push(`離職 ${left}名`); if(arrived.length)state.log.push(`入社(着任) ${arrived.length}名`);
   snapshot();
   state.charismaActionUsed=false; // 人心掌握アクションは年1回まで。年が進んだらリセットする
@@ -1590,6 +1612,7 @@ function projectRoster(years){
 function projectContinuedPolicy(years){
   let emps=state.emps.map(e=>({...e}));
   const carry={};
+  let devQueue=[];
   const engMult=engagementMult(); // エンゲージメントは最終年の水準を維持すると仮定
   const engFactor=clamp(1.6-state.engagement/100,0.6,1.6);
   const compTurnoverMult=COMP_LEVELS[state.compLevel].turnoverMult;
@@ -1611,6 +1634,16 @@ function projectContinuedPolicy(years){
       survivors=survivors.concat(arr.slice(remove));
     });
     emps=survivors;
+    // 内部育成は実運用と同じlead経過後に昇格する。
+    devQueue.filter(p=>p.arrive===y).forEach(p=>{
+      const t=emps.find(e=>e.id===p.empId);
+      if(t) completeDevelopment(t);
+    });
+    const projectedLiveIds=new Set(emps.map(e=>e.id));
+    devQueue=devQueue.filter(p=>p.arrive>y&&projectedLiveIds.has(p.empId));
+    const developmentQueuedIds=new Set(devQueue.map(p=>p.empId));
+    const referralAnnualCap=referralCapFor(emps.length);
+    let referralUsed=0;
     // 内部育成・異動・外部採用：autoExecuteYear()と同じ配分ロジック
     DEPTS.forEach(d=>{
       const dept=d.id; const stance=state.alloc[dept].stance;
@@ -1622,23 +1655,15 @@ function projectContinuedPolicy(years){
         const capacity=frac*BUILD_CAPACITY_MULT*engMult*pipelinePenalty;
         const key=dept+':'+ch; const total=capacity+(carry[key]||0);
         const n=Math.floor(total); carry[key]=total-n;
-        const promoted=new Set();
         for(let i=0;i<n;i++){
           if(ch==='develop'){
-            const t=emps.filter(e=>e.dept===dept&&e.grade<4&&!promoted.has(e.id)).sort((a,b)=>b.pot-a.pot)[0];
+            const t=emps.filter(e=>e.dept===dept&&e.grade<4&&!developmentQueuedIds.has(e.id)).sort((a,b)=>b.pot-a.pot)[0];
             if(t){
-              promoted.add(t.id);
-              const fromRole=t.role; t.grade++;
-              if(dept==='store'){
-                if(fromRole==='パート'&&t.grade>=2) t.role='販売';
-                else if(fromRole==='販売'&&t.grade>=3) t.role='副店長';
-              } else if(dept==='md'){
-                if((fromRole==='若手バイヤー候補'||fromRole==='MDプランナー')&&t.grade>=3) t.role='MD';
-                else if(fromRole==='MD'&&t.grade>=4) t.role='バイヤー';
-              }
+              developmentQueuedIds.add(t.id);
+              devQueue.push({empId:t.id,arrive:y+CHANNELS.develop.lead});
             }
           } else {
-            const from=emps.filter(e=>e.dept!==dept&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.dept!=='mgmt').sort((a,b)=>hc(b.dept)-hc(a.dept))[0];
+            const from=emps.filter(e=>e.dept!==dept&&e.role!=='社長'&&!SCARCE_ROLES.includes(e.role)&&e.dept!=='mgmt'&&!developmentQueuedIds.has(e.id)).sort((a,b)=>hc(b.dept)-hc(a.dept))[0];
             if(from){ from.dept=dept; from.role=ROLE_BY_DEPT[dept]; }
           }
         }
@@ -1649,7 +1674,7 @@ function projectContinuedPolicy(years){
         const expected=(chBudget/unit)*channelSuccess(ch,dept); // 成功確率込みの期待値（乱数を消費しない）
         const key=dept+':'+ch; const total=expected+(carry[key]||0);
         let n=Math.floor(total); carry[key]=total-n;
-        if(ch==='referral') n=Math.min(n,referralCapFor(emps.length));
+        if(ch==='referral'){ const capLeft=referralAnnualCap-referralUsed; n=Math.min(n,Math.max(0,capLeft)); referralUsed+=n; }
         for(let i=0;i<n;i++){
           const gender = dept==='store' ? (i%5===0?'M':'F') : (i%2===0?'M':'F');
           emps.push({id:'proj'+y+dept+ch+i, dept, role:ROLE_BY_DEPT[dept], age: ch==='newgrad'?23:35, grade: ch==='headhunt'?4:2, gender, pot:0.5});
