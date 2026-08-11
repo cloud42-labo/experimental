@@ -105,7 +105,7 @@ input[type=number]{width:100%;padding:7px;border:1px solid var(--line);border-ra
       <table class="preview-table" id="manageTable"></table>
     </div>
     <div class="controls">
-      <button class="secondary" data-go="invest">配分を見直す</button>
+      <span class="small" style="margin-right:auto">配分は経営開始時に確定済み。過去実績を書き換えないため開始後は変更できません。</span>
       <button class="primary" id="nextYearBtn">1年進める →</button>
     </div>
   </div>
@@ -402,8 +402,25 @@ function switchPhase(p){
   window.scrollTo({top:0,behavior:'instant'});
 }
 document.addEventListener('click',e=>{
-  const go=e.target.closest('[data-go]');if(go){if(go.dataset.go==='manage')state.committed=true;switchPhase(go.dataset.go)}
-  const st=e.target.closest('.step');if(st)switchPhase(st.dataset.phase);
+  const go=e.target.closest('[data-go]');
+  if(go){
+    const target=go.dataset.go;
+    if(state.committed && (target==='plan'||target==='invest'))return;
+    if(target==='manage' && !state.committed){
+      if(actionCost()>budgetAvailable())return;
+      state.committed=true;
+    }
+    if(target==='result' && (!state.committed||state.year<5))return;
+    switchPhase(target);
+  }
+  const st=e.target.closest('.step');
+  if(st){
+    const target=st.dataset.phase;
+    if(state.committed && (target==='plan'||target==='invest'))return;
+    if(target==='manage' && !state.committed)return;
+    if(target==='result' && (!state.committed||state.year<5))return;
+    switchPhase(target);
+  }
 });
 document.getElementById('nextYearBtn').onclick=()=>{if(state.year>=5)switchPhase('result');else{state.year++;renderManage()}};
 document.getElementById('restartBtn').onclick=()=>{resetState();switchPhase('plan')};
