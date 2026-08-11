@@ -138,11 +138,11 @@ const APP_VERSION='1.1.0-prototype';
 const YEARS=5;
 const BASE={revenue:8600,gross:27.0,sga:25.5};
 const NON_HUMAN_SGA=2200, EXISTING_PAYROLL=540;
-const ACTION_COST={store:{hire:10,train:8,transfer:2,motivate:4},md:{hire:15,train:10,transfer:2,motivate:4},admin:{hire:10,train:8,transfer:2,motivate:4}};
+const ACTION_COST={store:{hire:8,train:5,transfer:2,motivate:3},md:{hire:10,train:6,transfer:2,motivate:3},admin:{hire:8,train:5,transfer:2,motivate:3}};
 const SENS={store:1.2,md:5.0,admin:7.5};
 const DEPT_META={
   store:{name:'店舗',kpi:'売上',unit:'百万円',need:55,hc:50,skill:60,mot:65,payroll:220,ages:[12,23,12,3],risk:'店長候補不足'},
-  md:{name:'商品部',kpi:'粗利率',unit:'%',need:8,hc:6,skill:58,mot:58,payroll:38,ages:[1,1,2,2],risk:'ベテラン知識偏在'},
+  md:{name:'商品部',kpi:'粗利率',unit:'%',need:7,hc:6,skill:58,mot:58,payroll:38,ages:[1,1,2,2],risk:'ベテラン知識偏在'},
   admin:{name:'管理部',kpi:'販管費率',unit:'%',need:7,hc:8,skill:62,mot:65,payroll:45,ages:[2,4,2,0],risk:'過剰人員・属人化'}
 };
 const AGE_LABELS=['〜34','35〜49','50〜59','60〜64'];
@@ -187,6 +187,10 @@ function simulate(){
   const transferScale=want?Math.min(1,adminOut/want):0;
   const transferIn={store:state.actions.store.transfer*transferScale,md:state.actions.md.transfer*transferScale,admin:0};
   const transferOut={admin:Math.min(adminOut,want),store:0,md:0};
+  // 配置転換は人数だけでなく年齢ポートフォリオも同時に移す。Year1開始時点の管理部構成を按分する。
+  const adminAgedAtY1=ageStep(DEPT_META.admin.ages);
+  const adminAgedTotal=adminAgedAtY1.reduce((p,v)=>p+v,0)||1;
+  const transferAgeVector=adminAgedAtY1.map(v=>transferOut.admin*v/adminAgedTotal);
   const rows=[];
   for(let y=1;y<=YEARS;y++){
     for(const id of Object.keys(d)){
@@ -195,10 +199,19 @@ function simulate(){
       x.ages=ageStep(x.ages);
       const targetHc=x.ages.reduce((p,v)=>p+v,0);
       const ageRetire=Math.max(0,x.hc-targetHc);
-      if(ageRetire>.05){x.hc-=ageRetire;events.push(`退職 ${fmt(ageRetire,1)}名`)}
+      if(ageRetire>0){x.hc-=ageRetire;if(ageRetire>.05)events.push(`退職 ${fmt(ageRetire,1)}名`)}
       if(y===2 && a.hire>0){x.hc+=a.hire;x.ages[0]+=a.hire;events.push(`採用 ${a.hire}名着任`)}
-      if(y===1 && transferIn[id]){x.hc+=transferIn[id];events.push(`配置転換で+${fmt(transferIn[id],1)}名`)}
-      if(y===1 && transferOut[id]){x.hc-=transferOut[id];events.push(`他部門へ-${fmt(transferOut[id],1)}名`)}
+      if(y===1 && transferIn[id]){
+        const share=transferOut.admin?transferIn[id]/transferOut.admin:0;
+        x.hc+=transferIn[id];
+        x.ages=x.ages.map((v,i)=>v+transferAgeVector[i]*share);
+        events.push(`配置転換で+${fmt(transferIn[id],1)}名`);
+      }
+      if(y===1 && transferOut[id]){
+        x.hc-=transferOut[id];
+        x.ages=x.ages.map((v,i)=>Math.max(0,v-transferAgeVector[i]));
+        events.push(`他部門へ-${fmt(transferOut[id],1)}名`);
+      }
       if(y===4 && a.train>0){x.skill=Math.min(100,x.skill+a.train*6);events.push(`育成が開花 +${a.train*6} skill`)}
       if(y===4 && a.hire>0){x.skill=Math.min(100,x.skill+a.hire*2);events.push(`採用人財が成熟 +${a.hire*2} skill`)}
       x.mot=Math.min(100,m.mot+a.motivate*6);
@@ -368,7 +381,10 @@ function renderResult(){
     ['販管費率',target.sga,r.sga,'%',false],
     ['営業利益',target.op,r.op,'百万円',true]
   ];
-  document.getElementById('resultCompare').innerHTML=rows.map(([l,t,v,u,h])=>`<div class="result-row"><b>${l}</b><span>予定 ${u==='%'?fmt(t,1):fmt(t)}${u}</span><span>実績 ${u==='%'?fmt(v,1):fmt(v)}${u}</span><span class="${resultClass(v,t,h)}">${h?v-t:t-v>=0?0:0}${resultClass(v,t,h)==='good'?'達成':'未達'}</span></div>`).join('')+`<div class="result-row"><b>人財投資</b><span>上限 ${fmt(budgetAvailable(),1)}百万円</span><span>実績 ${fmt(actionCost(),1)}百万円</span><span>${fmt(budgetAvailable()-actionCost(),1)}残</span></div>`;
+  document.getElementById('resultCompare').innerHTML=rows.map(([l,t,v,u,h])=>{
+    const diff=v-t, diffText=`差 ${diff>=0?'+':''}${u==='%'?fmt(diff,1):fmt(diff)}${u}`;
+    return `<div class="result-row"><b>${l}</b><span>予定 ${u==='%'?fmt(t,1):fmt(t)}${u}</span><span>実績 ${u==='%'?fmt(v,1):fmt(v)}${u}</span><span class="${resultClass(v,t,h)}">${diffText}｜${resultClass(v,t,h)==='good'?'達成':'未達'}</span></div>`;
+  }).join('')+`<div class="result-row"><b>人財投資</b><span>上限 ${fmt(budgetAvailable(),1)}百万円</span><span>実績 ${fmt(actionCost(),1)}百万円</span><span>${fmt(budgetAvailable()-actionCost(),1)}残</span></div>`;
   document.getElementById('traces').innerHTML=['store','md','admin'].map(id=>traceFor(id,sim)).join('');
 }
 function switchPhase(p){
