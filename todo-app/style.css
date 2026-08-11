@@ -29,6 +29,14 @@ h1 {
   text-align: center;
 }
 
+.remaining-count {
+  margin: -12px 0 16px;
+  font-size: 13px;
+  color: #888;
+  text-align: center;
+  min-height: 1em;
+}
+
 #todo-form {
   display: flex;
   gap: 8px;
