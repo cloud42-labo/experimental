@@ -65,6 +65,12 @@
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
     padding: 4px 10px; margin-bottom: 16px; margin-left: 8px;
   }
+  /* e-Stat利用規約が求める出典・免責表示。装飾ではなく法令・規約対応の表示なので、
+     --text-muted(11px)では light テーマのコントラストが3.41:1しかなくWCAG AA(4.5:1)を
+     満たさなかった(実測)。--text-secondary/12pxへ引き上げ、他バッジと同じ可読性に揃える。 */
+  .estat-credit {
+    font-size: 12px; color: var(--text-secondary); margin: -4px 0 16px;
+  }
   .layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
   /* 左右どちらの列もflex-grow:1にして画面幅に応じて伸縮させる。旧.control-panelは
@@ -311,6 +317,7 @@
   </header>
   <div class="data-badge">✓ 商圏マップ・人口構成は e-Stat API（地域メッシュ統計、1kmメッシュ）の実データです</div>
   <div class="mock-badge">⚠ 主婦・専門職の人口比率は未実装データのため仮定値です。また統計基準年(2020年)と現在の間は実測トレンドを直線的に延伸しています。お金の計算はしていません（人口データのみで定性評価）</div>
+  <div class="estat-credit">このサービスは、政府統計の総合窓口(e-Stat)のAPI機能を使用していますが、サービスの内容は国によって保証されたものではありません。</div>
 
   <div class="layout">
     <!-- 左列=「いまの状況」(店舗・商圏・人口の事実)、右列=「どうするか」(戦略・診断・判断)。
@@ -460,7 +467,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.10.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.10.2"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
