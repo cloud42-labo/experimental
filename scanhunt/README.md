@@ -37,7 +37,8 @@ cooking_instructions/nutrition/allergensのいずれかが埋まっているこ�
 - [x] 解析中の進捗表示と、撮り直さずに再解析できる失敗時導線
 - [x] 90項目モデルへ対応したフラットJSON（`p2.0` / `s2`）
 - [x] 調理方式（電子レンジ・オーブン・フライパン・油調理・ゆで・自然解凍）別の表示切替
-- [ ] 抽出結果の永続化（マイ・レシピ帳のデータ保存）
+- [x] 保存先Apps Script APIの実装（`SH-02-S03`。サーバー側のみ。PWAからの呼び出しは未接続）
+- [ ] 抽出結果の永続化（マイ・レシピ帳のデータ保存。PWA側からApps Script APIを呼ぶ配線が残っている）
 - [ ] JANコード重複時のフィードバックUI
 
 ## 設計仕様
@@ -51,6 +52,12 @@ cooking_instructions/nutrition/allergensのいずれかが埋まっているこ�
 | [docs/product-images-and-ai-jobs.md](docs/product-images-and-ai-jobs.md) | 画像証跡とAI解析履歴、Drive保存パスルール |
 | [docs/source-confidence-revision.md](docs/source-confidence-revision.md) | 取得元・信頼度・リビジョン管理 |
 | [docs/spreadsheet-columns.md](docs/spreadsheet-columns.md) | Spreadsheet 4シートの実列定義（計168列）と実装上の必須ルール |
+| [docs/apps-script-api.md](docs/apps-script-api.md) | PWAからSpreadsheetへ保存するApps Script Web App APIの仕様・デプロイ手順（`SH-02-S03`） |
+| [docs/secrets-and-config.md](docs/secrets-and-config.md) | APIキー等の秘密情報・設定値の取り扱い方針（`SH-02-S04`） |
+
+サーバー側実装（Apps Script）は [apps-script/](apps-script/) 配下。`Code.gs` を
+Spreadsheetへコンテナバインドしてデプロイする。手順は
+[docs/apps-script-api.md](docs/apps-script-api.md) を参照。
 
 ### 旧プロトタイプのJSON構造（参考）
 
