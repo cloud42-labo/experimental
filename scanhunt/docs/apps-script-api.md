@@ -37,6 +37,22 @@ PWAから画像URL・AI解析結果・商品マスターをGoogle Spreadsheetへ
 6. `Code.gs` を更新した場合は「新しいデプロイ」ではなく既存デプロイの「デプロイを管理」→
    鉛筆アイコンで**バージョンを更新**する（URLを変えないため）。
 
+## 動作確認チェックリスト（`SH-02-S01` 完了・デプロイ後にHumanが実施）
+
+このAPIは実際のSpreadsheet上でしか検証できないため、コードレビューだけでは完了扱いにしない。
+`SH-02-S01` でのシート作成・上記デプロイ手順の完了後、以下を実機で確認する。
+
+1. スクリプト プロパティに `API_KEY`・`SPREADSHEET_ID` が設定されていること。
+2. Webアプリとしてデプロイが完了し、`{WEBAPP_URL}` へアクセスできること
+   （`doGet` が `{ "success": true, "data": { "status": "ok", ... } }` を返す）。
+3. `apiKey` を誤った値にしたリクエストが `unauthorized` で拒否されること。
+4. `createScanHistory` / `createProductImage` / `createAIJob` / `findProductByGtin` /
+   `upsertProduct` / `resolveProductId` / `updateScanHistory` の各アクションが、実際の
+   `Products` / `ScanHistory` / `ProductImages` / `AIJobs` シートへ意図どおり反映されること
+   （行の追加・べき等化・`attempt_no`の自動採番・`gtin_jan`等のプレーンテキスト書式を含む）。
+5. `API_KEY` などの秘密値が、レスポンス・実行ログ・GitHub・Notionのいずれにも露出しないこと
+   （[secrets-and-config.md](secrets-and-config.md)）。
+
 ## リクエスト形式
 
 すべて `POST` 一本。`action` フィールドで操作を切り替える（Apps Script Web Appは
