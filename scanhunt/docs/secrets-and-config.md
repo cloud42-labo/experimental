@@ -13,13 +13,14 @@ Scanhuntは個人のGoogle Workspace上で動く単一ユーザーMVP。専用�
 | Gemini APIキー | パッケージ画像のAI解析（既存実装） | ブラウザの `localStorage` のみ | ユーザー（初回起動時に `prompt()`） |
 | Apps Script Web App URL | `apps-script-api.md` のAPIエンドポイント | ブラウザの `localStorage` のみ | ユーザー（設定画面で入力。下記参照） |
 | Apps Script API Key | 上記APIの認証（`Code.gs` の `checkApiKey_`） | サーバー側: Script Properties<br>クライアント側: `localStorage` | サーバー側はデプロイ時に自分で生成・設定。クライアント側は設定画面で入力 |
-| Spreadsheet ID | Apps Scriptがどのシートを読み書きするか | **サーバー側のみ**（コンテナバインドスクリプトのため暗黙的。`SpreadsheetApp.getActiveSpreadsheet()` で取得し、コード上に一切書かない） | 該当なし（PWA・Notion・GitHubのどこにも登場しない） |
+| Spreadsheet ID | Apps Scriptがどのシートを読み書きするか | **サーバー側のみ**（Script Propertiesの `SPREADSHEET_ID`。`Code.gs` が `SpreadsheetApp.openById()` で明示的に開く） | サーバー側はデプロイ時に自分で（このSpreadsheet自身のIDを）設定。該当箇所: `apps-script-api.md` デプロイ手順 |
 | Drive Folder ID | 画像・ログの保存先（`/Scanhunt/...`） | **サーバー側のみ**（`Code.gs` の `getOrCreateFolderPath_` がパス名から都度解決し、IDを保持しない） | 該当なし |
 
-**Spreadsheet IDとDrive Folder IDはそもそもPWA側に持たせない。** Apps Scriptを対象の
-Spreadsheetへコンテナバインドし、Driveフォルダもパス名（`Scanhunt/logs` 等）から
-都度解決する設計にしたため、この2つは秘密情報として扱う対象から外れる
-（漏れる経路自体が存在しない）。これにより「安全に扱う」べき対象は実質2つ
+**Spreadsheet IDとDrive Folder IDはそもそもPWA側に持たせない。** Spreadsheet IDはコンテナ
+バインドスクリプトのScript Propertiesにサーバー側だけで設定し（`SpreadsheetApp.getActiveSpreadsheet()`
+はWebアプリの実行では`null`を返しうるため使わない。設定理由の詳細は`apps-script-api.md`）、
+Driveフォルダもパス名（`Scanhunt/logs` 等）から都度解決する設計にしたため、この2つはPWA・
+Notion・GitHubのどこにも登場しない。これにより「安全に扱う」べき対象は実質2つ
 （Gemini APIキー、Apps Script API Key）と、公開情報であるApps Script URLの3つに絞られる。
 
 ## localStorageの利用範囲

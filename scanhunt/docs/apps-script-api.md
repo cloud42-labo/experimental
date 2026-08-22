@@ -18,10 +18,14 @@ PWAから画像URL・AI解析結果・商品マスターをGoogle Spreadsheetへ
    [apps-script/appsscript.json](../apps-script/appsscript.json) の内容をそのままコピーする
    （`appsscript.json` はエディタの「プロジェクトの設定」→「"appsscript.json"
    マニフェスト ファイルをエディタで表示する」を有効にすると編集できる）。
-3. プロジェクトの設定 → スクリプト プロパティ で `API_KEY` を1つ追加する。
-   値は自分で生成したランダムな文字列（例: `crypto.randomUUID()` をブラウザのコンソールで
-   実行した結果）を使う。**この値をNotion・GitHubには書かない**
-   （[secrets-and-config.md](secrets-and-config.md)）。
+3. プロジェクトの設定 → スクリプト プロパティ で `API_KEY` と `SPREADSHEET_ID` の2つを追加する。
+   - `API_KEY`: 自分で生成したランダムな文字列（例: `crypto.randomUUID()` をブラウザの
+     コンソールで実行した結果）。**この値をNotion・GitHubには書かない**
+     （[secrets-and-config.md](secrets-and-config.md)）。
+   - `SPREADSHEET_ID`: このSpreadsheet自身のID（URLの `/d/` と `/edit` の間の文字列）。
+     コンテナバインドスクリプトでも、Webアプリとして呼ばれた実行では
+     `SpreadsheetApp.getActiveSpreadsheet()` が `null` を返しうるため、`Code.gs` は
+     この値を `SpreadsheetApp.openById()` で明示的に開く（実装上の必須ルール、下記参照）。
 4. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」。
    - 実行するユーザー: **自分（デプロイする自分）**
    - アクセスできるユーザー: **全員**
@@ -82,7 +86,8 @@ sequenceDiagram
     participant PWA
     participant API as Apps Script API
     PWA->>PWA: 1. シャッター。scan_id を crypto.randomUUID() で採番
-    PWA->>API: createScanHistory { scan_id, scanned_at, final_status:"success" ... }
+    PWA->>API: createScanHistory { scan_id, scanned_at ... }
+    Note over PWA,API: final_status は撮影時点では未確定。サーバー側で"pending"として作成する
     PWA->>PWA: 2. 表裏を圧縮しDrive保存（unresolved/{scan_id}/）→ image_id ×2
     PWA->>API: createProductImage ×2 { image_id, scan_id, face, drive_file_id, storage_path ... }
     PWA->>API: createAIJob { job_id, scan_id, job_type:"initial", status ... }
@@ -90,6 +95,7 @@ sequenceDiagram
     alt 失敗（最大3回）
         PWA->>API: createAIJob { job_id, scan_id, job_type:"retry", status ... }
     end
+    PWA->>API: updateScanHistory { scan_id, final_status:"success", attempt_count, best_job_id, duration_total_ms ... }
     PWA->>API: findProductByGtin { gtin_jan }
     alt 既存GTINあり
         PWA->>API: upsertProduct { product_id: 既存のproduct_id, ... }
@@ -114,10 +120,25 @@ Drive上のファイル移動そのもの（`unresolved/{scan_id}/` → `product
 |---|---|---|
 | `scan_id` | ✓ | クライアントでUUID採番 |
 | `scanned_at` | ✓ | ISO 8601 |
-| `final_status` | ✓ | `success`/`failed`/`aborted` |
-| その他 `ScanHistory` の列名 | - | `expiry_date`・`lot_number`・`attempt_count` 等、判明していれば渡す |
+| その他 `ScanHistory` の列名 | - | 撮影時点で判明していれば渡す（`final_status`・`attempt_count`等の
+  「試行全体の結末」を表す列は通常まだ分からないため省略する） |
 
-`created_at` は省略時サーバー側で現在時刻を補完する。
+`created_at` は省略時サーバー側で現在時刻を補完する。`final_status` は省略時サーバー側で
+`pending` を補完する（AI解析の結末が撮影時点では未確定のため）。既に同じ `scan_id` の行が
+あれば新規行を追加せず既存の値をそのまま返す（べき等）。
+
+### `updateScanHistory`
+
+| フィールド | 必須 | 備考 |
+|---|---|---|
+| `scan_id` | ✓ | 対象行の特定に使う |
+| `final_status` | - | `success`/`failed`/`aborted` に確定した時点で渡す |
+| その他 `ScanHistory` の列名 | - | `attempt_count`・`best_job_id`・`duration_total_ms`・
+  `gtin_jan`・`expiry_date`・`lot_number` 等、AI解析の試行が出揃った時点で判明した値を渡す |
+
+AI解析（リトライ含む）が出揃った時点でPWAが1回呼ぶ。`resolveProductId` の
+`product_id` 後追い更新と同じ仕組みで、既存の `ScanHistory` 行を `scan_id` で特定して
+上書きする（新規行は作らない）。対象行が無ければ `{ updated: false, count: 0 }` を返す。
 
 ### `createProductImage`
 
@@ -127,7 +148,8 @@ Drive上のファイル移動そのもの（`unresolved/{scan_id}/` → `product
 | `label_status` | - | 省略時 `ai_only` |
 | `is_training_candidate` | - | 省略時 `true` |
 
-表裏で2回呼ぶ。
+表裏で2回呼ぶ。同じ `image_id` で再送された場合は新規行を追加せず既存の値をそのまま返す
+（べき等）。
 
 ### `createAIJob`
 
@@ -137,7 +159,9 @@ Drive上のファイル移動そのもの（`unresolved/{scan_id}/` → `product
 | `attempt_no` | 送っても無視 | サーバー側で「同一scan_idの既存最大値+1」を自動採番する |
 | `raw_response` | - | 50,000文字超は自動的に先頭で切り詰め、全文を `Scanhunt/logs/{job_id}.json` へ保存する |
 
-リトライごと・再解析ごとに毎回呼ぶ（行は追記のみ、上書きしない）。
+リトライごと・再解析ごとに毎回呼ぶ（行は追記のみ、上書きしない）。同じ `job_id` で再送された
+場合は新規行を追加せず、既存行の `attempt_no` をそのまま返す（べき等。ネットワークエラーで
+応答を受け取れずPWAが再送しても `attempt_no` が飛ばない）。
 
 ### `findProductByGtin`
 
@@ -180,3 +204,5 @@ Drive上のファイル移動そのもの（`unresolved/{scan_id}/` → `product
    （`spreadsheet-columns.md` 積み残し#3）。MVPでは許容し、`SH-06-S01` 以降で計測する。
 4. **同時リクエストの排他制御は未実装。** Apps Script Web Appは単一ユーザーのMVPを前提とし、
    `LockService` によるロックは入れていない。複数端末からの同時書き込みが始まる段階で検討する。
+   （※ これは「同じ端末が同じリクエストを再送したときの重複」を防ぐべき等化とは別の課題。
+   べき等化は `createScanHistory`/`createProductImage`/`createAIJob` に実装済み）。

@@ -43,6 +43,9 @@ function doPost(e) {
       case 'createScanHistory':
         result = createScanHistory_(data);
         break;
+      case 'updateScanHistory':
+        result = updateScanHistory_(data);
+        break;
       case 'createProductImage':
         result = createProductImage_(data);
         break;
@@ -89,20 +92,51 @@ function checkApiKey_(apiKey) {
 
 // ===== 各アクション =====
 // 「紐付けの順序」6ステップ（product-images-and-ai-jobs.md）に対応する:
-//   1. createScanHistory  2. createProductImage×2  3-4. createAIJob（リトライ毎）
+//   1. createScanHistory（作成時点ではfinal_status未確定。updateScanHistoryで後日確定する）
+//   2. createProductImage×2  3-4. createAIJob（リトライ毎）
 //   5. findProductByGtin → upsertProduct  6. resolveProductId
+//
+// createScanHistory/createProductImage/createAIJobはいずれも、同一の主キー（scan_id/
+// image_id/job_id）が既にシートにあれば新規行を追加せず既存の値を返す（べき等化）。
+// PWAがネットワークエラー・タイムアウトで応答を受け取れず再送した場合に、行が重複したり
+// attempt_noが飛んだりするのを防ぐため。
 
 function createScanHistory_(data) {
-  requireFields_(data, ['scan_id', 'scanned_at', 'final_status']);
+  requireFields_(data, ['scan_id', 'scanned_at']);
   var sheet = getSheet_(SHEET_NAMES.SCAN_HISTORY);
-  var row = Object.assign({}, data, { created_at: data.created_at || nowIso_() });
+  var headerMap = getHeaderMap_(sheet);
+  if (findRowIndexByColumnValue_(sheet, headerMap, 'scan_id', data.scan_id)) {
+    return { scan_id: data.scan_id };
+  }
+  // final_status（試行全体の結末）は撮影直後の時点ではまだ分からない。ここではpendingで
+  // 作成し、AI解析の試行が出揃った時点でPWAがupdateScanHistoryで確定させる。
+  var row = Object.assign(
+    { final_status: 'pending' },
+    data,
+    { created_at: data.created_at || nowIso_() }
+  );
   appendRowByHeader_(sheet, row);
   return { scan_id: data.scan_id };
+}
+
+// AI解析の試行（リトライ含む）が出揃い、final_status等の「試行全体の結末」が確定した時点で
+// PWAが呼ぶ。ScanHistoryはproduct_id以外は追記専用としてきたが、final_status（と付随する
+// attempt_count/best_job_id/duration_total_ms等）は撮影時点では確定しない値であるため、
+// resolveProductIdのproduct_id後追い更新と同じ仕組みで後追い更新する。
+function updateScanHistory_(data) {
+  requireFields_(data, ['scan_id']);
+  var patch = Object.assign({}, data);
+  delete patch.scan_id;
+  return updateFirstByColumnValue_(SHEET_NAMES.SCAN_HISTORY, 'scan_id', data.scan_id, patch);
 }
 
 function createProductImage_(data) {
   requireFields_(data, ['image_id', 'scan_id', 'face', 'drive_file_id', 'storage_path', 'captured_at', 'mime_type']);
   var sheet = getSheet_(SHEET_NAMES.PRODUCT_IMAGES);
+  var headerMap = getHeaderMap_(sheet);
+  if (findRowIndexByColumnValue_(sheet, headerMap, 'image_id', data.image_id)) {
+    return { image_id: data.image_id };
+  }
   var now = nowIso_();
   var row = Object.assign(
     { label_status: 'ai_only', is_training_candidate: true },
@@ -119,6 +153,13 @@ function createAIJob_(data) {
     'ai_model', 'prompt_version', 'schema_version', 'status', 'started_at'
   ]);
   var sheet = getSheet_(SHEET_NAMES.AI_JOBS);
+  var headerMap = getHeaderMap_(sheet);
+  var existingRow = findRowIndexByColumnValue_(sheet, headerMap, 'job_id', data.job_id);
+  if (existingRow) {
+    // 同一job_idの再送はattempt_noを再採番せず、既に確定した値をそのまま返す。
+    var existing = readRow_(sheet, headerMap, existingRow);
+    return { job_id: data.job_id, attempt_no: existing.attempt_no };
+  }
   var now = nowIso_();
 
   var row = Object.assign({}, data);
@@ -220,8 +261,20 @@ function resolveProductId_(data) {
 // 列インデックスを直書きせず、1行目のヘッダー名でマッピングする
 // （spreadsheet-columns.md 実装上の必須ルール#2）。
 
+// コンテナバインドスクリプトでも、Webアプリとして呼ばれた doPost/doGet の実行コンテキストでは
+// エディタUIの「アクティブなスプレッドシート」が存在しないため SpreadsheetApp.getActiveSpreadsheet()
+// は null を返しうる（Google Issue Tracker #189851066 等で報告済みの既知の挙動）。
+// Script Properties に保存した自分自身の Spreadsheet ID を openById() で明示的に開く。
+function getSpreadsheet_() {
+  var id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!id) {
+    throw new ApiError('server_misconfigured', 'SPREADSHEET_IDがScript Propertiesに設定されていません。');
+  }
+  return SpreadsheetApp.openById(id);
+}
+
 function getSheet_(name) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     throw new ApiError('sheet_not_found', 'シート "' + name + '" が見つかりません。SH-02-S01のシート初期化を先に完了してください。');
