@@ -469,7 +469,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.11.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.11.1"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -1023,9 +1023,32 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     selectedBusinessId: null,
     commands: {},
     managementDecision: null, // ④ 経営判断を下す で選択したオプションID
-    viewYear: 0 // 地図・損益で「何年後」を表示するかの初期値。0=現在。診断(evaluateStrategy)は
-                // 表示年に関わらず常に0年後→10年後の変化で評価するため、この値は表示専用
+    viewYear: 0, // 地図・損益で「何年後」を表示するかの初期値。0=現在。診断(evaluateStrategy)は
+                 // 表示年に関わらず常に0年後→10年後の変化で評価するため、この値は表示専用
+    // --- 以下2つはSS-01-S04-2（多期意思決定ループの基盤、design-doc 4.16節参照）で追加。
+    // 期を進めるUI・ラチェット方式の施策固定・振り返り画面はいずれもS04-3以降のスコープで、
+    // ここではデータ構造だけを持つ。診断ロジック(evaluateStrategy/computeManagementSignals/
+    // verdictForDecision)はどちらも一切参照しないため、既存の単発診断の計算結果に影響しない
+    // （SS-01-S04-1の推奨案1-A「窓は動かさない」を裏付ける状態）。
+    turn: 0, // 現在の期。0/3/6/10（年目）。S04-3で「次の期へ」を実装するまでは常に0のまま
+    history: [] // 期ごとの記録。要素は snapshotForHistory() が作る{turn, commands, managementDecision, signals}
   };
+
+  /**
+   * 1期分の記録を作る（SS-01-S04-2）。stateやDOMを直接読み書きしない純粋関数にして、
+   * 「どの期に何を選び、その結果どうだったか」をあとから機械的に検証できるようにする。
+   * 呼び出し側（S04-3で実装する「次の期へ」ボタン）が、この戻り値を`state.history`へ
+   * push する想定。ここではまだどこからも呼ばれない（記録のタイミング＝期の進め方自体が
+   * S04-3のスコープのため）。
+   */
+  function snapshotForHistory(turn, commands, managementDecision, signals) {
+    return {
+      turn,
+      commands: Object.assign({}, commands),
+      managementDecision,
+      signals: signals ? Object.assign({}, signals) : null
+    };
+  }
 
   function selectedBusiness() { return BUSINESS_TYPES.find(b => b.id === state.selectedBusinessId) || null; }
 

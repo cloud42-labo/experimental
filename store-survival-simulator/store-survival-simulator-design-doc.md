@@ -790,6 +790,31 @@ v6.1の廃止理由は「実データではない業種別の一般値で"儲か
 
 「移転する」選択肢の新設要否は引き続き`SS-01-S03-4`（オーナー判断、Human）のスコープ。
 
+### 4.16 期（ターン）状態モデルの基盤追加（2026-08-23、`SS-01-S04-2`）
+
+`SS-01-S04-1`（多期ループの設計方針、Human確定）の最小構成の提案（1番）に沿って、
+`state`へ2つのフィールドを追加した。
+
+* `state.turn` — 現在の期。0/3/6/10（年目）。既定値0。
+* `state.history` — 期ごとの記録の配列。要素は`snapshotForHistory(turn, commands,
+  managementDecision, signals)`が作る`{turn, commands, managementDecision, signals}`。
+
+`SS-01-S04-1`の推奨案1-A（診断の時間窓は動かさない）に基づき、`evaluateStrategy()`・
+`computeManagementSignals()`・`verdictForDecision()`のいずれもこの2フィールドを
+参照しない。**純粋にデータ構造を追加しただけ**で、既存の単発診断ロジックには
+一切手を入れていない。
+
+**期を進めるUI・ラチェット方式の施策固定（案2-B）・振り返り画面（案5-B）は
+`SS-01-S04-3`以降のスコープ。** 本タスクでは`snapshotForHistory()`がどこからも
+呼ばれない（=`state.history`は常に空配列のまま）。「期を進める」という操作自体が
+まだ存在しないため、記録するタイミングを決める仕事はS04-3の一部とみなした。
+
+**既存の単発診断の計算結果への影響確認（AC）**: 新フィールドを`evaluateStrategy()`・
+`computeManagementSignals()`・`MGMT_DECISIONS`のいずれのコードも参照しないことを
+`grep`で確認した。念のため、変更前後で全243通り×5択＝1,215件の
+`verdictForDecision()`結果を突き合わせるスクリプト（4.14.6・4.15と同じ手法）でも
+差分ゼロを確認した。
+
 ---
 
 ## 5. 対応範囲・制約
