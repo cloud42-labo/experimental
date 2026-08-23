@@ -193,6 +193,21 @@
   .command-card .cmd-name { font-size: 13px; font-weight: 600; }
   .command-card .cmd-hint { font-size: 11px; color: var(--text-muted); margin: 3px 0 4px; }
   .command-card .cmd-cost { font-size: 11px; color: var(--text-secondary); }
+  .command-card .cmd-tradeoff { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .command-card .cmd-locked { font-size: 11px; color: var(--series-1); margin-top: 4px; font-weight: 600; }
+  .biz-card .mgmt-cost, .biz-card .mgmt-tradeoff { margin-top: 4px; }
+
+  /* SS-01-S04-3: 期(ターン)を進めるUI。既存の.year-presets(表示年の切替タブ)と
+     同じ「丸ピル」表現を踏襲し、④の5枚カード(.mgmt-grid)には一切手を入れない。 */
+  .turn-progress { display: flex; gap: 6px; flex-wrap: wrap; }
+  .turn-progress .turn-step {
+    font-size: 12px; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+  }
+  .turn-progress .turn-step.current { background: var(--series-1); color: #fff; border-color: var(--series-1); font-weight: 600; }
+  .turn-progress .turn-step.done { background: color-mix(in srgb, var(--series-1) 15%, var(--page)); border-color: var(--series-1); color: var(--text-primary); }
+  .turn-history-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 12px; color: var(--text-secondary); }
+  .turn-history-item .turn-history-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
   .switch { position: relative; width: 40px; height: 22px; flex: none; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .slider-pill { position: absolute; inset: 0; background: var(--baseline); border-radius: 999px; transition: background .15s; cursor: pointer; }
@@ -460,6 +475,15 @@
         <div class="mgmt-grid" id="mgmtDecisionGrid"></div>
         <div id="mgmtDecisionResult"></div>
       </div>
+
+      <div class="card">
+        <h2>⑤ 期を進める <span class="unit">— 3年・6年・10年の意思決定ループ</span></h2>
+        <div class="note" style="margin-bottom:10px;">③④の診断は常に「現在→10年後」の変化を見ています。ここでは3年ごとに立ち止まり、そのときの②の施策・④の経営判断を記録として積み重ねます。一度オンにした施策は以後オフに戻せません（一度打った手は取り消せない、という前提です）。</div>
+        <div class="turn-progress" id="turnProgress"></div>
+        <button id="advanceTurnBtn" type="button" disabled
+          style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;margin-top:10px;">次の期へ</button>
+        <div id="turnHistoryList" style="margin-top:10px;"></div>
+      </div>
     </aside>
   </div>
 </div>
@@ -467,7 +491,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.10.2"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.12.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -986,13 +1010,31 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
   const LABOR_DEP_LABEL = { young: "生産年齢層(15-64)", housewife_senior: "主婦・シニア", specialist: "専門職候補", general: "一般スタッフ" };
 
   /* ---------- commands (GDD v6.1 §PRD-2, カネはv0.7.0で再導入) ---------- */
+  // costTier/effectDelay/tradeoff は SS-01-S03-2・SS-01-S03-3（design-doc 4.13節の
+  // 対応表で洗い出した欠落項目）で追加した定性フィールド。円建ての金額・係数は一切持たず
+  // （4.14節の「実データでない新規の仮定値は持ち込まない」方針を踏襲）、あくまで
+  // プレイヤーが施策間を比較するための定性的な目安・トレードオフの明示にとどめる。
+  // 判定ロジック（disqualify/endorse、evaluateStrategy）は一切参照しないため、
+  // 243×5の判定表には影響しない。
   const COMMANDS = [
-    { id: "hito_shift", group: "ヒト", name: "主婦・シニア短時間シフト雇用", hint: "労働力の依存先を「現役層の一部＋シニア層」に切り替える" },
-    { id: "mono_mismatch", group: "モノ", name: "小分け・シニアプレミアム特化", hint: "商品ミスマッチを解消し、客層マッチ度を1段階改善", exclude: ["finance"] },
-    { id: "mono_finance", group: "モノ", name: "シニア資産コンサル特化", hint: "シニア層への適性重みを引き上げる（金融事業のみ）", only: ["finance"] },
-    { id: "mono_dx", group: "モノ", name: "自動発注・セルフレジDX", hint: "労働力への依存度を下げ、採用のしやすさを1段階改善", only: ["conveni", "supermarket", "finance"] },
-    { id: "kane_genka", group: "カネ", name: "原価見直し・PB強化", hint: "仕入れ・PB（自社ブランド）強化で粗利率を改善し、財務健全性を1段階改善（実際の粗利額の数字は変更しません）" },
-    { id: "kane_honbu", group: "カネ", name: "本部支援交渉", hint: "本部・仕入れ先との交渉で販管費を圧縮し、財務健全性を1段階改善（実際の販管費の数字は変更しません）" }
+    { id: "hito_shift", group: "ヒト", name: "主婦・シニア短時間シフト雇用", hint: "労働力の依存先を「現役層の一部＋シニア層」に切り替える",
+      costTier: "小", effectDelay: "数ヶ月（採用・教育に時間がかかる）",
+      tradeoff: "現役層への依存は下がるが、短時間シフト中心になるためシフト調整の手間は増える" },
+    { id: "mono_mismatch", group: "モノ", name: "小分け・シニアプレミアム特化", hint: "商品ミスマッチを解消し、客層マッチ度を1段階改善", exclude: ["finance"],
+      costTier: "小", effectDelay: "数ヶ月（商品棚・仕入れの入替に時間がかかる）",
+      tradeoff: "客層マッチ度は上がるが、対象を絞り込む分、他の客層への訴求力は下がりうる" },
+    { id: "mono_finance", group: "モノ", name: "シニア資産コンサル特化", hint: "シニア層への適性重みを引き上げる（金融事業のみ）", only: ["finance"],
+      costTier: "中", effectDelay: "通期（専門知識の習得・信頼構築に時間がかかる）",
+      tradeoff: "シニア層への適性は上がるが、若年層・現役層への訴求力を犠牲にする" },
+    { id: "mono_dx", group: "モノ", name: "自動発注・セルフレジDX", hint: "労働力への依存度を下げ、採用のしやすさを1段階改善", only: ["conveni", "supermarket", "finance"],
+      costTier: "大", effectDelay: "数ヶ月（機器導入・稼働までの準備期間）",
+      tradeoff: "労働力への依存は下がるが、導入費用と設備の維持コストという新たな負担が生じる" },
+    { id: "kane_genka", group: "カネ", name: "原価見直し・PB強化", hint: "仕入れ・PB（自社ブランド）強化で粗利率を改善し、財務健全性を1段階改善（実際の粗利額の数字は変更しません）",
+      costTier: "小", effectDelay: "数ヶ月（仕入れ契約の見直しサイクルに従う）",
+      tradeoff: "財務健全性は改善するが、PB強化は商品の独自性・ブランド力を弱める可能性がある" },
+    { id: "kane_honbu", group: "カネ", name: "本部支援交渉", hint: "本部・仕入れ先との交渉で販管費を圧縮し、財務健全性を1段階改善（実際の販管費の数字は変更しません）",
+      costTier: "小", effectDelay: "数ヶ月（交渉・契約更新のサイクルに従う）",
+      tradeoff: "財務健全性は改善するが、本部への価格・裁量面での依存が強まりうる" }
   ];
 
   /* ---------- state ---------- */
@@ -1003,9 +1045,32 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     selectedBusinessId: null,
     commands: {},
     managementDecision: null, // ④ 経営判断を下す で選択したオプションID
-    viewYear: 0 // 地図・損益で「何年後」を表示するかの初期値。0=現在。診断(evaluateStrategy)は
-                // 表示年に関わらず常に0年後→10年後の変化で評価するため、この値は表示専用
+    viewYear: 0, // 地図・損益で「何年後」を表示するかの初期値。0=現在。診断(evaluateStrategy)は
+                 // 表示年に関わらず常に0年後→10年後の変化で評価するため、この値は表示専用
+    // --- 以下2つはSS-01-S04-2（多期意思決定ループの基盤、design-doc 4.16節参照）で追加。
+    // 期を進めるUI・ラチェット方式の施策固定・振り返り画面はいずれもS04-3以降のスコープで、
+    // ここではデータ構造だけを持つ。診断ロジック(evaluateStrategy/computeManagementSignals/
+    // verdictForDecision)はどちらも一切参照しないため、既存の単発診断の計算結果に影響しない
+    // （SS-01-S04-1の推奨案1-A「窓は動かさない」を裏付ける状態）。
+    turn: 0, // 現在の期。0/3/6/10（年目）。S04-3で「次の期へ」を実装するまでは常に0のまま
+    history: [] // 期ごとの記録。要素は snapshotForHistory() が作る{turn, commands, managementDecision, signals}
   };
+
+  /**
+   * 1期分の記録を作る（SS-01-S04-2）。stateやDOMを直接読み書きしない純粋関数にして、
+   * 「どの期に何を選び、その結果どうだったか」をあとから機械的に検証できるようにする。
+   * 呼び出し側（S04-3で実装する「次の期へ」ボタン）が、この戻り値を`state.history`へ
+   * push する想定。ここではまだどこからも呼ばれない（記録のタイミング＝期の進め方自体が
+   * S04-3のスコープのため）。
+   */
+  function snapshotForHistory(turn, commands, managementDecision, signals) {
+    return {
+      turn,
+      commands: Object.assign({}, commands),
+      managementDecision,
+      signals: signals ? Object.assign({}, signals) : null
+    };
+  }
 
   function selectedBusiness() { return BUSINESS_TYPES.find(b => b.id === state.selectedBusinessId) || null; }
 
@@ -1424,21 +1489,34 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
       if (cmds.length === 0) return "";
       return `<div class="command-group">
         <div class="command-group-title">【${g}】</div>
-        ${cmds.map(c => `
+        ${cmds.map(c => {
+          const on = !!state.commands[c.id];
+          return `
           <div class="command-card">
             <div>
               <div class="cmd-name">${c.name}</div>
               <div class="cmd-hint">${c.hint}</div>
+              <div class="cmd-cost">初期コスト目安: ${c.costTier}｜効果発現: ${c.effectDelay}</div>
+              <div class="cmd-tradeoff">トレードオフ: ${c.tradeoff}</div>
+              ${on ? `<div class="cmd-locked">一度打った施策は、以後オフに戻せません（SS-01-S04-1）</div>` : ""}
             </div>
-            <label class="switch"><input type="checkbox" data-cmd="${c.id}" ${state.commands[c.id] ? "checked" : ""}><span class="slider-pill"></span></label>
+            <label class="switch"><input type="checkbox" data-cmd="${c.id}" ${on ? "checked disabled" : ""}><span class="slider-pill"></span></label>
           </div>
-        `).join("")}
+        `;}).join("")}
       </div>`;
     }).join("");
 
     container.querySelectorAll("input[data-cmd]").forEach(cb => {
       cb.addEventListener("change", (e) => {
-        state.commands[cb.dataset.cmd] = e.target.checked;
+        // ラチェット方式（SS-01-S04-1 案2-B）: 一度オンにした施策は以後オフに戻せない。
+        // オン→オフの変更はUI上disabledで防いでいるが、念のためここでも無視する
+        // （このハンドラはまだオフの施策をオンにする一方向の操作にしか実際は届かない）。
+        if (!e.target.checked) { e.target.checked = true; return; }
+        state.commands[cb.dataset.cmd] = true;
+        // renderCommands()自身を呼び直さないと、いま押したトグルにdisabledが
+        // 付かない（rerenderAll()はcommandGroupsを再描画しない）。Playwrightの
+        // スモークテストで実際に検出した不具合（SS-01-S04-3）。
+        renderCommands();
         rerenderAll();
       });
     });
@@ -1447,24 +1525,34 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
   /* =====================================================================
      MANAGEMENT DECISIONS CONSTANTS
      ===================================================================== */
+  // costTier/effectDelay/tradeoff はCOMMANDSと同じくSS-01-S03-2・SS-01-S03-3で追加した
+  // 定性フィールド。disqualify/endorseが参照しないため判定ロジックに影響しない（上記コメント参照）。
   const MGMT_DECISIONS = [
     {
       id: "maintain", name: "A. 保全・現状維持", desc: "今のやり方を維持する",
+      costTier: "小", effectDelay: "—（変化を起こさない選択のため）",
+      tradeoff: "追加投資は不要だが、状況が悪化しても対応が後手に回るリスクがある",
       disqualify: (s) => s.worst === 0,
       endorse:    (s) => s.worst >= 1 && s.finTier !== 0
     },
     {
       id: "renovate", name: "B. 改装する", desc: "設備・商品構成を刷新する",
+      costTier: "大", effectDelay: "通期（工事期間と投資回収に時間がかかる）",
+      tradeoff: "商品構成の刷新で改善が見込めるが、初期投資の回収に時間がかかり、工事期間中の営業への影響もありうる",
       disqualify: (s) => s.finTier === 0,
       endorse:    (s) => s.finTier !== 0 && (s.bldTier === 0 || s.worst <= 1)
     },
     {
       id: "expand", name: "C. 商圏を拡げる", desc: "配達・チラシ等でエリアを広げる",
+      costTier: "中", effectDelay: "数ヶ月（認知・集客の浸透に時間がかかる）",
+      tradeoff: "客層を補えるが、商圏拡大に伴う配送・対応コストの増加を招く",
       disqualify: (s) => s.finTier === 0,
       endorse:    (s) => s.custTier <= 1 && s.finTier !== 0
     },
     {
       id: "fight", name: "D. 競合を叩く", desc: "価格・販促で正面対決する",
+      costTier: "中〜大", effectDelay: "即時〜数ヶ月（価格施策はすぐ反映されるが、定着には時間がかかる）",
+      tradeoff: "短期的な集客効果は見込めるが、価格競争は利益率を圧迫し消耗戦になるリスクがある",
       disqualify: (s) => s.finTier !== 2 || s.compTier === 0,
       endorse:    (s) => s.finTier === 2 && s.worst >= 1 && s.laborTier >= 1 && s.compTier >= 1,
       // 業種にeconCodeが無い場合は旧来の定性的な注記にフォールバックする。現状は8業種すべてに
@@ -1476,6 +1564,8 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     },
     {
       id: "withdraw", name: "E. 撤退する", desc: "この店舗を閉じる",
+      costTier: "大", effectDelay: "即時（損失拡大は止まるが、原状回復等の一時費用が生じる）",
+      tradeoff: "損失拡大を止められるが、これまでの投資回収を諦め、従業員の雇用継続にも影響する",
       disqualify: (s) => s.worst === 2 && s.finTier !== 0,
       endorse:    (s) => s.worst === 0 && s.finTier === 0
     }
@@ -1635,7 +1725,9 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
         <span>${d.name}</span>
         <span class="mgmt-verdict-badge"></span>
       </div>
-      <div class="biz-meta">${d.desc}</div>`;
+      <div class="biz-meta">${d.desc}</div>
+      <div class="biz-meta mgmt-cost">初期コスト目安: ${d.costTier}｜効果発現: ${d.effectDelay}</div>
+      <div class="biz-meta mgmt-tradeoff">トレードオフ: ${d.tradeoff}</div>`;
     card.addEventListener("click", () => {
       state.managementDecision = d.id;
       mgmtDecisionGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
@@ -2048,6 +2140,66 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     `;
   }
 
+  /* =====================================================================
+     TURN PROGRESSION（期を進める、SS-01-S04-3）
+     診断の時間窓自体は動かさない（SS-01-S04-1 案1-A）。ここは「いつ・何を選んだか」を
+     期ごとに記録し、進行状況を表示するだけの薄い層。evaluateStrategy()/
+     computeManagementSignals()/verdictForDecision()はいずれも呼ぶだけで無改修。
+     ===================================================================== */
+  const TURN_CHECKPOINTS = [0, 3, 6, 10];
+
+  function renderTurnProgress() {
+    const container = document.getElementById("turnProgress");
+    container.innerHTML = TURN_CHECKPOINTS.map(t => {
+      const label = t === 0 ? "現在" : `${t}年目`;
+      const cls = t === state.turn ? "turn-step current" : (t < state.turn ? "turn-step done" : "turn-step");
+      return `<span class="${cls}">${label}</span>`;
+    }).join("");
+  }
+
+  /**
+   * 前期までの記録（state.history）を新しい順に一覧表示する。
+   * 「各チェックポイント通過時に前期の選択内容と効果のサマリーが表示される」
+   * （SS-01-S04-3のAC）に対応する部分。
+   */
+  function renderTurnHistory() {
+    const container = document.getElementById("turnHistoryList");
+    if (state.history.length === 0) { container.innerHTML = ""; return; }
+    container.innerHTML = state.history.slice().reverse().map(h => {
+      const decision = MGMT_DECISIONS.find(d => d.id === h.managementDecision);
+      const onCommandNames = COMMANDS.filter(c => h.commands[c.id]).map(c => c.name);
+      const label = h.turn === 0 ? "現在" : `${h.turn}年目`;
+      const verdict = decision && h.signals ? verdictForDecision(decision, h.signals) : null;
+      const tierLine = h.signals
+        ? `客層マッチ度: ${TIERS[h.signals.custTier].label}、労働力: ${TIERS[h.signals.laborTier].label}、財務健全性: ${TIERS[h.signals.finTier].label}`
+        : "";
+      return `<div class="turn-history-item">
+        <div class="turn-history-title">${label}時点の記録</div>
+        <div>経営判断: ${decision ? decision.name : "（未選択）"}${verdict ? `（${verdict.label}）` : ""}</div>
+        ${tierLine ? `<div>${tierLine}</div>` : ""}
+        <div>実施中の施策: ${onCommandNames.length ? onCommandNames.join("、") : "なし"}</div>
+      </div>`;
+    }).join("");
+  }
+
+  /** [strat]が無い（業種未選択等）、または経営判断が未選択の間はボタンを押せなくする。 */
+  function renderTurnAdvanceButton(strat) {
+    const btn = document.getElementById("advanceTurnBtn");
+    const isLastCheckpoint = state.turn === TURN_CHECKPOINTS[TURN_CHECKPOINTS.length - 1];
+    btn.disabled = isLastCheckpoint || !strat || !state.managementDecision;
+    btn.textContent = isLastCheckpoint ? "10年目に到達しました" : "次の期へ";
+  }
+
+  document.getElementById("advanceTurnBtn").addEventListener("click", () => {
+    const strat = evaluateStrategy();
+    if (!strat || !state.managementDecision) return; // ボタンはdisabledのはずだが念のため二重防御
+    const sig = computeManagementSignals(strat);
+    state.history.push(snapshotForHistory(state.turn, state.commands, state.managementDecision, sig));
+    const nextIndex = Math.min(TURN_CHECKPOINTS.indexOf(state.turn) + 1, TURN_CHECKPOINTS.length - 1);
+    state.turn = TURN_CHECKPOINTS[nextIndex];
+    rerenderAll();
+  });
+
   /* ---------- wiring ---------- */
   function rerenderAll() {
     if (!INAGE_GEOJSON) return; // データ取得完了前（セットアップ画面表示中）は何もしない
@@ -2060,6 +2212,9 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     const sig = strat ? computeManagementSignals(strat) : null;
     renderDecisionBadges(sig);
     renderManagementDecision(strat, sig);
+    renderTurnProgress();
+    renderTurnAdvanceButton(strat);
+    renderTurnHistory();
   }
 
   document.getElementById("yearOffsetNote").textContent =
