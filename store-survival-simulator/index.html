@@ -193,6 +193,8 @@
   .command-card .cmd-name { font-size: 13px; font-weight: 600; }
   .command-card .cmd-hint { font-size: 11px; color: var(--text-muted); margin: 3px 0 4px; }
   .command-card .cmd-cost { font-size: 11px; color: var(--text-secondary); }
+  .command-card .cmd-tradeoff { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .biz-card .mgmt-cost, .biz-card .mgmt-tradeoff { margin-top: 4px; }
   .switch { position: relative; width: 40px; height: 22px; flex: none; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .slider-pill { position: absolute; inset: 0; background: var(--baseline); border-radius: 999px; transition: background .15s; cursor: pointer; }
@@ -467,7 +469,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.10.2"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.11.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -986,13 +988,31 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
   const LABOR_DEP_LABEL = { young: "生産年齢層(15-64)", housewife_senior: "主婦・シニア", specialist: "専門職候補", general: "一般スタッフ" };
 
   /* ---------- commands (GDD v6.1 §PRD-2, カネはv0.7.0で再導入) ---------- */
+  // costTier/effectDelay/tradeoff は SS-01-S03-2・SS-01-S03-3（design-doc 4.13節の
+  // 対応表で洗い出した欠落項目）で追加した定性フィールド。円建ての金額・係数は一切持たず
+  // （4.14節の「実データでない新規の仮定値は持ち込まない」方針を踏襲）、あくまで
+  // プレイヤーが施策間を比較するための定性的な目安・トレードオフの明示にとどめる。
+  // 判定ロジック（disqualify/endorse、evaluateStrategy）は一切参照しないため、
+  // 243×5の判定表には影響しない。
   const COMMANDS = [
-    { id: "hito_shift", group: "ヒト", name: "主婦・シニア短時間シフト雇用", hint: "労働力の依存先を「現役層の一部＋シニア層」に切り替える" },
-    { id: "mono_mismatch", group: "モノ", name: "小分け・シニアプレミアム特化", hint: "商品ミスマッチを解消し、客層マッチ度を1段階改善", exclude: ["finance"] },
-    { id: "mono_finance", group: "モノ", name: "シニア資産コンサル特化", hint: "シニア層への適性重みを引き上げる（金融事業のみ）", only: ["finance"] },
-    { id: "mono_dx", group: "モノ", name: "自動発注・セルフレジDX", hint: "労働力への依存度を下げ、採用のしやすさを1段階改善", only: ["conveni", "supermarket", "finance"] },
-    { id: "kane_genka", group: "カネ", name: "原価見直し・PB強化", hint: "仕入れ・PB（自社ブランド）強化で粗利率を改善し、財務健全性を1段階改善（実際の粗利額の数字は変更しません）" },
-    { id: "kane_honbu", group: "カネ", name: "本部支援交渉", hint: "本部・仕入れ先との交渉で販管費を圧縮し、財務健全性を1段階改善（実際の販管費の数字は変更しません）" }
+    { id: "hito_shift", group: "ヒト", name: "主婦・シニア短時間シフト雇用", hint: "労働力の依存先を「現役層の一部＋シニア層」に切り替える",
+      costTier: "小", effectDelay: "数ヶ月（採用・教育に時間がかかる）",
+      tradeoff: "現役層への依存は下がるが、短時間シフト中心になるためシフト調整の手間は増える" },
+    { id: "mono_mismatch", group: "モノ", name: "小分け・シニアプレミアム特化", hint: "商品ミスマッチを解消し、客層マッチ度を1段階改善", exclude: ["finance"],
+      costTier: "小", effectDelay: "数ヶ月（商品棚・仕入れの入替に時間がかかる）",
+      tradeoff: "客層マッチ度は上がるが、対象を絞り込む分、他の客層への訴求力は下がりうる" },
+    { id: "mono_finance", group: "モノ", name: "シニア資産コンサル特化", hint: "シニア層への適性重みを引き上げる（金融事業のみ）", only: ["finance"],
+      costTier: "中", effectDelay: "通期（専門知識の習得・信頼構築に時間がかかる）",
+      tradeoff: "シニア層への適性は上がるが、若年層・現役層への訴求力を犠牲にする" },
+    { id: "mono_dx", group: "モノ", name: "自動発注・セルフレジDX", hint: "労働力への依存度を下げ、採用のしやすさを1段階改善", only: ["conveni", "supermarket", "finance"],
+      costTier: "大", effectDelay: "数ヶ月（機器導入・稼働までの準備期間）",
+      tradeoff: "労働力への依存は下がるが、導入費用と設備の維持コストという新たな負担が生じる" },
+    { id: "kane_genka", group: "カネ", name: "原価見直し・PB強化", hint: "仕入れ・PB（自社ブランド）強化で粗利率を改善し、財務健全性を1段階改善（実際の粗利額の数字は変更しません）",
+      costTier: "小", effectDelay: "数ヶ月（仕入れ契約の見直しサイクルに従う）",
+      tradeoff: "財務健全性は改善するが、PB強化は商品の独自性・ブランド力を弱める可能性がある" },
+    { id: "kane_honbu", group: "カネ", name: "本部支援交渉", hint: "本部・仕入れ先との交渉で販管費を圧縮し、財務健全性を1段階改善（実際の販管費の数字は変更しません）",
+      costTier: "小", effectDelay: "数ヶ月（交渉・契約更新のサイクルに従う）",
+      tradeoff: "財務健全性は改善するが、本部への価格・裁量面での依存が強まりうる" }
   ];
 
   /* ---------- state ---------- */
@@ -1429,6 +1449,8 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
             <div>
               <div class="cmd-name">${c.name}</div>
               <div class="cmd-hint">${c.hint}</div>
+              <div class="cmd-cost">初期コスト目安: ${c.costTier}｜効果発現: ${c.effectDelay}</div>
+              <div class="cmd-tradeoff">トレードオフ: ${c.tradeoff}</div>
             </div>
             <label class="switch"><input type="checkbox" data-cmd="${c.id}" ${state.commands[c.id] ? "checked" : ""}><span class="slider-pill"></span></label>
           </div>
@@ -1447,24 +1469,34 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
   /* =====================================================================
      MANAGEMENT DECISIONS CONSTANTS
      ===================================================================== */
+  // costTier/effectDelay/tradeoff はCOMMANDSと同じくSS-01-S03-2・SS-01-S03-3で追加した
+  // 定性フィールド。disqualify/endorseが参照しないため判定ロジックに影響しない（上記コメント参照）。
   const MGMT_DECISIONS = [
     {
       id: "maintain", name: "A. 保全・現状維持", desc: "今のやり方を維持する",
+      costTier: "小", effectDelay: "—（変化を起こさない選択のため）",
+      tradeoff: "追加投資は不要だが、状況が悪化しても対応が後手に回るリスクがある",
       disqualify: (s) => s.worst === 0,
       endorse:    (s) => s.worst >= 1 && s.finTier !== 0
     },
     {
       id: "renovate", name: "B. 改装する", desc: "設備・商品構成を刷新する",
+      costTier: "大", effectDelay: "通期（工事期間と投資回収に時間がかかる）",
+      tradeoff: "商品構成の刷新で改善が見込めるが、初期投資の回収に時間がかかり、工事期間中の営業への影響もありうる",
       disqualify: (s) => s.finTier === 0,
       endorse:    (s) => s.finTier !== 0 && (s.bldTier === 0 || s.worst <= 1)
     },
     {
       id: "expand", name: "C. 商圏を拡げる", desc: "配達・チラシ等でエリアを広げる",
+      costTier: "中", effectDelay: "数ヶ月（認知・集客の浸透に時間がかかる）",
+      tradeoff: "客層を補えるが、商圏拡大に伴う配送・対応コストの増加を招く",
       disqualify: (s) => s.finTier === 0,
       endorse:    (s) => s.custTier <= 1 && s.finTier !== 0
     },
     {
       id: "fight", name: "D. 競合を叩く", desc: "価格・販促で正面対決する",
+      costTier: "中〜大", effectDelay: "即時〜数ヶ月（価格施策はすぐ反映されるが、定着には時間がかかる）",
+      tradeoff: "短期的な集客効果は見込めるが、価格競争は利益率を圧迫し消耗戦になるリスクがある",
       disqualify: (s) => s.finTier !== 2 || s.compTier === 0,
       endorse:    (s) => s.finTier === 2 && s.worst >= 1 && s.laborTier >= 1 && s.compTier >= 1,
       // 業種にeconCodeが無い場合は旧来の定性的な注記にフォールバックする。現状は8業種すべてに
@@ -1476,6 +1508,8 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     },
     {
       id: "withdraw", name: "E. 撤退する", desc: "この店舗を閉じる",
+      costTier: "大", effectDelay: "即時（損失拡大は止まるが、原状回復等の一時費用が生じる）",
+      tradeoff: "損失拡大を止められるが、これまでの投資回収を諦め、従業員の雇用継続にも影響する",
       disqualify: (s) => s.worst === 2 && s.finTier !== 0,
       endorse:    (s) => s.worst === 0 && s.finTier === 0
     }
@@ -1635,7 +1669,9 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
         <span>${d.name}</span>
         <span class="mgmt-verdict-badge"></span>
       </div>
-      <div class="biz-meta">${d.desc}</div>`;
+      <div class="biz-meta">${d.desc}</div>
+      <div class="biz-meta mgmt-cost">初期コスト目安: ${d.costTier}｜効果発現: ${d.effectDelay}</div>
+      <div class="biz-meta mgmt-tradeoff">トレードオフ: ${d.tradeoff}</div>`;
     card.addEventListener("click", () => {
       state.managementDecision = d.id;
       mgmtDecisionGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
