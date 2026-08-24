@@ -491,7 +491,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.12.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.13.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -1053,7 +1053,13 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     // verdictForDecision)はどちらも一切参照しないため、既存の単発診断の計算結果に影響しない
     // （SS-01-S04-1の推奨案1-A「窓は動かさない」を裏付ける状態）。
     turn: 0, // 現在の期。0/3/6/10（年目）。S04-3で「次の期へ」を実装するまでは常に0のまま
-    history: [] // 期ごとの記録。要素は snapshotForHistory() が作る{turn, commands, managementDecision, signals}
+    history: [], // 期ごとの記録。要素は snapshotForHistory() が作る{turn, commands, managementDecision, signals}
+    // --- 以下はSS-01-S04-4（前期効果・副作用の次期反映）で追加。
+    // 「次の期へ」を押すたびにupdateCarryoverEffect()が更新する持ち越し効果。
+    // computeManagementSignals()が返すcustTier/laborTier/finTierへ加算してから
+    // TIERSの範囲(0〜2)にクリップする（各tierの意味・算出式そのものは変えない）。
+    // ゲーム開始直後・期を1度も進めていない間は全て0＝既存動作と完全一致する。
+    carryoverEffect: { custTier: 0, laborTier: 0, finTier: 0 }
   };
 
   /**
@@ -1786,6 +1792,9 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     return TIERS[0];
   }
   function bumpTier(tier) { return TIERS[Math.min(2, tier.level + 1)]; }
+  // SS-01-S04-4: 持ち越し効果(carryoverEffect)を加算した後のtier数値をTIERSの範囲(0〜2)に
+  // 収めるためだけのヘルパー。TIERS配列自体のインデックスとしてもそのまま使える。
+  function clampTierLevel(level) { return Math.max(0, Math.min(2, level)); }
 
   function evaluateStrategy() {
     const biz = selectedBusiness();
@@ -2008,9 +2017,8 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
   });
 
   function computeManagementSignals(strat) {
-    const custTier = strat.customerTier.level;
-    const laborTier = strat.laborTier.level;
-    const worst = Math.min(custTier, laborTier);
+    let custTier = strat.customerTier.level;
+    let laborTier = strat.laborTier.level;
 
     const p = state.storeProfile;
     let finTier = 1, finFallback = false, opMargin = null;
@@ -2028,6 +2036,14 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     const finBoosted = !!(state.commands.kane_genka || state.commands.kane_honbu);
     if (state.commands.kane_genka) finTier = Math.min(2, finTier + 1);
     if (state.commands.kane_honbu) finTier = Math.min(2, finTier + 1);
+
+    // SS-01-S04-4: 前期までの経営判断の妥当性(良い選択/悪い選択)を持ち越し効果として
+    // custTier/laborTier/finTierへ反映する。ゲーム開始直後はcarryoverEffectが全て0なので
+    // 既存の計算結果と完全に一致する（updateCarryoverEffect()参照）。
+    custTier = clampTierLevel(custTier + state.carryoverEffect.custTier);
+    laborTier = clampTierLevel(laborTier + state.carryoverEffect.laborTier);
+    finTier = clampTierLevel(finTier + state.carryoverEffect.finTier);
+    const worst = Math.min(custTier, laborTier);
 
     // 築年数は任意入力で、未入力だと0になる(起動画面の「未入力の項目は0として扱われます」)。
     // 0をそのまま「築10年未満」に当てはめるとbldTier=2(新しい)になり、未入力なのに
@@ -2190,11 +2206,45 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     btn.textContent = isLastCheckpoint ? "10年目に到達しました" : "次の期へ";
   }
 
+  /* =====================================================================
+     CARRYOVER EFFECT（前期効果・副作用の次期反映、SS-01-S04-4）
+     「良い選択（妥当な経営判断）を続けると改善し、悪い選択（筋が悪いまま放置）を
+     続けると悪化する」を、新しい判定基準を追加せずに既存のMGMT_DECISIONSの
+     disqualify/endorseの結果（verdictForDecision()の返り値）だけを根拠にして実現する。
+     ===================================================================== */
+  const CARRYOVER_STEP = 1;  // 1期ごとに動かす量。TIERSが3段階(0/1/2)しかないので±1で十分
+  const CARRYOVER_LIMIT = 2; // 持ち越し効果自体の上下限。TIERSの幅(0〜2)を超えて積む意味がないため
+
+  /**
+   * 直前の期に選んだ経営判断の妥当性(verdict)をもとに、次期以降のcomputeManagementSignals()
+   * が参照するstate.carryoverEffectを更新する。
+   * - 「妥当」（良い選択）だった期が続くほど custTier/laborTier/finTier を底上げする
+   * - 「筋が悪い」（悪い選択のまま放置）だった期が続くほど引き下げる
+   * - 「要検討」は良し悪しのどちらでもない中間状態として据え置く（改善も悪化もさせない）
+   * 3つのtierを一律に動かすのは、MGMT_DECISIONSの判定粒度が「その期の経営判断1つに対する
+   * 妥当性」という単位であり、どの信号がどの施策で動くかの精密な対応表を新たに持つと
+   * 「既存状態遷移の延長」（Approach Decision）を超えて複雑になるため。
+   */
+  function updateCarryoverEffect(verdict) {
+    const delta = verdict.label === "妥当" ? CARRYOVER_STEP
+      : (verdict.label === "筋が悪い" ? -CARRYOVER_STEP : 0);
+    if (delta === 0) return;
+    ["custTier", "laborTier", "finTier"].forEach(k => {
+      state.carryoverEffect[k] = Math.max(-CARRYOVER_LIMIT, Math.min(CARRYOVER_LIMIT, state.carryoverEffect[k] + delta));
+    });
+  }
+
   document.getElementById("advanceTurnBtn").addEventListener("click", () => {
     const strat = evaluateStrategy();
     if (!strat || !state.managementDecision) return; // ボタンはdisabledのはずだが念のため二重防御
     const sig = computeManagementSignals(strat);
     state.history.push(snapshotForHistory(state.turn, state.commands, state.managementDecision, sig));
+
+    // 今期の経営判断の妥当性を判定し、次期以降に持ち越す効果を更新する。
+    // verdictForDecision()自体は無改修で呼ぶだけなので、既存の243×5判定表には影響しない。
+    const decision = MGMT_DECISIONS.find(d => d.id === state.managementDecision);
+    updateCarryoverEffect(verdictForDecision(decision, sig));
+
     const nextIndex = Math.min(TURN_CHECKPOINTS.indexOf(state.turn) + 1, TURN_CHECKPOINTS.length - 1);
     state.turn = TURN_CHECKPOINTS[nextIndex];
     rerenderAll();
