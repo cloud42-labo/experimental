@@ -1747,7 +1747,9 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
       <div class="biz-meta mgmt-tradeoff">トレードオフ: ${d.tradeoff}</div>`;
     card.addEventListener("click", () => {
       state.managementDecision = d.id;
-      mgmtDecisionGrid.querySelectorAll(".biz-card").forEach(c => c.classList.toggle("selected", c === card));
+      // .selectedの付け替えはrerenderAll() -> syncManagementDecisionSelection()に一本化。
+      // ここで独自にtoggleすると、state.managementDecisionをプログラム側から変更する経路
+      // （restartTurnProgression()等）でDOM側の見た目が追従しなくなる（Codexレビュー指摘）。
       rerenderAll();
     });
     mgmtDecisionGrid.appendChild(card);
@@ -1768,6 +1770,19 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
       const v = verdictForDecision(d, sig);
       badge.textContent = v.label;
       badge.className = "mgmt-verdict-badge " + v.css;
+    });
+  }
+
+  /**
+   * ④のカードの`.selected`表示をstate.managementDecisionへ同期する。
+   * カード生成時のクリックハンドラは自分のカードへ`.selected`を付けるだけで、
+   * `state.managementDecision`をプログラム側（例: SS-01-S04-5のrestartTurnProgression()）
+   * から変更してもDOM側の見た目は追従しない。rerenderAll()で毎回呼び直すことで、
+   * どちらの経路で状態が変わっても表示が一致するようにする（Codexレビュー指摘、PR #88）。
+   */
+  function syncManagementDecisionSelection() {
+    mgmtDecisionGrid.querySelectorAll(".biz-card").forEach(c => {
+      c.classList.toggle("selected", c.dataset.id === state.managementDecision);
     });
   }
 
@@ -2388,6 +2403,7 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     // ④の5枚のバッジと選択中カードの詳細の両方で使うsigは、ここで1回だけ計算して渡す。
     const sig = strat ? computeManagementSignals(strat) : null;
     renderDecisionBadges(sig);
+    syncManagementDecisionSelection();
     renderManagementDecision(strat, sig);
     renderTurnProgress();
     renderTurnAdvanceButton(strat);
