@@ -479,9 +479,12 @@
       <div class="card">
         <h2>⑤ 期を進める <span class="unit">— 3年・6年・10年の意思決定ループ</span></h2>
         <div class="note" style="margin-bottom:10px;">③④の診断は常に「現在→10年後」の変化を見ています。ここでは3年ごとに立ち止まり、そのときの②の施策・④の経営判断を記録として積み重ねます。一度オンにした施策は以後オフに戻せません（一度打った手は取り消せない、という前提です）。</div>
-        <div class="turn-progress" id="turnProgress"></div>
-        <button id="advanceTurnBtn" type="button" disabled
-          style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;margin-top:10px;">次の期へ</button>
+        <div id="turnProgressArea">
+          <div class="turn-progress" id="turnProgress"></div>
+          <button id="advanceTurnBtn" type="button" disabled
+            style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;margin-top:10px;">次の期へ</button>
+        </div>
+        <div id="gameOverScreen" style="display:none;"></div>
         <div id="turnHistoryList" style="margin-top:10px;"></div>
       </div>
     </aside>
@@ -491,7 +494,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.13.1"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.14.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
@@ -1059,7 +1062,15 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     // computeManagementSignals()が返すcustTier/laborTier/finTierへ加算してから
     // TIERSの範囲(0〜2)にクリップする（各tierの意味・算出式そのものは変えない）。
     // ゲーム開始直後・期を1度も進めていない間は全て0＝既存動作と完全一致する。
-    carryoverEffect: { custTier: 0, laborTier: 0, finTier: 0 }
+    carryoverEffect: { custTier: 0, laborTier: 0, finTier: 0 },
+    // --- 以下はSS-01-S04-5（失敗からの学習、状態遷移）で追加。
+    // criticalStreak: 「客層・労働力・財務すべて深刻」の期がここまで連続した回数
+    // （改善した期を1度でも挟むと0に戻る）。gameOver: 撤退選択、またはcriticalStreakが
+    // CRISIS_STREAK_THRESHOLDに達した時点で{reason: "withdraw"|"crisis", turn}をセットする。
+    // どちらも新しい判定基準を追加せず、既存のverdictForDecision()/computeManagementSignals()
+    // が返す値と選択した経営判断IDだけを条件にする決定論ロジック（Approach Decision準拠）。
+    criticalStreak: 0,
+    gameOver: null
   };
 
   /**
@@ -2284,10 +2295,87 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     const decision = MGMT_DECISIONS.find(d => d.id === state.managementDecision);
     updateCarryoverEffect(verdictForDecision(decision, sig));
 
-    const nextIndex = Math.min(TURN_CHECKPOINTS.indexOf(state.turn) + 1, TURN_CHECKPOINTS.length - 1);
-    state.turn = TURN_CHECKPOINTS[nextIndex];
+    // SS-01-S04-5: 撤退を選んだ期、または「客層・労働力・財務すべて深刻」
+    // （withdraw(E)のendorse条件 worst===0 && finTier===0 と同じ定義を再利用）が
+    // CRISIS_STREAK_THRESHOLD期連続で続いた場合、通常の期進行を止めて振り返り画面へ遷移する。
+    const isCritical = sig.worst === 0 && sig.finTier === 0;
+    state.criticalStreak = isCritical ? state.criticalStreak + 1 : 0;
+    if (state.managementDecision === "withdraw") {
+      state.gameOver = { reason: "withdraw", turn: state.turn };
+    } else if (state.criticalStreak >= CRISIS_STREAK_THRESHOLD) {
+      state.gameOver = { reason: "crisis", turn: state.turn };
+    }
+
+    if (!state.gameOver) {
+      const nextIndex = Math.min(TURN_CHECKPOINTS.indexOf(state.turn) + 1, TURN_CHECKPOINTS.length - 1);
+      state.turn = TURN_CHECKPOINTS[nextIndex];
+    }
     rerenderAll();
   });
+
+  /* =====================================================================
+     GAME OVER / 振り返り画面（失敗からの学習、SS-01-S04-5）
+     機械学習・LLM等は使わず、既存のcomputeManagementSignals()/選択した経営判断ID
+     だけを条件にする決定論ロジック。SS-01-S04-1の合意（案5-B: 撤退・2期連続深刻で
+     振り返り画面＋やり直し）に沿い、CRISIS_STREAK_THRESHOLD=2とする。
+     ===================================================================== */
+  const CRISIS_STREAK_THRESHOLD = 2;
+
+  const GAME_OVER_COPY = {
+    withdraw: {
+      title: "撤退という経営判断を下しました",
+      body: "この期に「撤退する」を選んだため、経営を終了しました。ここまでの記録（下の一覧）を振り返り、どの選択が効いた・効かなかったかを確認してください。"
+    },
+    crisis: {
+      title: `${CRISIS_STREAK_THRESHOLD}期連続で経営が深刻な状態から回復しませんでした`,
+      body: "客層マッチ度・採用のしやすさ・財務健全性のいずれも深刻な水準のまま改善しない期が続いたため、経営を継続できなくなりました。ここまでの記録（下の一覧）を振り返り、どの選択が効いた・効かなかったかを確認してください。"
+    }
+  };
+
+  /** state.gameOverの有無に応じて、通常の期進行UIと振り返り画面を出し分ける。 */
+  function renderGameOverScreen() {
+    const areaEl = document.getElementById("turnProgressArea");
+    const screenEl = document.getElementById("gameOverScreen");
+    if (!state.gameOver) {
+      areaEl.style.display = "";
+      screenEl.style.display = "none";
+      screenEl.innerHTML = "";
+      return;
+    }
+    areaEl.style.display = "none";
+    screenEl.style.display = "";
+    const copy = GAME_OVER_COPY[state.gameOver.reason];
+    const label = state.gameOver.turn === 0 ? "現在" : `${state.gameOver.turn}年目`;
+    screenEl.innerHTML = `
+      <div class="note" style="background:color-mix(in srgb, var(--critical) 12%, var(--page)); border-radius:8px; padding:12px; margin-bottom:10px;">
+        <div style="font-weight:600; margin-bottom:6px;">${copy.title}（${label}時点）</div>
+        <div>${copy.body}</div>
+      </div>
+      <button id="restartGameBtn" type="button"
+        style="width:100%;font-size:13px;font-weight:600;padding:10px;border-radius:8px;border:none;background:var(--series-1);color:#fff;cursor:pointer;">最初からやり直す</button>
+    `;
+    document.getElementById("restartGameBtn").addEventListener("click", restartTurnProgression);
+  }
+
+  /**
+   * 「やり直し」= 店舗・業種のセットアップ（state.storeLatLng/storeProfile/
+   * selectedBusinessId）はそのまま、期の進行状態だけを初期状態へ戻す。ページ全体の
+   * リロード（=店舗選定からやり直し）ではなく、「同じ店舗・業種で別の施策・経営判断の
+   * 組み合わせを試したい」という振り返りの目的に応える薄い状態リセット。
+   * state.commandsを空に戻すのは、業種変更時の既存リセット（setBusiness内）と同じ扱い
+   * （ラチェットで戻せない施策を、やり直し時にも引きずらせないため）。
+   */
+  function restartTurnProgression() {
+    state.turn = 0;
+    state.history = [];
+    state.commands = {};
+    state.managementDecision = null;
+    state.carryoverEffect = { custTier: 0, laborTier: 0, finTier: 0 };
+    state.criticalStreak = 0;
+    state.gameOver = null;
+    renderCommands();
+    rerenderAll();
+  }
 
   /* ---------- wiring ---------- */
   function rerenderAll() {
@@ -2304,6 +2392,7 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     renderTurnProgress();
     renderTurnAdvanceButton(strat);
     renderTurnHistory();
+    renderGameOverScreen();
   }
 
   document.getElementById("yearOffsetNote").textContent =
