@@ -1,6 +1,10 @@
 const CACHE = 'kids-oekaki-v1';
 const CACHE_PREFIX = 'kids-oekaki-';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icon.svg'];
+// self.registration.scopeはこのservice workerが実際に登録されたURL（サブパス配信も含む）を
+// 指すため、これを起点にすることでGitHub Pagesのプロジェクトサイトのようにルート以外の
+// パスへデプロイしても壊れない。
+const SCOPE = self.registration.scope;
+const APP_SHELL = [SCOPE, `${SCOPE}manifest.webmanifest`, `${SCOPE}icon.svg`];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
@@ -29,6 +33,6 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE).then((cache) => cache.put(event.request, copy));
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached ?? caches.match('/'))),
+      .catch(() => caches.match(event.request).then((cached) => cached ?? caches.match(SCOPE))),
   );
 });
