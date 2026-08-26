@@ -41,28 +41,36 @@ experimental/
 
 ## GitHub操作
 
-**このリポジトリでは、Claudeが作ったPR（`claude/*`ブランチ）は作ったところで止め、
-Claude自身はマージしない。** レビュー・マージはChatGPT側の仕組み（下記「PRレビュー・
-マージ」）に委ねる。これは「PRを作ったら止めずマージまで行う」という他リポジトリでの
-既定ルール（[brain/notes/github-pr-workflow](https://github.com/cloud42-labo/brain/blob/main/notes/github-pr-workflow.md)）を、このリポジトリに限って上書きするもの。
+**2026-08-26、オーナー判断でこのリポジトリは自己マージに切り替えた。**
+`experimental`はデモ・試作環境であり、レビューの厳密さよりまず動かすことを優先するため、
+「Claudeが作ったPR（`claude/*`ブランチ）は作ったところで止め、Claude自身はマージしない」
+という従来のルール（全リポジトリ共通の例外ルール
+[brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md)）を、
+**このリポジトリに限って**さらに上書きし、本来の既定ルール
+（[brain/notes/github-pr-workflow](https://github.com/cloud42-labo/brain/blob/main/notes/github-pr-workflow.md)、
+PRを作ったら止めずマージまで行う）に戻す。経緯:
+[brain/decisions/0021](https://github.com/cloud42-labo/brain/blob/main/decisions/0021-oek-t06-merge-authority-conflict.md)・
+[brain/decisions/0022](https://github.com/cloud42-labo/brain/blob/main/decisions/0022-experimental-self-merge-exception.md)。
 
 ## PRレビュー・マージ
 
-このリポジトリ自体のGitHub Actionsではなく、**ChatGPT側の2つの仕組み**でPRのレビュー・
-マージを行う。
-
-1. Claude が `claude/*` ブランチでPRを作り、そこで止める
-2. **Codex の Automatic reviews**（ChatGPT Plus/Pro契約の範囲）がPRを自動レビューする。
-   レビュー規約は [AGENTS.md](AGENTS.md) の `## Code Review Rules`
-3. **ChatGPT側の毎時タスク**が、Codexの指摘とCIの状態を確認し、問題なければ
-   GitHub連携でsquashマージする。指摘があればマージせず待つ
+1. Claude が `claude/*` ブランチでPRを作る
+2. **Codex の Automatic reviews**（ChatGPT Plus/Pro契約の範囲）による自動レビューは
+   引き続き有効にしておく。レビュー規約は [AGENTS.md](AGENTS.md) の `## Code Review Rules`。
+   品質シグナルとして無料で得られるので、指摘が既に付いていれば直してから進める
+3. CIが green で、その時点までに付いているCodex指摘に対応していれば、
+   **Claude自身がその場でsquashマージする。** ChatGPT側の毎時タスクによるマージ実行を
+   待たない（待っても実害は無いが、速度を優先しない理由が無い）
+4. 判断に迷う指摘（設計レベルの大きな指摘など）は、他リポジトリと同じ通常の
+   PRドライブ方針に従う。デモ環境なので「まず動かす」を優先してよい
 
 - 自前のGitHub Actionsワークフロー（`openai/codex-action` / `anthropics/claude-code-action`
   をAPI課金で呼び出す方式）は一度実装したが、課金を避けるためにやめた。詳細は
   [brain/decisions/0008 の追記](https://github.com/cloud42-labo/brain/blob/main/decisions/0008-ai-review-loop-codex-vs-claude.md)
-- **セッション開始時、レビュー待ち・マージ待ちのまま長く止まっているPRが無いか確認し、
-  あれば状況を把握する。** ChatGPT側の毎時タスクが拾えていない可能性がある
-- 詳細: [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md)
+- **これはこのリポジトリ固有の例外。** 他のリポジトリ（`serendipity-spot`など）は
+  従来どおりChatGPT側マージ委任のまま変更していない
+- 詳細: [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md)・
+  [brain/decisions/0022](https://github.com/cloud42-labo/brain/blob/main/decisions/0022-experimental-self-merge-exception.md)
 
 ## バージョニング
 
