@@ -1,0 +1,74 @@
+import type { BrushKind, ToolSettings } from '../domain/drawing';
+
+const colors = ['#111111', '#ff4057', '#ff922e', '#ffd43b', '#51cf66', '#22b8cf', '#339af0', '#845ef7', '#a0613b', '#ffffff'];
+
+const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
+  { key: 'pen', icon: '✏️', label: 'ペン' },
+  { key: 'marker', icon: '🖍️', label: 'マーカー' },
+  { key: 'eraser', icon: '🧽', label: 'けしごむ' },
+];
+
+type Props = {
+  settings: ToolSettings;
+  setSettings: (next: ToolSettings) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  onSave: () => void;
+};
+
+export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSave }: Props) {
+  const setBrush = (brush: BrushKind) => setSettings({ ...settings, brush });
+  const setColor = (color: string) => setSettings({ ...settings, color, brush: settings.brush === 'eraser' ? 'pen' : settings.brush });
+
+  return (
+    <header className="toolbar" aria-label="おえかき どうぐ">
+      <div className="tool-section tool-buttons">
+        {brushes.map((brush) => (
+          <button
+            key={brush.key}
+            className={settings.brush === brush.key ? 'tool-button active' : 'tool-button'}
+            onClick={() => setBrush(brush.key)}
+            aria-pressed={settings.brush === brush.key}
+          >
+            <span aria-hidden="true">{brush.icon}</span><span>{brush.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="tool-section color-row" aria-label="いろ">
+        {colors.map((color) => (
+          <button
+            key={color}
+            className={settings.color === color && settings.brush !== 'eraser' ? 'color-dot active' : 'color-dot'}
+            style={{ backgroundColor: color }}
+            onClick={() => setColor(color)}
+            aria-label={`いろ ${color}`}
+          />
+        ))}
+        <label className="custom-color" title="じゆうな いろ">
+          🌈
+          <input type="color" value={settings.color} onChange={(event) => setColor(event.target.value)} />
+        </label>
+      </div>
+
+      <label className="tool-section size-control">
+        <span>ふとさ <strong>{settings.size}</strong></span>
+        <input
+          type="range"
+          min="1"
+          max="60"
+          value={settings.size}
+          onChange={(event) => setSettings({ ...settings, size: Number(event.target.value) })}
+        />
+      </label>
+
+      <div className="tool-section action-row">
+        <button className="round-action" disabled={!canUndo} onClick={onUndo} aria-label="ひとつ もどる">↶</button>
+        <button className="round-action" disabled={!canRedo} onClick={onRedo} aria-label="やりなおす">↷</button>
+        <button className="save-button" onClick={onSave}>💾 ほぞん</button>
+      </div>
+    </header>
+  );
+}
