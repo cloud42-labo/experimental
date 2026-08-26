@@ -2,6 +2,8 @@ import { useCallback, useState } from 'react';
 import type { DrawingDocument, DrawingLayer, StrokeObject, TemplateKind } from '../domain/drawing';
 import { createInitialDocument } from '../domain/drawing';
 
+const MAX_HISTORY = 60;
+
 type History = {
   past: DrawingDocument[];
   present: DrawingDocument;
@@ -10,7 +12,7 @@ type History = {
 
 function push(history: History, next: DrawingDocument): History {
   return {
-    past: [...history.past, history.present],
+    past: [...history.past, history.present].slice(-MAX_HISTORY),
     present: next,
     future: [],
   };
@@ -34,7 +36,7 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
   const commitStroke = useCallback((stroke: StrokeObject) => {
     setHistory((h) => {
       const active = h.present.layers.find((layer) => layer.id === h.present.activeLayerId);
-      if (!active || active.locked) return h;
+      if (!active || active.locked || !active.visible) return h;
       const layers = h.present.layers.map((layer) =>
         layer.id === h.present.activeLayerId ? { ...layer, objects: [...layer.objects, stroke] } : layer,
       );
@@ -71,6 +73,8 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
 
   const clearActiveLayer = useCallback(() => {
     setHistory((h) => {
+      const active = h.present.layers.find((layer) => layer.id === h.present.activeLayerId);
+      if (!active || active.objects.length === 0) return h;
       const layers = h.present.layers.map((layer) =>
         layer.id === h.present.activeLayerId ? { ...layer, objects: [] } : layer,
       );
@@ -99,7 +103,11 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     setHistory((h) => {
       if (!h.future.length) return h;
       const next = h.future[0];
-      return { past: [...h.past, h.present], present: next, future: h.future.slice(1) };
+      return {
+        past: [...h.past, h.present].slice(-MAX_HISTORY),
+        present: next,
+        future: h.future.slice(1),
+      };
     });
   }, []);
 
