@@ -1,17 +1,34 @@
 import type { DrawingDocument, DrawingLayer, StrokeObject } from '../domain/drawing';
 import { drawTemplate } from '../domain/templates';
 
-const layerSurfaces = new Map<string, HTMLCanvasElement>();
+type LayerCache = {
+  canvas: HTMLCanvasElement;
+  layerRef: DrawingLayer | null;
+};
+
+const layerSurfaces = new Map<string, LayerCache>();
+let draftSurface: HTMLCanvasElement | null = null;
 
 function getLayerSurface(layer: DrawingLayer, width: number, height: number) {
-  let surface = layerSurfaces.get(layer.id);
-  if (!surface) {
-    surface = document.createElement('canvas');
-    layerSurfaces.set(layer.id, surface);
+  let entry = layerSurfaces.get(layer.id);
+  if (!entry) {
+    entry = { canvas: document.createElement('canvas'), layerRef: null };
+    layerSurfaces.set(layer.id, entry);
   }
-  if (surface.width !== width) surface.width = width;
-  if (surface.height !== height) surface.height = height;
-  return surface;
+
+  if (entry.canvas.width !== width || entry.canvas.height !== height) {
+    entry.canvas.width = width;
+    entry.canvas.height = height;
+    entry.layerRef = null;
+  }
+  return entry;
+}
+
+function getDraftSurface(width: number, height: number) {
+  if (!draftSurface) draftSurface = document.createElement('canvas');
+  if (draftSurface.width !== width) draftSurface.width = width;
+  if (draftSurface.height !== height) draftSurface.height = height;
+  return draftSurface;
 }
 
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: StrokeObject) {
@@ -100,22 +117,51 @@ function renderLayer(ctx: CanvasRenderingContext2D, layer: DrawingLayer) {
   }
 }
 
+function renderedLayerSurface(layer: DrawingLayer, width: number, height: number) {
+  const entry = getLayerSurface(layer, width, height);
+  if (entry.layerRef !== layer) {
+    const ctx = entry.canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, width, height);
+      renderLayer(ctx, layer);
+      entry.layerRef = layer;
+    }
+  }
+  return entry.canvas;
+}
+
+function pruneLayerCache(document: DrawingDocument) {
+  const liveIds = new Set(document.layers.map((layer) => layer.id));
+  for (const layerId of layerSurfaces.keys()) {
+    if (!liveIds.has(layerId)) layerSurfaces.delete(layerId);
+  }
+}
+
 export function renderDocument(
   target: CanvasRenderingContext2D,
   document: DrawingDocument,
   draftStroke?: StrokeObject | null,
 ) {
+  pruneLayerCache(document);
   target.clearRect(0, 0, document.width, document.height);
   drawTemplate(target, document.template, document.width, document.height);
 
   for (const layer of document.layers) {
     if (!layer.visible) continue;
-    const surface = getLayerSurface(layer, document.width, document.height);
-    const ctx = surface.getContext('2d');
-    if (!ctx) continue;
-    ctx.clearRect(0, 0, document.width, document.height);
-    renderLayer(ctx, layer);
-    if (draftStroke && layer.id === document.activeLayerId) drawStroke(ctx, draftStroke);
-    target.drawImage(surface, 0, 0);
+    const surface = renderedLayerSurface(layer, document.width, document.height);
+
+    if (draftStroke && layer.id === document.activeLayerId) {
+      const preview = getDraftSurface(document.width, document.height);
+      const previewCtx = preview.getContext('2d');
+      if (!previewCtx) continue;
+      previewCtx.clearRect(0, 0, document.width, document.height);
+      previewCtx.globalCompositeOperation = 'source-over';
+      previewCtx.globalAlpha = 1;
+      previewCtx.drawImage(surface, 0, 0);
+      drawStroke(previewCtx, draftStroke);
+      target.drawImage(preview, 0, 0);
+    } else {
+      target.drawImage(surface, 0, 0);
+    }
   }
 }
