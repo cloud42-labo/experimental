@@ -41,28 +41,25 @@ experimental/
 
 ## GitHub操作
 
-**このリポジトリでは、Claudeが作ったPR（`claude/*`ブランチ）は作ったところで止め、
-Claude自身はマージしない。** レビュー・マージはChatGPT側の仕組み（下記「PRレビュー・
-マージ」）に委ねる。これは「PRを作ったら止めずマージまで行う」という他リポジトリでの
-既定ルール（[brain/notes/github-pr-workflow](https://github.com/cloud42-labo/brain/blob/main/notes/github-pr-workflow.md)）を、このリポジトリに限って上書きするもの。
+**このリポジトリは実験・PoC用の例外として、作業エージェント自身によるPRの自己マージを許可する。**
+Claudeが作ったPRも、必要な修正、CI、mergeabilityを確認したうえでClaude自身がマージまで進めてよい。
+ChatGPT / Chris の再判定や追加承認を必須のマージゲートにしない。
+
+これは本番系・継続運用リポジトリで採用する「実装者とマージ判断を分離する」既定ルールの
+**experimental限定の例外**。`experimental`から正式プロダクト用リポジトリへ卒業した後は、
+そのリポジトリ側の通常の独立レビュー・マージルールに従う。
 
 ## PRレビュー・マージ
 
-このリポジトリ自体のGitHub Actionsではなく、**ChatGPT側の2つの仕組み**でPRのレビュー・
-マージを行う。
+1. 作業エージェントがPRを作る
+2. Codex Automatic reviews が有効な場合、その指摘を技術的な改善材料として確認する
+3. P0/P1、CI失敗、競合など明確なブロッカーがあれば修正する
+4. 問題が解消したら、**PR作成者自身がマージしてよい**
 
-1. Claude が `claude/*` ブランチでPRを作り、そこで止める
-2. **Codex の Automatic reviews**（ChatGPT Plus/Pro契約の範囲）がPRを自動レビューする。
-   レビュー規約は [AGENTS.md](AGENTS.md) の `## Code Review Rules`
-3. **ChatGPT側の毎時タスク**が、Codexの指摘とCIの状態を確認し、問題なければ
-   GitHub連携でsquashマージする。指摘があればマージせず待つ
-
-- 自前のGitHub Actionsワークフロー（`openai/codex-action` / `anthropics/claude-code-action`
-  をAPI課金で呼び出す方式）は一度実装したが、課金を避けるためにやめた。詳細は
-  [brain/decisions/0008 の追記](https://github.com/cloud42-labo/brain/blob/main/decisions/0008-ai-review-loop-codex-vs-claude.md)
-- **セッション開始時、レビュー待ち・マージ待ちのまま長く止まっているPRが無いか確認し、
-  あれば状況を把握する。** ChatGPT側の毎時タスクが拾えていない可能性がある
-- 詳細: [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md)
+- Codexレビューは有用だが、`experimental`ではChatGPT / Chrisの再レビュー待ちを必須条件にしない
+- P2以下は試作目的・リスク・後続の実機検証計画を踏まえて、作業エージェントがマージ可否を判断してよい
+- 自前のGitHub Actionsワークフロー（`openai/codex-action` / `anthropics/claude-code-action`をAPI課金で呼び出す方式）は課金回避のため使用しない
+- 詳細な共通レビュー方針は [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md) を参照。ただし**自己マージ可否については本ファイルのexperimental例外を優先する**
 
 ## バージョニング
 
@@ -78,12 +75,8 @@ Claude自身はマージしない。** レビュー・マージはChatGPT側の�
 | PATCH | バグ修正・文言変更・UIの微調整 | `0.9.6` → `0.9.7` |
 
 - 変更後は各アプリの `index.html` 冒頭の `APP_VERSION` 定数を必ず更新する
-- **正式リリースへの昇格**: プロダクトオーナー（駒場さん）が正式リリースを宣言した
-  タイミングで `v1.0.0` に上げる。それまでの `0.x.x` はすべてプレリリース扱い
-- **v1.0.0になったら`experimental`から卒業する**: `v1.0.0`昇格は、そのアプリ専用の
-  新規リポジトリ（公開/public）を立てて切り出すトリガーとする。`experimental`は
-  試作・プレリリースまでの場所という前提を維持する（詳細:
-  [brain/notes/semver-and-release-deliverables](https://github.com/cloud42-labo/brain/blob/main/notes/semver-and-release-deliverables.md)）
+- **正式リリースへの昇格**: プロダクトオーナー（駒場さん）が正式リリースを宣言したタイミングで `v1.0.0` に上げる。それまでの `0.x.x` はすべてプレリリース扱い
+- **v1.0.0になったら`experimental`から卒業する**: `v1.0.0`昇格は、そのアプリ専用の新規リポジトリ（公開/public）を立てて切り出すトリガーとする。`experimental`は試作・プレリリースまでの場所という前提を維持する（詳細: [brain/notes/semver-and-release-deliverables](https://github.com/cloud42-labo/brain/blob/main/notes/semver-and-release-deliverables.md)）
 
 ## リリース時のDeliverables
 
