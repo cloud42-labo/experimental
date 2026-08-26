@@ -46,6 +46,7 @@ export function CanvasStage({ document, settings, onCommitStroke }: Props) {
   };
 
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (activePointerId.current !== null) return;
     if (shouldIgnorePointer(event) || !activeLayer || activeLayer.locked || !activeLayer.visible) return;
     event.preventDefault();
     activePointerId.current = event.pointerId;
@@ -78,10 +79,8 @@ export function CanvasStage({ document, settings, onCommitStroke }: Props) {
     if (activePointerId.current !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     activePointerId.current = null;
-    setDraft((current) => {
-      if (current) onCommitStroke(current);
-      return null;
-    });
+    if (draft) onCommitStroke(draft);
+    setDraft(null);
   };
 
   return (
