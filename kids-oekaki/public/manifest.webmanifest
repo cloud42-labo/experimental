@@ -1,15 +1,17 @@
 {
+  "id": ".",
   "name": "おえかき",
   "short_name": "おえかき",
   "lang": "ja",
-  "start_url": "/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#fff7fb",
   "theme_color": "#ff6fae",
   "orientation": "any",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
