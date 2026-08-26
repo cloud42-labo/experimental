@@ -46,7 +46,7 @@ export function CanvasStage({ document, settings, onCommitStroke }: Props) {
   };
 
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (shouldIgnorePointer(event) || activeLayer?.locked) return;
+    if (shouldIgnorePointer(event) || !activeLayer || activeLayer.locked || !activeLayer.visible) return;
     event.preventDefault();
     activePointerId.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
