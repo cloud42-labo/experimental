@@ -2,7 +2,7 @@ export const CANVAS_WIDTH = 800;
 export const CANVAS_HEIGHT = 1131;
 
 export type TemplateKind = 'blank' | '4koma' | 'diary';
-export type BrushKind = 'pen' | 'marker' | 'eraser';
+export type BrushKind = 'pen' | 'marker' | 'eraser' | 'rainbow' | 'neon';
 
 export type Point = {
   x: number;

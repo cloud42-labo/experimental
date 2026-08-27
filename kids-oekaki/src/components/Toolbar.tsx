@@ -6,6 +6,8 @@ const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
   { key: 'pen', icon: '✏️', label: 'ペン' },
   { key: 'marker', icon: '🖍️', label: 'マーカー' },
   { key: 'eraser', icon: '🧽', label: 'けしごむ' },
+  { key: 'rainbow', icon: '🌈', label: 'にじいろ' },
+  { key: 'neon', icon: '✨', label: 'ネオン' },
 ];
 
 type Props = {
