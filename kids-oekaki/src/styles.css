@@ -37,10 +37,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .tool-button { min-width: 82px; min-height: 64px; border: 3px solid transparent; border-radius: 18px; background: #f8f6f9; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 800; }
 .tool-button span:first-child { font-size: 24px; }
 .tool-button.active { background: #fff1a8; border-color: #ffd43b; }
-.color-row { flex-wrap: wrap; width: 210px; }
-.color-dot { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #ddd; padding: 0; }
+.color-row { flex-wrap: wrap; width: 240px; }
+.color-dot { width: 44px; height: 44px; border-radius: 50%; border: 3px solid #ddd; padding: 0; }
 .color-dot.active { outline: 4px solid #6b4eff; outline-offset: 1px; }
-.custom-color { position: relative; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: #f4efff; font-size: 24px; overflow: hidden; }
+.custom-color { position: relative; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: #f4efff; font-size: 24px; overflow: hidden; }
 .custom-color input { position: absolute; inset: 0; opacity: 0; }
 .size-control { min-width: 150px; flex-direction: column; align-items: stretch; font-weight: 800; }
 .size-control input { width: 145px; accent-color: #6b4eff; }
@@ -55,7 +55,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .canvas-frame canvas { display: block; width: 100%; height: 100%; touch-action: none; background: #fff; }
 .layer-panel { width: 210px; flex: 0 0 210px; background: #fff9fc; border-left: 2px solid #f0dfe8; display: flex; flex-direction: column; padding: 12px; gap: 10px; }
 .layer-title { display: flex; align-items: center; justify-content: space-between; font-size: 18px; font-weight: 900; }
-.layer-title button { width: 44px; height: 44px; border: 0; border-radius: 14px; background: #dff9f3; font-size: 26px; }
+.layer-title button { width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 14px; background: #dff9f3; font-size: 26px; }
 .layer-list { min-height: 0; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .layer-row { display: flex; min-height: 54px; border: 3px solid transparent; border-radius: 16px; background: #fff; box-shadow: 0 2px 7px rgba(80,45,68,.08); overflow: hidden; }
 .layer-row.active { border-color: #ff6fae; background: #fff0f7; }
@@ -74,5 +74,7 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
-  .layer-panel { position: absolute; right: 8px; bottom: 8px; width: 160px; max-height: 45%; border: 0; border-radius: 18px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+  /* min(150px, 42vw)にして、canvasがviewport幅いっぱいに近い極小画面でも
+     オーバーレイの左端がcanvas中央を越えないようにする（描画面を致命的に塞がないため）。 */
+  .layer-panel { position: absolute; right: 8px; bottom: 8px; width: min(150px, 42vw); max-height: 45%; border: 0; border-radius: 18px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 }
