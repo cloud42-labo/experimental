@@ -31,8 +31,86 @@ function getDraftSurface(width: number, height: number) {
   return draftSurface;
 }
 
+function rainbowColor(hue: number) {
+  return `hsl(${hue}, 90%, 55%)`;
+}
+
+// にじいろブラシ: 線分ごとに色相をずらして塗ることで虹色に見せる。粒子エンジンなどは使わない。
+function drawRainbowStroke(ctx: CanvasRenderingContext2D, stroke: StrokeObject) {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = stroke.size;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  if (stroke.points.length === 1) {
+    const p = stroke.points[0];
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, stroke.size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = rainbowColor(0);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  const segments = stroke.points.length - 1;
+  for (let i = 0; i < segments; i += 1) {
+    ctx.strokeStyle = rainbowColor((i / segments) * 300);
+    ctx.beginPath();
+    ctx.moveTo(stroke.points[i].x, stroke.points[i].y);
+    ctx.lineTo(stroke.points[i + 1].x, stroke.points[i + 1].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ネオンブラシ: 選んだ色でぼかしたグロー層を描いた上に、白い芯を重ねて光って見せる。
+function drawNeonStroke(ctx: CanvasRenderingContext2D, stroke: StrokeObject) {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalCompositeOperation = 'source-over';
+
+  const tracePath = () => {
+    if (stroke.points.length === 1) {
+      const p = stroke.points[0];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, stroke.size / 2, 0, Math.PI * 2);
+      return true;
+    }
+    ctx.beginPath();
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length; i += 1) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    return false;
+  };
+
+  ctx.shadowColor = stroke.color;
+  ctx.shadowBlur = Math.max(8, stroke.size * 1.2);
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = stroke.color;
+  ctx.fillStyle = stroke.color;
+  ctx.lineWidth = stroke.size;
+  const isDot = tracePath();
+  if (isDot) ctx.fill();
+  else ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#ffffff';
+  ctx.fillStyle = '#ffffff';
+  ctx.lineWidth = Math.max(1, stroke.size * 0.35);
+  const isDot2 = tracePath();
+  if (isDot2) ctx.fill();
+  else ctx.stroke();
+
+  ctx.restore();
+}
+
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: StrokeObject) {
   if (stroke.points.length === 0) return;
+  if (stroke.brush === 'rainbow') return drawRainbowStroke(ctx, stroke);
+  if (stroke.brush === 'neon') return drawNeonStroke(ctx, stroke);
 
   ctx.save();
   ctx.lineCap = 'round';
