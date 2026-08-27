@@ -37,6 +37,10 @@ jobs:
         run: npm run build
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # このリポジトリでGitHub Pagesがまだ有効化されていないため、
+          # ワークフロー自身に有効化させる（Settings側の手動操作を避ける）
+          enablement: true
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
