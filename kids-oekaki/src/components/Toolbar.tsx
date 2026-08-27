@@ -1,4 +1,4 @@
-import type { BrushKind, ToolSettings } from '../domain/drawing';
+import type { BrushKind, StampKind, ToolSettings } from '../domain/drawing';
 
 const colors = ['#111111', '#ff4057', '#ff922e', '#ffd43b', '#51cf66', '#22b8cf', '#339af0', '#845ef7', '#a0613b', '#ffffff'];
 
@@ -8,6 +8,13 @@ const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
   { key: 'eraser', icon: '🧽', label: 'けしごむ' },
   { key: 'rainbow', icon: '🌈', label: 'にじいろ' },
   { key: 'neon', icon: '✨', label: 'ネオン' },
+];
+
+const stamps: Array<{ key: StampKind; icon: string; label: string }> = [
+  { key: 'heart', icon: '💗', label: 'ハート' },
+  { key: 'star', icon: '⭐', label: 'ほし' },
+  { key: 'speech', icon: '💬', label: 'ふきだし' },
+  { key: 'focus', icon: '💥', label: 'しゅうちゅうせん' },
 ];
 
 type Props = {
@@ -21,7 +28,8 @@ type Props = {
 };
 
 export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSave }: Props) {
-  const setBrush = (brush: BrushKind) => setSettings({ ...settings, brush });
+  const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
+  const setStamp = (stampKind: StampKind) => setSettings({ ...settings, mode: 'stamp', stampKind });
   const setColor = (color: string) => setSettings({ ...settings, color, brush: settings.brush === 'eraser' ? 'pen' : settings.brush });
 
   return (
@@ -30,11 +38,24 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
         {brushes.map((brush) => (
           <button
             key={brush.key}
-            className={settings.brush === brush.key ? 'tool-button active' : 'tool-button'}
+            className={settings.mode === 'brush' && settings.brush === brush.key ? 'tool-button active' : 'tool-button'}
             onClick={() => setBrush(brush.key)}
-            aria-pressed={settings.brush === brush.key}
+            aria-pressed={settings.mode === 'brush' && settings.brush === brush.key}
           >
             <span aria-hidden="true">{brush.icon}</span><span>{brush.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="tool-section tool-buttons" aria-label="スタンプ">
+        {stamps.map((stamp) => (
+          <button
+            key={stamp.key}
+            className={settings.mode === 'stamp' && settings.stampKind === stamp.key ? 'tool-button active' : 'tool-button'}
+            onClick={() => setStamp(stamp.key)}
+            aria-pressed={settings.mode === 'stamp' && settings.stampKind === stamp.key}
+          >
+            <span aria-hidden="true">{stamp.icon}</span><span>{stamp.label}</span>
           </button>
         ))}
       </div>

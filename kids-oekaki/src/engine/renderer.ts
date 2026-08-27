@@ -175,7 +175,7 @@ function drawStamp(ctx: CanvasRenderingContext2D, object: Extract<DrawingLayer['
     }
     ctx.closePath();
     ctx.fill();
-  } else {
+  } else if (object.stamp === 'speech') {
     const w = object.size;
     const h = object.size * 0.65;
     ctx.beginPath();
@@ -184,6 +184,20 @@ function drawStamp(ctx: CanvasRenderingContext2D, object: Extract<DrawingLayer['
     ctx.lineTo(w * 0.05, h * 0.82);
     ctx.lineTo(-w * 0.02, h / 2);
     ctx.stroke();
+  } else {
+    // しゅうちゅうせん: 中心から外側へ向かって放射状に線を引く、まんが風の集中線。
+    const outer = object.size / 2;
+    const inner = outer * 0.15;
+    const lineCount = 16;
+    ctx.lineWidth = Math.max(3, object.size * 0.04);
+    for (let i = 0; i < lineCount; i += 1) {
+      const angle = (Math.PI * 2 * i) / lineCount;
+      const len = i % 2 === 0 ? outer : outer * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+      ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }

@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DrawingDocument, Point, StrokeObject, ToolSettings } from '../domain/drawing';
+import type { DrawingDocument, Point, StampObject, StrokeObject, ToolSettings } from '../domain/drawing';
+import { STAMP_SIZE } from '../domain/drawing';
 import { renderDocument } from '../engine/renderer';
 
 type Props = {
   document: DrawingDocument;
   settings: ToolSettings;
   onCommitStroke: (stroke: StrokeObject) => void;
+  onCommitStamp: (stamp: StampObject) => void;
 };
 
-export function CanvasStage({ document, settings, onCommitStroke }: Props) {
+export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activePointerId = useRef<number | null>(null);
   const [draft, setDraft] = useState<StrokeObject | null>(null);
@@ -49,6 +51,22 @@ export function CanvasStage({ document, settings, onCommitStroke }: Props) {
     if (activePointerId.current !== null) return;
     if (shouldIgnorePointer(event) || !activeLayer || activeLayer.locked || !activeLayer.visible) return;
     event.preventDefault();
+
+    if (settings.mode === 'stamp') {
+      // スタンプはドラッグ不要。タップした場所にその場で1個置く。
+      const point = pointFromEvent(event);
+      onCommitStamp({
+        id: crypto.randomUUID(),
+        type: 'stamp',
+        stamp: settings.stampKind,
+        x: point.x,
+        y: point.y,
+        size: STAMP_SIZE,
+        color: settings.color,
+      });
+      return;
+    }
+
     activePointerId.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     setDraft({

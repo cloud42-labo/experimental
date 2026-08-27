@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { DrawingDocument, DrawingLayer, StrokeObject, TemplateKind } from '../domain/drawing';
+import type { DrawingDocument, DrawingLayer, StampObject, StrokeObject, TemplateKind } from '../domain/drawing';
 import { createInitialDocument } from '../domain/drawing';
 
 const MAX_HISTORY = 60;
@@ -39,6 +39,17 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
       if (!active || active.locked || !active.visible) return h;
       const layers = h.present.layers.map((layer) =>
         layer.id === h.present.activeLayerId ? { ...layer, objects: [...layer.objects, stroke] } : layer,
+      );
+      return push(h, { ...h.present, layers });
+    });
+  }, []);
+
+  const commitStamp = useCallback((stamp: StampObject) => {
+    setHistory((h) => {
+      const active = h.present.layers.find((layer) => layer.id === h.present.activeLayerId);
+      if (!active || active.locked || !active.visible) return h;
+      const layers = h.present.layers.map((layer) =>
+        layer.id === h.present.activeLayerId ? { ...layer, objects: [...layer.objects, stamp] } : layer,
       );
       return push(h, { ...h.present, layers });
     });
@@ -118,6 +129,7 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     reset,
     selectLayer,
     commitStroke,
+    commitStamp,
     addLayer,
     deleteActiveLayer,
     clearActiveLayer,

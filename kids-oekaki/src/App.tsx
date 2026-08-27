@@ -9,7 +9,13 @@ import { exportPng } from './utils/exportPng';
 
 export default function App() {
   const [started, setStarted] = useState(false);
-  const [settings, setSettings] = useState<ToolSettings>({ brush: 'pen', color: '#111111', size: 8 });
+  const [settings, setSettings] = useState<ToolSettings>({
+    mode: 'brush',
+    brush: 'pen',
+    stampKind: 'heart',
+    color: '#111111',
+    size: 8,
+  });
   const drawing = useDrawingDocument();
 
   const start = (template: TemplateKind) => {
@@ -31,7 +37,12 @@ export default function App() {
         onSave={() => void exportPng(drawing.document)}
       />
       <div className="workspace">
-        <CanvasStage document={drawing.document} settings={settings} onCommitStroke={drawing.commitStroke} />
+        <CanvasStage
+          document={drawing.document}
+          settings={settings}
+          onCommitStroke={drawing.commitStroke}
+          onCommitStamp={drawing.commitStamp}
+        />
         <LayerPanel
           layers={drawing.document.layers}
           activeLayerId={drawing.document.activeLayerId}

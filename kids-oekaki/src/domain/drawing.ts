@@ -19,10 +19,12 @@ export type StrokeObject = {
   points: Point[];
 };
 
+export type StampKind = 'heart' | 'star' | 'speech' | 'focus';
+
 export type StampObject = {
   id: string;
   type: 'stamp';
-  stamp: 'heart' | 'star' | 'speech';
+  stamp: StampKind;
   x: number;
   y: number;
   size: number;
@@ -30,6 +32,10 @@ export type StampObject = {
 };
 
 export type DrawingObject = StrokeObject | StampObject;
+
+export type ToolMode = 'brush' | 'stamp';
+
+export const STAMP_SIZE = 96;
 
 export type DrawingLayer = {
   id: string;
@@ -48,7 +54,9 @@ export type DrawingDocument = {
 };
 
 export type ToolSettings = {
+  mode: ToolMode;
   brush: BrushKind;
+  stampKind: StampKind;
   color: string;
   size: number;
 };
