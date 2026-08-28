@@ -46,6 +46,7 @@ export type DrawingLayer = {
   name: string;
   visible: boolean;
   locked: boolean;
+  opacity: number;
   objects: DrawingObject[];
 };
 
@@ -85,9 +86,9 @@ export function createInitialDocument(template: TemplateKind, orientation: Orien
     template,
     activeLayerId: lineId,
     layers: [
-      { id: sketchId, name: 'したがき', visible: true, locked: false, objects: [] },
-      { id: colorId, name: 'いろぬり', visible: true, locked: false, objects: [] },
-      { id: lineId, name: 'せんが', visible: true, locked: false, objects: [] },
+      { id: sketchId, name: 'したがき', visible: true, locked: false, opacity: 1, objects: [] },
+      { id: colorId, name: 'いろぬり', visible: true, locked: false, opacity: 1, objects: [] },
+      { id: lineId, name: 'せんが', visible: true, locked: false, opacity: 1, objects: [] },
     ],
   };
 }
