@@ -241,11 +241,16 @@ export function renderDocument(
   for (const layer of document.layers) {
     if (!layer.visible) continue;
     const surface = renderedLayerSurface(layer, document.width, document.height);
+    target.save();
+    target.globalAlpha = Math.max(0.1, Math.min(1, layer.opacity ?? 1));
 
     if (draftStroke && layer.id === document.activeLayerId) {
       const preview = getDraftSurface(document.width, document.height);
       const previewCtx = preview.getContext('2d');
-      if (!previewCtx) continue;
+      if (!previewCtx) {
+        target.restore();
+        continue;
+      }
       previewCtx.clearRect(0, 0, document.width, document.height);
       previewCtx.globalCompositeOperation = 'source-over';
       previewCtx.globalAlpha = 1;
@@ -255,5 +260,6 @@ export function renderDocument(
     } else {
       target.drawImage(surface, 0, 0);
     }
+    target.restore();
   }
 }

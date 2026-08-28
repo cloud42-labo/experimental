@@ -52,6 +52,7 @@ export default function App() {
           onToggle={drawing.toggleLayer}
           onClear={drawing.clearActiveLayer}
           onMove={drawing.moveActiveLayer}
+          onOpacityChange={drawing.setActiveLayerOpacity}
         />
       </div>
     </div>

@@ -62,6 +62,7 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
         name: `レイヤー${h.present.layers.length + 1}`,
         visible: true,
         locked: false,
+        opacity: 1,
         objects: [],
       };
       return push(h, {
@@ -97,6 +98,18 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     setHistory((h) => {
       const layers = h.present.layers.map((layer) =>
         layer.id === layerId ? { ...layer, visible: !layer.visible } : layer,
+      );
+      return push(h, { ...h.present, layers });
+    });
+  }, []);
+
+  const setActiveLayerOpacity = useCallback((opacity: number) => {
+    setHistory((h) => {
+      const nextOpacity = Math.max(0.1, Math.min(1, opacity));
+      const active = h.present.layers.find((layer) => layer.id === h.present.activeLayerId);
+      if (!active || Math.abs((active.opacity ?? 1) - nextOpacity) < 0.001) return h;
+      const layers = h.present.layers.map((layer) =>
+        layer.id === h.present.activeLayerId ? { ...layer, opacity: nextOpacity } : layer,
       );
       return push(h, { ...h.present, layers });
     });
@@ -149,6 +162,7 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     deleteActiveLayer,
     clearActiveLayer,
     toggleLayer,
+    setActiveLayerOpacity,
     moveActiveLayer,
     undo,
     redo,
