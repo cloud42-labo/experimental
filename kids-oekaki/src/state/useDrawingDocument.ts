@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { DrawingDocument, DrawingLayer, Orientation, StampObject, StrokeObject, TemplateKind } from '../domain/drawing';
+import type { BlurObject, DrawingDocument, DrawingLayer, Orientation, StampObject, StrokeObject, TemplateKind } from '../domain/drawing';
 import { createInitialDocument } from '../domain/drawing';
 
 const MAX_HISTORY = 60;
@@ -41,27 +41,20 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     setHistory((h) => ({ ...h, present: { ...h.present, activeLayerId: layerId } }));
   }, []);
 
-  const commitStroke = useCallback((stroke: StrokeObject) => {
+  const appendToActiveLayer = useCallback((object: StrokeObject | BlurObject | StampObject) => {
     setHistory((h) => {
       const active = h.present.layers.find((layer) => layer.id === h.present.activeLayerId);
       if (!active || active.locked || !active.visible) return h;
       const layers = h.present.layers.map((layer) =>
-        layer.id === h.present.activeLayerId ? { ...layer, objects: [...layer.objects, stroke] } : layer,
+        layer.id === h.present.activeLayerId ? { ...layer, objects: [...layer.objects, object] } : layer,
       );
       return push(h, { ...h.present, layers });
     });
   }, []);
 
-  const commitStamp = useCallback((stamp: StampObject) => {
-    setHistory((h) => {
-      const active = h.present.layers.find((layer) => layer.id === h.present.activeLayerId);
-      if (!active || active.locked || !active.visible) return h;
-      const layers = h.present.layers.map((layer) =>
-        layer.id === h.present.activeLayerId ? { ...layer, objects: [...layer.objects, stamp] } : layer,
-      );
-      return push(h, { ...h.present, layers });
-    });
-  }, []);
+  const commitStroke = useCallback((stroke: StrokeObject) => appendToActiveLayer(stroke), [appendToActiveLayer]);
+  const commitBlur = useCallback((blur: BlurObject) => appendToActiveLayer(blur), [appendToActiveLayer]);
+  const commitStamp = useCallback((stamp: StampObject) => appendToActiveLayer(stamp), [appendToActiveLayer]);
 
   const addLayer = useCallback(() => {
     setHistory((h) => {
@@ -167,6 +160,7 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     restoreHistory,
     selectLayer,
     commitStroke,
+    commitBlur,
     commitStamp,
     addLayer,
     deleteActiveLayer,
