@@ -6,7 +6,7 @@ export const CANVAS_HEIGHT = 1131;
 export type Orientation = 'portrait' | 'landscape';
 
 export type TemplateKind = 'blank' | '4koma' | 'diary';
-export type BrushKind = 'pen' | 'marker' | 'eraser' | 'rainbow' | 'neon';
+export type BrushKind = 'pen' | 'marker' | 'eraser' | 'blur' | 'rainbow' | 'neon';
 
 export type Point = {
   x: number;
@@ -17,9 +17,17 @@ export type Point = {
 export type StrokeObject = {
   id: string;
   type: 'stroke';
-  brush: BrushKind;
+  brush: Exclude<BrushKind, 'blur'>;
   color: string;
   size: number;
+  points: Point[];
+};
+
+export type BlurObject = {
+  id: string;
+  type: 'blur';
+  size: number;
+  strength: number;
   points: Point[];
 };
 
@@ -35,11 +43,12 @@ export type StampObject = {
   color: string;
 };
 
-export type DrawingObject = StrokeObject | StampObject;
+export type DrawingObject = StrokeObject | BlurObject | StampObject;
 
 export type ToolMode = 'brush' | 'stamp' | 'eyedropper';
 
 export const STAMP_SIZE = 96;
+export const DEFAULT_BLUR_STRENGTH = 6;
 
 export type DrawingLayer = {
   id: string;
