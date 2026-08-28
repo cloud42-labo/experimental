@@ -1,20 +1,18 @@
 import type { BrushKind, StampKind, ToolSettings } from '../domain/drawing';
 
-const colors = ['#111111', '#ff4057', '#ff922e', '#ffd43b', '#51cf66', '#22b8cf', '#339af0', '#845ef7', '#a0613b', '#ffffff'];
-
 const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
   { key: 'pen', icon: '✏️', label: 'ペン' },
-  { key: 'marker', icon: '🖍️', label: 'マーカー' },
-  { key: 'eraser', icon: '🧽', label: 'けしごむ' },
-  { key: 'rainbow', icon: '🌈', label: 'にじいろ' },
-  { key: 'neon', icon: '✨', label: 'ネオン' },
+  { key: 'marker', icon: '▰', label: 'マーカー' },
+  { key: 'eraser', icon: '⌫', label: '消しゴム' },
+  { key: 'rainbow', icon: '◐', label: '虹' },
+  { key: 'neon', icon: '✦', label: 'ネオン' },
 ];
 
 const stamps: Array<{ key: StampKind; icon: string; label: string }> = [
-  { key: 'heart', icon: '💗', label: 'ハート' },
-  { key: 'star', icon: '⭐', label: 'ほし' },
-  { key: 'speech', icon: '💬', label: 'ふきだし' },
-  { key: 'focus', icon: '💥', label: 'しゅうちゅうせん' },
+  { key: 'heart', icon: '♥', label: 'ハート' },
+  { key: 'star', icon: '★', label: '星' },
+  { key: 'speech', icon: '□', label: 'ふきだし' },
+  { key: 'focus', icon: '✺', label: '集中線' },
 ];
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -34,55 +32,41 @@ type Props = {
 export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSaveDraft, onExportPng, saveState }: Props) {
   const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
   const setStamp = (stampKind: StampKind) => setSettings({ ...settings, mode: 'stamp', stampKind });
-  const setColor = (color: string) => setSettings({ ...settings, color, brush: settings.brush === 'eraser' ? 'pen' : settings.brush });
-  const saveLabel = saveState === 'saving' ? 'ほぞん中…' : saveState === 'saved' ? 'ほぞん済み' : saveState === 'error' ? 'もう一度ほぞん' : 'ほぞん';
+  const saveLabel = saveState === 'saving' ? '保存中' : saveState === 'saved' ? '保存済' : saveState === 'error' ? '再保存' : '保存';
 
   return (
-    <header className="toolbar" aria-label="おえかき どうぐ">
-      <div className="tool-section tool-buttons">
+    <header className="toolbar creative-toolbar" aria-label="描画ツール">
+      <div className="primary-tools" aria-label="ペンの種類">
         {brushes.map((brush) => (
           <button
             key={brush.key}
-            className={settings.mode === 'brush' && settings.brush === brush.key ? 'tool-button active' : 'tool-button'}
+            className={settings.mode === 'brush' && settings.brush === brush.key ? 'compact-tool active' : 'compact-tool'}
             onClick={() => setBrush(brush.key)}
             aria-pressed={settings.mode === 'brush' && settings.brush === brush.key}
+            title={brush.label}
           >
-            <span aria-hidden="true">{brush.icon}</span><span>{brush.label}</span>
+            <span className="compact-tool-icon" aria-hidden="true">{brush.icon}</span>
+            <span className="compact-tool-label">{brush.label}</span>
           </button>
         ))}
+
+        <details className="stamp-menu">
+          <summary className={settings.mode === 'stamp' ? 'compact-tool active' : 'compact-tool'} title="スタンプ">
+            <span className="compact-tool-icon">◆</span>
+            <span className="compact-tool-label">スタンプ</span>
+          </summary>
+          <div className="stamp-popover">
+            {stamps.map((stamp) => (
+              <button key={stamp.key} className={settings.mode === 'stamp' && settings.stampKind === stamp.key ? 'active' : ''} onClick={() => setStamp(stamp.key)}>
+                <span>{stamp.icon}</span>{stamp.label}
+              </button>
+            ))}
+          </div>
+        </details>
       </div>
 
-      <div className="tool-section tool-buttons" aria-label="スタンプ">
-        {stamps.map((stamp) => (
-          <button
-            key={stamp.key}
-            className={settings.mode === 'stamp' && settings.stampKind === stamp.key ? 'tool-button active' : 'tool-button'}
-            onClick={() => setStamp(stamp.key)}
-            aria-pressed={settings.mode === 'stamp' && settings.stampKind === stamp.key}
-          >
-            <span aria-hidden="true">{stamp.icon}</span><span>{stamp.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="tool-section color-row" aria-label="いろ">
-        {colors.map((color) => (
-          <button
-            key={color}
-            className={settings.color === color && settings.brush !== 'eraser' ? 'color-dot active' : 'color-dot'}
-            style={{ backgroundColor: color }}
-            onClick={() => setColor(color)}
-            aria-label={`いろ ${color}`}
-          />
-        ))}
-        <label className="custom-color" title="じゆうな いろ">
-          🌈
-          <input type="color" value={settings.color} onChange={(event) => setColor(event.target.value)} />
-        </label>
-      </div>
-
-      <label className="tool-section size-control">
-        <span>ふとさ <strong>{settings.size}</strong></span>
+      <label className="compact-size-control">
+        <span>太さ <strong>{settings.size}</strong></span>
         <input
           type="range"
           min="1"
@@ -92,11 +76,13 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
         />
       </label>
 
-      <div className="tool-section action-row">
-        <button className="round-action" disabled={!canUndo} onClick={onUndo} aria-label="ひとつ もどる">↶</button>
-        <button className="round-action" disabled={!canRedo} onClick={onRedo} aria-label="やりなおす">↷</button>
-        <button className="save-button" onClick={onSaveDraft} disabled={saveState === 'saving'}>💾 {saveLabel}</button>
-        <button className="export-button" onClick={onExportPng}>🖼️ PNG</button>
+      <div className="toolbar-spacer" />
+
+      <div className="creative-actions">
+        <button className="icon-action" disabled={!canUndo} onClick={onUndo} aria-label="ひとつ戻る" title="戻る">↶</button>
+        <button className="icon-action" disabled={!canRedo} onClick={onRedo} aria-label="やり直す" title="やり直す">↷</button>
+        <button className="text-action primary" onClick={onSaveDraft} disabled={saveState === 'saving'}>⌑ <span>{saveLabel}</span></button>
+        <button className="text-action" onClick={onExportPng}>⇩ <span>PNG</span></button>
       </div>
     </header>
   );

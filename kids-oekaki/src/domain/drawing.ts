@@ -37,7 +37,7 @@ export type StampObject = {
 
 export type DrawingObject = StrokeObject | StampObject;
 
-export type ToolMode = 'brush' | 'stamp';
+export type ToolMode = 'brush' | 'stamp' | 'eyedropper';
 
 export const STAMP_SIZE = 96;
 
