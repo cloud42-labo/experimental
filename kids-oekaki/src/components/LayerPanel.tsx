@@ -8,9 +8,16 @@ type Props = {
   onDelete: () => void;
   onToggle: (id: string) => void;
   onClear: () => void;
+  onMove: (direction: 'up' | 'down') => void;
 };
 
-export function LayerPanel({ layers, activeLayerId, onSelect, onAdd, onDelete, onToggle, onClear }: Props) {
+export function LayerPanel({ layers, activeLayerId, onSelect, onAdd, onDelete, onToggle, onClear, onMove }: Props) {
+  const activeIndex = layers.findIndex((layer) => layer.id === activeLayerId);
+  // 配列の並び=描画順（後ろほど手前）。パネルは[...layers].reverse()で表示するため、
+  // 「うえへ」＝配列の後ろ側(手前)へ、「したへ」＝配列の前側(奥)へ移動させる。
+  const canMoveUp = activeIndex >= 0 && activeIndex < layers.length - 1;
+  const canMoveDown = activeIndex > 0;
+
   return (
     <aside className="layer-panel" aria-label="レイヤー">
       <div className="layer-title"><span>📚 レイヤー</span><button onClick={onAdd}>＋</button></div>
@@ -23,6 +30,10 @@ export function LayerPanel({ layers, activeLayerId, onSelect, onAdd, onDelete, o
             <button className="layer-name" onClick={() => onSelect(layer.id)}>{layer.name}</button>
           </div>
         ))}
+      </div>
+      <div className="layer-actions">
+        <button onClick={() => onMove('up')} disabled={!canMoveUp} aria-label="このレイヤーを うえへ">⬆️ うえへ</button>
+        <button onClick={() => onMove('down')} disabled={!canMoveDown} aria-label="このレイヤーを したへ">⬇️ したへ</button>
       </div>
       <div className="layer-actions">
         <button onClick={onClear}>🧹 ぜんぶけす</button>

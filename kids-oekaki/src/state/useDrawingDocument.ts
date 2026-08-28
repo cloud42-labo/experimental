@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { DrawingDocument, DrawingLayer, StampObject, StrokeObject, TemplateKind } from '../domain/drawing';
+import type { DrawingDocument, DrawingLayer, Orientation, StampObject, StrokeObject, TemplateKind } from '../domain/drawing';
 import { createInitialDocument } from '../domain/drawing';
 
 const MAX_HISTORY = 60;
@@ -25,8 +25,8 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     future: [],
   }));
 
-  const reset = useCallback((template: TemplateKind) => {
-    setHistory({ past: [], present: createInitialDocument(template), future: [] });
+  const reset = useCallback((template: TemplateKind, orientation: Orientation = 'portrait') => {
+    setHistory({ past: [], present: createInitialDocument(template, orientation), future: [] });
   }, []);
 
   const selectLayer = useCallback((layerId: string) => {
@@ -102,6 +102,21 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     });
   }, []);
 
+  // 選択中レイヤーを配列内で1段前後へ入れ替える。配列の並びがそのまま
+  // renderer/exportPngの描画順（後ろほど手前）になるため、これだけで
+  // キャンバス上・PNG書き出しの両方に前後関係が反映される。
+  const moveActiveLayer = useCallback((direction: 'up' | 'down') => {
+    setHistory((h) => {
+      const index = h.present.layers.findIndex((layer) => layer.id === h.present.activeLayerId);
+      if (index < 0) return h;
+      const targetIndex = direction === 'up' ? index + 1 : index - 1;
+      if (targetIndex < 0 || targetIndex >= h.present.layers.length) return h;
+      const layers = [...h.present.layers];
+      [layers[index], layers[targetIndex]] = [layers[targetIndex], layers[index]];
+      return push(h, { ...h.present, layers });
+    });
+  }, []);
+
   const undo = useCallback(() => {
     setHistory((h) => {
       if (!h.past.length) return h;
@@ -134,6 +149,7 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
     deleteActiveLayer,
     clearActiveLayer,
     toggleLayer,
+    moveActiveLayer,
     undo,
     redo,
   };

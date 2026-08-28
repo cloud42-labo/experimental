@@ -1,6 +1,10 @@
 export const CANVAS_WIDTH = 800;
 export const CANVAS_HEIGHT = 1131;
 
+// 作品用紙の向き。端末の物理的な向きとは独立で、作品データ(Document)側が持つ。
+// 端末を回転させても、これが変わらない限り描いた内容は回転・変形しない。
+export type Orientation = 'portrait' | 'landscape';
+
 export type TemplateKind = 'blank' | '4koma' | 'diary';
 export type BrushKind = 'pen' | 'marker' | 'eraser' | 'rainbow' | 'neon';
 
@@ -48,6 +52,7 @@ export type DrawingLayer = {
 export type DrawingDocument = {
   width: number;
   height: number;
+  orientation: Orientation;
   template: TemplateKind;
   activeLayerId: string;
   layers: DrawingLayer[];
@@ -63,14 +68,20 @@ export type ToolSettings = {
 
 const id = () => crypto.randomUUID();
 
-export function createInitialDocument(template: TemplateKind): DrawingDocument {
+export function createInitialDocument(template: TemplateKind, orientation: Orientation = 'portrait'): DrawingDocument {
   const sketchId = id();
   const colorId = id();
   const lineId = id();
+  // portraitの短辺・長辺をlandscapeでは入れ替えるだけ。テンプレートの描画
+  // (drawTemplate)はwidth/heightを引数で受け取る比例レイアウトのため、
+  // 向きに関わらずそのまま適応する。
+  const width = orientation === 'landscape' ? CANVAS_HEIGHT : CANVAS_WIDTH;
+  const height = orientation === 'landscape' ? CANVAS_WIDTH : CANVAS_HEIGHT;
 
   return {
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    width,
+    height,
+    orientation,
     template,
     activeLayerId: lineId,
     layers: [
