@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { CanvasStage } from './components/CanvasStage';
+import { ColorPalette } from './components/ColorPalette';
 import { LayerPanel } from './components/LayerPanel';
 import { StartScreen } from './components/StartScreen';
 import { Toolbar } from './components/Toolbar';
@@ -9,14 +11,28 @@ import type { DrawingHistory } from './state/useDrawingDocument';
 import { exportPng } from './utils/exportPng';
 import { loadDrawingSession, saveDrawingSession } from './utils/documentStorage';
 import './save-resume.css';
+import './creative-ui.css';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+const RECENT_COLORS_KEY = 'kids-oekaki-recent-colors';
+
+function componentHex(value: number) {
+  return Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
+}
 
 export default function App() {
   const [started, setStarted] = useState(false);
   const [savedHistory, setSavedHistory] = useState<DrawingHistory | null>(null);
   const [storageError, setStorageError] = useState<string>();
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [recentColors, setRecentColors] = useState<string[]>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(RECENT_COLORS_KEY) ?? '[]');
+      return Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string').slice(0, 8) : [];
+    } catch {
+      return [];
+    }
+  });
   const [settings, setSettings] = useState<ToolSettings>({
     mode: 'brush',
     brush: 'pen',
@@ -25,6 +41,10 @@ export default function App() {
     size: 8,
   });
   const drawing = useDrawingDocument();
+
+  useEffect(() => {
+    try { localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(recentColors)); } catch { /* localStorage is optional */ }
+  }, [recentColors]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,12 +67,10 @@ export default function App() {
       if (showProgress) setSaveState('saved');
     } catch {
       if (showProgress) setSaveState('error');
-      setStorageError('ほぞんできませんでした。いまの作品はそのままです。');
+      setStorageError('保存できませんでした。いまの作品はそのままです。');
     }
   };
 
-  // 描画・レイヤー・Undo/Redoなど作品状態が変わった後、短い間隔を空けて自動保存する。
-  // IndexedDBの単一transactionで置き換えるため、失敗時に以前の保存データを途中状態で壊さない。
   useEffect(() => {
     if (!started) return;
     setSaveState((current) => current === 'error' ? current : 'idle');
@@ -73,6 +91,33 @@ export default function App() {
     setStarted(true);
   };
 
+  const applyColor = (color: string) => {
+    const next = color.toLowerCase();
+    setSettings((current) => ({
+      ...current,
+      color: next,
+      mode: current.mode === 'eyedropper' ? 'brush' : current.mode,
+      brush: current.brush === 'eraser' ? 'pen' : current.brush,
+    }));
+    setRecentColors((current) => [next, ...current.filter((item) => item.toLowerCase() !== next)].slice(0, 8));
+  };
+
+  const handleColorPick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (settings.mode !== 'eyedropper') return;
+    const target = event.target;
+    if (!(target instanceof HTMLCanvasElement)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = target.getBoundingClientRect();
+    const x = Math.max(0, Math.min(target.width - 1, Math.floor(((event.clientX - rect.left) / rect.width) * target.width)));
+    const y = Math.max(0, Math.min(target.height - 1, Math.floor(((event.clientY - rect.top) / rect.height) * target.height)));
+    const ctx = target.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    const pixel = ctx.getImageData(x, y, 1, 1).data;
+    const picked = pixel[3] === 0 ? '#ffffff' : `#${componentHex(pixel[0])}${componentHex(pixel[1])}${componentHex(pixel[2])}`;
+    applyColor(picked);
+  };
+
   if (!started) {
     return (
       <StartScreen
@@ -85,7 +130,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell creative-shell">
       <Toolbar
         settings={settings}
         setSettings={setSettings}
@@ -98,7 +143,14 @@ export default function App() {
         saveState={saveState}
       />
       {storageError && <div className="save-error-banner" role="alert">⚠️ {storageError}</div>}
-      <div className="workspace">
+      <div className="workspace creative-workspace" onPointerDownCapture={handleColorPick}>
+        <ColorPalette
+          color={settings.color}
+          recentColors={recentColors}
+          eyedropperActive={settings.mode === 'eyedropper'}
+          onColorChange={applyColor}
+          onEyedropper={() => setSettings((current) => ({ ...current, mode: current.mode === 'eyedropper' ? 'brush' : 'eyedropper' }))}
+        />
         <CanvasStage
           document={drawing.document}
           settings={settings}
