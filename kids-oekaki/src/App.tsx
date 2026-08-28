@@ -8,6 +8,7 @@ import { useDrawingDocument } from './state/useDrawingDocument';
 import type { DrawingHistory } from './state/useDrawingDocument';
 import { exportPng } from './utils/exportPng';
 import { loadDrawingSession, saveDrawingSession } from './utils/documentStorage';
+import './save-resume.css';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
