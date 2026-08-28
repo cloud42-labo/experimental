@@ -12,7 +12,14 @@ const orientations: Array<{ key: Orientation; icon: string; label: string; note:
   { key: 'landscape', icon: '🖼️', label: 'よこ', note: 'よこながの かみ' },
 ];
 
-export function StartScreen({ onStart }: { onStart: (template: TemplateKind, orientation: Orientation) => void }) {
+type Props = {
+  onStart: (template: TemplateKind, orientation: Orientation) => void;
+  onContinue: () => void;
+  canContinue: boolean;
+  storageError?: string;
+};
+
+export function StartScreen({ onStart, onContinue, canContinue, storageError }: Props) {
   const [template, setTemplate] = useState<TemplateKind | null>(null);
 
   if (!template) {
@@ -22,6 +29,13 @@ export function StartScreen({ onStart }: { onStart: (template: TemplateKind, ori
           <div className="mascot" aria-hidden="true">🎨</div>
           <h1>なにを かく？</h1>
           <p>すきな かみを えらんでね</p>
+          {canContinue && (
+            <button className="continue-button" onClick={onContinue}>
+              ▶️ つづきから
+              <small>ほぞんした ところから かく</small>
+            </button>
+          )}
+          {storageError && <p className="storage-error" role="alert">⚠️ {storageError}</p>}
           <div className="template-grid">
             {templates.map((t) => (
               <button key={t.key} className="template-card" onClick={() => setTemplate(t.key)}>
