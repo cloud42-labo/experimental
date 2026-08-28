@@ -3,7 +3,7 @@ import { CanvasStage } from './components/CanvasStage';
 import { LayerPanel } from './components/LayerPanel';
 import { StartScreen } from './components/StartScreen';
 import { Toolbar } from './components/Toolbar';
-import type { TemplateKind, ToolSettings } from './domain/drawing';
+import type { Orientation, TemplateKind, ToolSettings } from './domain/drawing';
 import { useDrawingDocument } from './state/useDrawingDocument';
 import { exportPng } from './utils/exportPng';
 
@@ -18,8 +18,8 @@ export default function App() {
   });
   const drawing = useDrawingDocument();
 
-  const start = (template: TemplateKind) => {
-    drawing.reset(template);
+  const start = (template: TemplateKind, orientation: Orientation) => {
+    drawing.reset(template, orientation);
     setStarted(true);
   };
 

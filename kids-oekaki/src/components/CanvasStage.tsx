@@ -273,7 +273,11 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp 
       <div
         ref={frameRef}
         className="canvas-frame"
-        style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`, transformOrigin: '0 0' }}
+        style={{
+          aspectRatio: `${document.width} / ${document.height}`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
+          transformOrigin: '0 0',
+        }}
       >
         <canvas
           ref={canvasRef}

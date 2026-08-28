@@ -29,6 +29,12 @@ button { -webkit-tap-highlight-color: transparent; }
 .template-icon { font-size: 52px; }
 .template-card strong { font-size: 24px; }
 .template-card small { font-size: 15px; color: #756b79; }
+.orientation-grid { grid-template-columns: repeat(2, 1fr); max-width: 480px; margin: 0 auto; }
+.orientation-card { min-height: 220px; }
+.orientation-swatch { display: block; border: 5px solid #6b4eff; border-radius: 10px; background: #f4efff; }
+.orientation-swatch-portrait { width: 62px; height: 88px; }
+.orientation-swatch-landscape { width: 88px; height: 62px; }
+.back-link { margin-top: 20px; border: 0; background: transparent; color: #756b79; font-weight: 800; font-size: 16px; padding: 8px; }
 
 .app-shell { width: 100%; height: 100%; display: flex; flex-direction: column; background: #dce6ea; }
 .toolbar { min-height: 92px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; overflow-x: auto; background: #fff; box-shadow: 0 3px 14px rgba(38,32,45,.14); z-index: 5; }
