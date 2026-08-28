@@ -51,6 +51,7 @@ export default function App() {
           onDelete={drawing.deleteActiveLayer}
           onToggle={drawing.toggleLayer}
           onClear={drawing.clearActiveLayer}
+          onMove={drawing.moveActiveLayer}
         />
       </div>
     </div>
