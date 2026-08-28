@@ -155,6 +155,7 @@ export default function App() {
           document={drawing.document}
           settings={settings}
           onCommitStroke={drawing.commitStroke}
+          onCommitBlur={drawing.commitBlur}
           onCommitStamp={drawing.commitStamp}
         />
         <LayerPanel

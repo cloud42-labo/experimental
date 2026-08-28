@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DrawingDocument, Point, StampObject, StrokeObject, ToolSettings } from '../domain/drawing';
-import { STAMP_SIZE } from '../domain/drawing';
+import type { BlurObject, DrawingDocument, Point, StampObject, StrokeObject, ToolSettings } from '../domain/drawing';
+import { DEFAULT_BLUR_STRENGTH, STAMP_SIZE } from '../domain/drawing';
 import { renderDocument } from '../engine/renderer';
 
 type Props = {
   document: DrawingDocument;
   settings: ToolSettings;
   onCommitStroke: (stroke: StrokeObject) => void;
+  onCommitBlur: (blur: BlurObject) => void;
   onCommitStamp: (stamp: StampObject) => void;
 };
 
@@ -34,16 +35,13 @@ const distance = (a: ScreenPoint, b: ScreenPoint) => Math.hypot(a.x - b.x, a.y -
 const midpoint = (a: ScreenPoint, b: ScreenPoint) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp }: Props) {
+export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, onCommitStamp }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const activePointerId = useRef<number | null>(null);
-  const [draft, setDraft] = useState<StrokeObject | null>(null);
+  const [draft, setDraft] = useState<StrokeObject | BlurObject | null>(null);
   const lastPenAt = useRef(0);
 
-  // 2本指ピンチでの拡大・縮小・移動。Documentのデータやcanvasの実解像度は変えず、
-  // .canvas-frameへのCSS transformだけで見た目のズームを表現する（PNG書き出しは
-  // 別のオフスクリーンcanvasにDocumentから再描画するため影響を受けない）。
   const [viewport, setViewport] = useState<Viewport>(IDENTITY_VIEWPORT);
   const touchPoints = useRef<Map<number, ScreenPoint>>(new Map());
   const pinchRef = useRef<PinchState | null>(null);
@@ -80,7 +78,6 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp 
     return !event.isPrimary;
   };
 
-  // 進行中の1本指ストロークを、コミットせずに破棄する（ピンチ開始時に呼ぶ）。
   const cancelActiveDraw = () => {
     if (activePointerId.current !== null) {
       const canvas = canvasRef.current;
@@ -124,19 +121,11 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp 
     const mid1 = midpoint(p1, p2);
     const newScale = clamp(pinch.scale0 * (dist1 / pinch.dist0), MIN_SCALE, MAX_SCALE);
 
-    // ピンチ開始時に中点の下にあった位置(local座標)を求め、同じ位置が常に
-    // 現在の中点の下に来るようtx/tyを解く（拡大中心を2本指の中点に維持する）。
     const localX = (pinch.mid0.x - pinch.rectLeft0) / pinch.scale0;
     const localY = (pinch.mid0.y - pinch.rectTop0) / pinch.scale0;
     let tx = mid1.x - pinch.rectLeft0 + pinch.tx0 - localX * newScale;
     let ty = mid1.y - pinch.rectTop0 + pinch.ty0 - localY * newScale;
 
-    // transform-origin: 0 0（フレーム左上）で拡大しているため、フレーム中心を
-    // 動かさない「centered」な状態はtx=0ではなく tx=-maxPanX になる。
-    // パン可能範囲は、左端をコンテナ左端に合わせた状態(tx=0)から右端を
-    // コンテナ右端に合わせた状態(tx=-2*maxPanX)までの幅2*maxPanXで、
-    // これによりMAX_SCALE時にキャンバスの端・角まで過不足なく到達できる。
-    // 等倍(scale=1)ではmaxPanX=0となりpanは発生しない。
     const maxPanX = Math.max(0, (pinch.baseWidth * (newScale - 1)) / 2);
     const maxPanY = Math.max(0, (pinch.baseHeight * (newScale - 1)) / 2);
     tx = clamp(tx, -2 * maxPanX, 0);
@@ -153,6 +142,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp 
 
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (activePointerId.current !== null) return;
+    if (settings.mode === 'eyedropper') return;
     if (shouldIgnorePointer(event) || !activeLayer || activeLayer.locked || !activeLayer.visible) return;
     event.preventDefault();
 
@@ -168,8 +158,6 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp 
         color: settings.color,
       };
       if (event.pointerType === 'touch') {
-        // タッチはタップ完了(pointerup)まで保留する。指を離す前に2本目が
-        // 触れたらピンチ扱いへ切り替わり、このスタンプは作成しない。
         pendingStampRef.current = { pointerId: event.pointerId, stamp };
       } else {
         onCommitStamp(stamp);
@@ -179,13 +167,25 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp 
 
     activePointerId.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const point = pointFromEvent(event);
+    if (settings.brush === 'blur') {
+      setDraft({
+        id: crypto.randomUUID(),
+        type: 'blur',
+        size: settings.size,
+        strength: DEFAULT_BLUR_STRENGTH,
+        points: [point],
+      });
+      return;
+    }
+
     setDraft({
       id: crypto.randomUUID(),
       type: 'stroke',
       brush: settings.brush,
       color: settings.color,
       size: settings.size,
-      points: [pointFromEvent(event)],
+      points: [point],
     });
   };
 
@@ -207,14 +207,14 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitStamp 
     if (activePointerId.current !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     activePointerId.current = null;
-    if (draft) onCommitStroke(draft);
+    if (draft?.type === 'blur') onCommitBlur(draft);
+    else if (draft?.type === 'stroke') onCommitStroke(draft);
     setDraft(null);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'touch') {
       if (touchPoints.current.size >= 2 && !touchPoints.current.has(event.pointerId)) {
-        // 3本目以降の指は無視する（既存2本のピンチはそのまま継続）。
         event.preventDefault();
         return;
       }
