@@ -4,6 +4,7 @@ const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
   { key: 'pen', icon: '✏️', label: 'ペン' },
   { key: 'marker', icon: '▰', label: 'マーカー' },
   { key: 'eraser', icon: '⌫', label: '消しゴム' },
+  { key: 'blur', icon: '◌', label: 'ぼかし' },
   { key: 'rainbow', icon: '◐', label: '虹' },
   { key: 'neon', icon: '✦', label: 'ネオン' },
 ];
@@ -66,7 +67,7 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
       </div>
 
       <label className="compact-size-control">
-        <span>太さ <strong>{settings.size}</strong></span>
+        <span>{settings.brush === 'blur' && settings.mode === 'brush' ? 'ぼかす幅' : '太さ'} <strong>{settings.size}</strong></span>
         <input
           type="range"
           min="1"
