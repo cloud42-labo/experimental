@@ -4,13 +4,13 @@ import { createInitialDocument } from '../domain/drawing';
 
 const MAX_HISTORY = 60;
 
-type History = {
+export type DrawingHistory = {
   past: DrawingDocument[];
   present: DrawingDocument;
   future: DrawingDocument[];
 };
 
-function push(history: History, next: DrawingDocument): History {
+function push(history: DrawingHistory, next: DrawingDocument): DrawingHistory {
   return {
     past: [...history.past, history.present].slice(-MAX_HISTORY),
     present: next,
@@ -19,7 +19,7 @@ function push(history: History, next: DrawingDocument): History {
 }
 
 export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
-  const [history, setHistory] = useState<History>(() => ({
+  const [history, setHistory] = useState<DrawingHistory>(() => ({
     past: [],
     present: createInitialDocument(initialTemplate),
     future: [],
@@ -27,6 +27,14 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
 
   const reset = useCallback((template: TemplateKind, orientation: Orientation = 'portrait') => {
     setHistory({ past: [], present: createInitialDocument(template, orientation), future: [] });
+  }, []);
+
+  const restoreHistory = useCallback((saved: DrawingHistory) => {
+    setHistory({
+      past: saved.past.slice(-MAX_HISTORY),
+      present: saved.present,
+      future: saved.future.slice(0, MAX_HISTORY),
+    });
   }, []);
 
   const selectLayer = useCallback((layerId: string) => {
@@ -152,9 +160,11 @@ export function useDrawingDocument(initialTemplate: TemplateKind = 'blank') {
 
   return {
     document: history.present,
+    historySnapshot: history,
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
     reset,
+    restoreHistory,
     selectLayer,
     commitStroke,
     commitStamp,

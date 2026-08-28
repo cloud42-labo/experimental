@@ -17,6 +17,8 @@ const stamps: Array<{ key: StampKind; icon: string; label: string }> = [
   { key: 'focus', icon: '💥', label: 'しゅうちゅうせん' },
 ];
 
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
 type Props = {
   settings: ToolSettings;
   setSettings: (next: ToolSettings) => void;
@@ -24,13 +26,16 @@ type Props = {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  onSave: () => void;
+  onSaveDraft: () => void;
+  onExportPng: () => void;
+  saveState: SaveState;
 };
 
-export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSave }: Props) {
+export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSaveDraft, onExportPng, saveState }: Props) {
   const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
   const setStamp = (stampKind: StampKind) => setSettings({ ...settings, mode: 'stamp', stampKind });
   const setColor = (color: string) => setSettings({ ...settings, color, brush: settings.brush === 'eraser' ? 'pen' : settings.brush });
+  const saveLabel = saveState === 'saving' ? 'ほぞん中…' : saveState === 'saved' ? 'ほぞん済み' : saveState === 'error' ? 'もう一度ほぞん' : 'ほぞん';
 
   return (
     <header className="toolbar" aria-label="おえかき どうぐ">
@@ -90,7 +95,8 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
       <div className="tool-section action-row">
         <button className="round-action" disabled={!canUndo} onClick={onUndo} aria-label="ひとつ もどる">↶</button>
         <button className="round-action" disabled={!canRedo} onClick={onRedo} aria-label="やりなおす">↷</button>
-        <button className="save-button" onClick={onSave}>💾 ほぞん</button>
+        <button className="save-button" onClick={onSaveDraft} disabled={saveState === 'saving'}>💾 {saveLabel}</button>
+        <button className="export-button" onClick={onExportPng}>🖼️ PNG</button>
       </div>
     </header>
   );
