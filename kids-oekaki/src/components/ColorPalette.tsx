@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
 const QUICK_COLORS = ['#111111', '#ffffff', '#e03131', '#f08c00', '#f6c90e', '#2f9e44', '#1098ad', '#1971c2', '#7048e8', '#c2255c'];
@@ -81,8 +81,13 @@ function hsvToRgb({ h, s, v }: HSV): RGB {
 export function ColorPalette({ color, recentColors, eyedropperActive, onColorChange, onEyedropper }: Props) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('wheel');
+  const [hexDraft, setHexDraft] = useState(color.toUpperCase());
   const rgb = useMemo(() => hexToRgb(color), [color]);
   const hsv = useMemo(() => rgbToHsv(rgb), [rgb]);
+
+  useEffect(() => {
+    setHexDraft(color.toUpperCase());
+  }, [color]);
 
   const updateHsv = (next: Partial<HSV>) => onColorChange(rgbToHex(hsvToRgb({ ...hsv, ...next })));
   const updateRgb = (key: keyof RGB, value: number) => onColorChange(rgbToHex({ ...rgb, [key]: value }));
@@ -100,6 +105,16 @@ export function ColorPalette({ color, recentColors, eyedropperActive, onColorCha
     const s = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     const v = 1 - Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
     updateHsv({ s, v });
+  };
+
+  const commitHexDraft = () => {
+    const normalized = normalizeHex(hexDraft);
+    if (!normalized) {
+      setHexDraft(color.toUpperCase());
+      return;
+    }
+    onColorChange(normalized);
+    setHexDraft(normalized.toUpperCase());
   };
 
   return (
@@ -169,12 +184,27 @@ export function ColorPalette({ color, recentColors, eyedropperActive, onColorCha
             <span className="hex-preview" style={{ background: color }} />
             <span>HEX</span>
             <input
-              value={color.toUpperCase()}
+              value={hexDraft}
               onChange={(event) => {
-                const normalized = normalizeHex(event.target.value);
-                if (normalized) onColorChange(normalized);
+                const next = event.target.value.toUpperCase();
+                setHexDraft(next);
+                const raw = next.trim().replace(/^#/, '');
+                if (raw.length === 6) {
+                  const normalized = normalizeHex(next);
+                  if (normalized) onColorChange(normalized);
+                }
               }}
+              onBlur={commitHexDraft}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  commitHexDraft();
+                  event.currentTarget.blur();
+                }
+              }}
+              maxLength={7}
               spellCheck={false}
+              aria-label="HEXカラーコード"
             />
           </label>
 
