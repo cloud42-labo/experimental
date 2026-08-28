@@ -61,6 +61,20 @@ ChatGPT / Chris の再判定や追加承認を必須のマージゲートにし�
 - 自前のGitHub Actionsワークフロー（`openai/codex-action` / `anthropics/claude-code-action`をAPI課金で呼び出す方式）は課金回避のため使用しない
 - 詳細な共通レビュー方針は [brain/notes/ai-pr-review-loop](https://github.com/cloud42-labo/brain/blob/main/notes/ai-pr-review-loop.md) を参照。ただし**自己マージ可否については本ファイルのexperimental例外を優先する**
 
+### マージ後の完了トランザクション
+
+Notion管理下のTaskに対応するPRは、**GitHubでマージしただけでは完了ではない**。マージ担当の作業エージェントが、Notion同期と後続Taskの解放までを同じ完了処理として実行する。
+
+1. **マージ前にNotion接続を確認する。** 対応Taskを取得できず、マージ後のStatus更新を保証できない場合は、Notion管理下のPRをマージしない。
+2. PRをマージし、必要なCI / Deploy / Releaseが成功したことを確認する。
+3. 対応するStories & Tasksへ `Pull Request`、`Result`、`Completed At` を記録し、Acceptance Criteriaを満たしたTaskだけ `Status = Done` にする。
+4. そのTaskを前提・Blockerにしている後続Taskを再取得して依存関係を再評価する。
+5. 他の未完了BlockerがなければBlocker記述を解除し、Definition of Readyを満たす後続Taskを `Ready` に進める。
+6. Parent Story / Epicの状態も、子Taskの最新状態に基づいて必要な場合だけ更新する。
+7. 最後に再取得して、GitHubのmerge状態とNotionのTask/後続Taskが一致していることを確認する。
+
+この処理は冪等に行い、再実行しても二重完了・不正なStatus遷移を起こさないこと。対応Taskを特定できない、Acceptance Criteriaの充足が不明、Human実機確認などのGateが残る場合は推測でDoneにしない。**「マージしたので終了」ではなく、「GitHubとNotionの整合確認が通ったので終了」**を終了条件とする。
+
 ## バージョニング
 
 試作が育って継続的に使われるようになったアプリには、セマンティックバージョニング
