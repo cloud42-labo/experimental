@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { BrushKind, StampKind, ToolSettings } from '../domain/drawing';
 
 const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
@@ -34,6 +34,7 @@ type Props = {
 };
 
 export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSaveDraft, onExportPng, saveState }: Props) {
+  const stampMenuRef = useRef<HTMLDetailsElement>(null);
   const stampPopoverRef = useRef<HTMLDivElement>(null);
   const [stampPopoverPosition, setStampPopoverPosition] = useState({ top: 76, left: VIEWPORT_MARGIN });
   const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
@@ -48,13 +49,28 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
 
     const anchorRect = summary.getBoundingClientRect();
     const popoverRect = popover.getBoundingClientRect();
-    const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - popoverRect.width - VIEWPORT_MARGIN);
-    const maxTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - popoverRect.height - VIEWPORT_MARGIN);
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - popoverRect.width - VIEWPORT_MARGIN);
+    const maxTop = Math.max(VIEWPORT_MARGIN, viewportHeight - popoverRect.height - VIEWPORT_MARGIN);
     setStampPopoverPosition({
       left: Math.min(Math.max(anchorRect.left, VIEWPORT_MARGIN), maxLeft),
       top: Math.min(Math.max(anchorRect.bottom + 6, VIEWPORT_MARGIN), maxTop),
     });
   };
+
+  useEffect(() => {
+    const reposition = () => {
+      const details = stampMenuRef.current;
+      if (details?.open) positionStampPopover(details);
+    };
+    window.addEventListener('resize', reposition);
+    window.visualViewport?.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('resize', reposition);
+      window.visualViewport?.removeEventListener('resize', reposition);
+    };
+  }, []);
 
   return (
     <header className="toolbar creative-toolbar" aria-label="描画ツール">
@@ -72,7 +88,7 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
           </button>
         ))}
 
-        <details className="stamp-menu" onToggle={(event) => positionStampPopover(event.currentTarget)}>
+        <details ref={stampMenuRef} className="stamp-menu" onToggle={(event) => positionStampPopover(event.currentTarget)}>
           <summary className={settings.mode === 'stamp' ? 'compact-tool active' : 'compact-tool'} title="スタンプ">
             <span className="compact-tool-icon">◆</span>
             <span className="compact-tool-label">スタンプ</span>
