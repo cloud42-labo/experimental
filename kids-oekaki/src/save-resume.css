@@ -1,3 +1,8 @@
+.start-screen {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .continue-button {
   width: min(420px, 100%);
   min-height: 72px;
