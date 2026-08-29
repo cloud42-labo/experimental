@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { BrushKind, StampKind, ToolSettings } from '../domain/drawing';
 
 const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
@@ -17,8 +17,6 @@ const stamps: Array<{ key: StampKind; icon: string; label: string }> = [
   { key: 'focus', icon: '✺', label: '集中線' },
 ];
 
-const STAMP_POPOVER_WIDTH = 170;
-const STAMP_POPOVER_HEIGHT = 118;
 const VIEWPORT_MARGIN = 8;
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -36,6 +34,7 @@ type Props = {
 };
 
 export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSaveDraft, onExportPng, saveState }: Props) {
+  const stampPopoverRef = useRef<HTMLDivElement>(null);
   const [stampPopoverPosition, setStampPopoverPosition] = useState({ top: 76, left: VIEWPORT_MARGIN });
   const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
   const setStamp = (stampKind: StampKind) => setSettings({ ...settings, mode: 'stamp', stampKind });
@@ -44,14 +43,16 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
   const positionStampPopover = (details: HTMLDetailsElement) => {
     if (!details.open) return;
     const summary = details.querySelector('summary');
-    if (!summary) return;
+    const popover = stampPopoverRef.current;
+    if (!summary || !popover) return;
 
-    const rect = summary.getBoundingClientRect();
-    const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - STAMP_POPOVER_WIDTH - VIEWPORT_MARGIN);
-    const maxTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - STAMP_POPOVER_HEIGHT - VIEWPORT_MARGIN);
+    const anchorRect = summary.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+    const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - popoverRect.width - VIEWPORT_MARGIN);
+    const maxTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - popoverRect.height - VIEWPORT_MARGIN);
     setStampPopoverPosition({
-      left: Math.min(Math.max(rect.left, VIEWPORT_MARGIN), maxLeft),
-      top: Math.min(Math.max(rect.bottom + 6, VIEWPORT_MARGIN), maxTop),
+      left: Math.min(Math.max(anchorRect.left, VIEWPORT_MARGIN), maxLeft),
+      top: Math.min(Math.max(anchorRect.bottom + 6, VIEWPORT_MARGIN), maxTop),
     });
   };
 
@@ -76,7 +77,7 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
             <span className="compact-tool-icon">◆</span>
             <span className="compact-tool-label">スタンプ</span>
           </summary>
-          <div className="stamp-popover" style={stampPopoverPosition}>
+          <div ref={stampPopoverRef} className="stamp-popover" style={stampPopoverPosition}>
             {stamps.map((stamp) => (
               <button key={stamp.key} className={settings.mode === 'stamp' && settings.stampKind === stamp.key ? 'active' : ''} onClick={() => setStamp(stamp.key)}>
                 <span>{stamp.icon}</span>{stamp.label}
