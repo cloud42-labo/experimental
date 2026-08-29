@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { BrushKind, StampKind, ToolSettings } from '../domain/drawing';
 
 const brushes: Array<{ key: BrushKind; icon: string; label: string }> = [
@@ -16,6 +17,10 @@ const stamps: Array<{ key: StampKind; icon: string; label: string }> = [
   { key: 'focus', icon: '✺', label: '集中線' },
 ];
 
+const STAMP_POPOVER_WIDTH = 170;
+const STAMP_POPOVER_HEIGHT = 118;
+const VIEWPORT_MARGIN = 8;
+
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 type Props = {
@@ -31,9 +36,24 @@ type Props = {
 };
 
 export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSaveDraft, onExportPng, saveState }: Props) {
+  const [stampPopoverPosition, setStampPopoverPosition] = useState({ top: 76, left: VIEWPORT_MARGIN });
   const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
   const setStamp = (stampKind: StampKind) => setSettings({ ...settings, mode: 'stamp', stampKind });
   const saveLabel = saveState === 'saving' ? '保存中' : saveState === 'saved' ? '保存済' : saveState === 'error' ? '再保存' : '保存';
+
+  const positionStampPopover = (details: HTMLDetailsElement) => {
+    if (!details.open) return;
+    const summary = details.querySelector('summary');
+    if (!summary) return;
+
+    const rect = summary.getBoundingClientRect();
+    const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - STAMP_POPOVER_WIDTH - VIEWPORT_MARGIN);
+    const maxTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - STAMP_POPOVER_HEIGHT - VIEWPORT_MARGIN);
+    setStampPopoverPosition({
+      left: Math.min(Math.max(rect.left, VIEWPORT_MARGIN), maxLeft),
+      top: Math.min(Math.max(rect.bottom + 6, VIEWPORT_MARGIN), maxTop),
+    });
+  };
 
   return (
     <header className="toolbar creative-toolbar" aria-label="描画ツール">
@@ -51,12 +71,12 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
           </button>
         ))}
 
-        <details className="stamp-menu">
+        <details className="stamp-menu" onToggle={(event) => positionStampPopover(event.currentTarget)}>
           <summary className={settings.mode === 'stamp' ? 'compact-tool active' : 'compact-tool'} title="スタンプ">
             <span className="compact-tool-icon">◆</span>
             <span className="compact-tool-label">スタンプ</span>
           </summary>
-          <div className="stamp-popover">
+          <div className="stamp-popover" style={stampPopoverPosition}>
             {stamps.map((stamp) => (
               <button key={stamp.key} className={settings.mode === 'stamp' && settings.stampKind === stamp.key ? 'active' : ''} onClick={() => setStamp(stamp.key)}>
                 <span>{stamp.icon}</span>{stamp.label}
