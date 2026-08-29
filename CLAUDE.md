@@ -67,12 +67,12 @@ Notion管理下のTaskに対応するPRは、**GitHubでマージしただけで
 
 1. **マージ前にNotion接続を確認する。** 対応Taskを取得できず、マージ後のStatus更新を保証できない場合は、Notion管理下のPRをマージしない。
 2. PRをマージし、必要なCI / Deploy / Releaseが成功したことを確認する。
-3. 対応するStories & Tasksへ `Pull Request` と `Result` を記録する。**Acceptance Criteriaをすべて満たした場合に限り**、`Completed At` を記録し、同じ完了判定の中で `Status = Done` にする。AC未達、Human実機確認待ち、Release待ち等のGateが残る場合は `Completed At` を設定せず、Taskを未完了状態のまま維持する。
-4. Task本文に `## AI Handoff` がある場合は、完了更新前に現在のhandoffを再取得する。自分が保持する `workflow_state = active` のhandoffであることをread-before-writeで確認し、TaskをDoneにする同じ完了トランザクション内で `workflow_state = completed` へ更新する。別ownerのactive handoff、更新競合、契約不整合があれば推測更新せず停止する。
+3. 対応するStories & Tasksを再取得し、Acceptance Criteriaと残存Gateを判定する。Task本文に `## AI Handoff` があり、今回TaskをDoneへ進められる場合は、**完了情報を書き込む前に**現在のhandoffを再取得し、自分が保持する `workflow_state = active` のhandoffであることをread-before-writeで確認する。別ownerのactive handoff、更新競合、契約不整合があれば `Completed At` / `Status = Done` を書かず停止する。AC未達、Human実機確認待ち、Release待ち等のGateが残る場合はhandoffを `active` のまま維持する。
+4. Stories & Tasksへ `Pull Request` と `Result` を記録する。**Acceptance Criteriaをすべて満たし、必要なAI Handoff事前確認にも成功した場合に限り**、同じ論理的完了トランザクションの中で対象handoffを `workflow_state = completed` へ更新し、`Completed At` と `Status = Done` を設定する。AC未達またはGate残存時は `Completed At` を設定せず、Statusも未完了状態のまま維持し、handoffもactiveのまま残す。
 5. そのTaskを前提・Blockerにしている後続Taskを再取得して依存関係を再評価する。
 6. 他の未完了BlockerがなければBlocker記述を解除し、Definition of Readyを満たす後続Taskを `Ready` に進める。
 7. Parent Story / Epicの状態も、子Taskの最新状態に基づいて必要な場合だけ更新する。
-8. 最後に再取得して、GitHubのmerge状態、NotionのTask/後続Task、および利用時はAI Handoffの `workflow_state = completed` が一致していることを確認する。
+8. 最後に再取得して、GitHubのmerge状態とNotionのTask/後続Taskが一致していることを確認する。**TaskがDoneへ遷移した場合に限り**、利用中のAI Handoffが `workflow_state = completed` であることも確認する。Taskが未完了なら、外部イベント待ち等で再開可能なhandoffは `active` のまま保持する。
 
 この処理は冪等に行い、再実行しても二重完了・不正なStatus遷移を起こさないこと。対応Taskを特定できない、Acceptance Criteriaの充足が不明、Human実機確認などのGateが残る場合は推測でDoneにしない。**「マージしたので終了」ではなく、「GitHubとNotionの整合確認が通ったので終了」**を終了条件とする。
 
