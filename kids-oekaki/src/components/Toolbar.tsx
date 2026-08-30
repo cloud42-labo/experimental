@@ -34,6 +34,7 @@ type Props = {
 };
 
 export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSaveDraft, onExportPng, saveState }: Props) {
+  const toolbarRef = useRef<HTMLElement>(null);
   const stampMenuRef = useRef<HTMLDetailsElement>(null);
   const stampPopoverRef = useRef<HTMLDivElement>(null);
   const [stampPopoverPosition, setStampPopoverPosition] = useState({ top: 76, left: VIEWPORT_MARGIN });
@@ -64,16 +65,19 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
       const details = stampMenuRef.current;
       if (details?.open) positionStampPopover(details);
     };
+    const toolbar = toolbarRef.current;
     window.addEventListener('resize', reposition);
     window.visualViewport?.addEventListener('resize', reposition);
+    toolbar?.addEventListener('scroll', reposition, { passive: true });
     return () => {
       window.removeEventListener('resize', reposition);
       window.visualViewport?.removeEventListener('resize', reposition);
+      toolbar?.removeEventListener('scroll', reposition);
     };
   }, []);
 
   return (
-    <header className="toolbar creative-toolbar" aria-label="描画ツール">
+    <header ref={toolbarRef} className="toolbar creative-toolbar" aria-label="描画ツール">
       <div className="primary-tools" aria-label="ペンの種類">
         {brushes.map((brush) => (
           <button
