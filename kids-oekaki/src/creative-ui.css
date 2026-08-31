@@ -58,9 +58,7 @@
 .stamp-menu summary { list-style: none; }
 .stamp-menu summary::-webkit-details-marker { display: none; }
 .stamp-popover {
-  position: absolute;
-  top: 58px;
-  left: 0;
+  position: fixed;
   width: 170px;
   padding: 8px;
   display: grid;
@@ -70,7 +68,7 @@
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 12px 28px rgba(0, 0, 0, .16);
-  z-index: 50;
+  z-index: 100;
 }
 .stamp-popover button {
   min-height: 48px;
