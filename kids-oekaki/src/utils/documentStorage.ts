@@ -79,22 +79,45 @@ async function deleteValue(db: IDBDatabase, key: IDBValidKey): Promise<void> {
   });
 }
 
-async function migrateLegacyCurrent(db: IDBDatabase): Promise<StoredDrawingSession | null> {
-  const legacy = await readValue<LegacyStoredDrawingSession>(db, LEGACY_CURRENT_KEY);
-  if (!legacy) return null;
-  validateHistory(legacy.history);
-  const id = crypto.randomUUID();
-  const savedAt = legacy.savedAt || new Date().toISOString();
-  const migrated: StoredDrawingSession = {
-    schemaVersion: SCHEMA_VERSION,
-    id,
-    name: defaultName(legacy.history, savedAt),
-    savedAt,
-    history: legacy.history,
-  };
-  await putValue(db, `${DRAFT_PREFIX}${id}`, migrated);
-  await deleteValue(db, LEGACY_CURRENT_KEY);
-  return migrated;
+function migrateLegacyCurrent(db: IDBDatabase): Promise<StoredDrawingSession | null> {
+  // read → copy → delete must happen in a single readwrite transaction so a
+  // concurrent call (React StrictMode double-mount, a second tab) can never
+  // observe the legacy record between our read and delete and migrate it a
+  // second time.
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const getRequest = store.get(LEGACY_CURRENT_KEY);
+    let migrated: StoredDrawingSession | null = null;
+
+    getRequest.onsuccess = () => {
+      const legacy = getRequest.result as LegacyStoredDrawingSession | undefined;
+      if (!legacy) return;
+      try {
+        validateHistory(legacy.history);
+      } catch (error) {
+        transaction.abort();
+        reject(error);
+        return;
+      }
+      const id = crypto.randomUUID();
+      const savedAt = legacy.savedAt || new Date().toISOString();
+      migrated = {
+        schemaVersion: SCHEMA_VERSION,
+        id,
+        name: defaultName(legacy.history, savedAt),
+        savedAt,
+        history: legacy.history,
+      };
+      store.put(migrated, `${DRAFT_PREFIX}${id}`);
+      store.delete(LEGACY_CURRENT_KEY);
+    };
+    getRequest.onerror = () => reject(getRequest.error ?? new Error('保存データの移行に失敗しました'));
+
+    transaction.oncomplete = () => resolve(migrated);
+    transaction.onerror = () => reject(transaction.error ?? new Error('保存データの移行に失敗しました'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('保存データの移行に失敗しました'));
+  });
 }
 
 export async function saveDrawingSession(
