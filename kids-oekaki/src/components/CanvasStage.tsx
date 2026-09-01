@@ -93,6 +93,12 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     pendingStampRef.current = null;
   };
 
+  const captureActiveTouches = (canvas: HTMLCanvasElement) => {
+    for (const pointerId of touchPoints.current.keys()) {
+      if (!canvas.hasPointerCapture(pointerId)) canvas.setPointerCapture(pointerId);
+    }
+  };
+
   const beginPinch = () => {
     const frame = frameRef.current;
     const points = Array.from(touchPoints.current.values());
@@ -223,6 +229,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
         event.preventDefault();
         cancelActiveDraw();
         cancelPendingStamp();
+        captureActiveTouches(event.currentTarget);
         beginPinch();
         return;
       }
@@ -245,6 +252,9 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
   const endTouch = (event: React.PointerEvent<HTMLCanvasElement>, commit: boolean) => {
     if (event.pointerType !== 'touch') return false;
     touchPoints.current.delete(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     if (pinchRef.current) {
       if (touchPoints.current.size < 2) endPinch();
       return true;
