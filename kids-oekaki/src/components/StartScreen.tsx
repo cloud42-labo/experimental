@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Orientation, TemplateKind } from '../domain/drawing';
+import type { StoredDrawingSession } from '../utils/documentStorage';
 
 const templates: Array<{ key: TemplateKind; icon: string; label: string; note: string }> = [
   { key: 'blank', icon: '🖍️', label: 'まっしろ', note: 'じゆうに かこう' },
@@ -14,13 +15,24 @@ const orientations: Array<{ key: Orientation; icon: string; label: string; note:
 
 type Props = {
   onStart: (template: TemplateKind, orientation: Orientation) => void;
-  onContinue: () => void;
-  canContinue: boolean;
+  onContinue: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
+  savedSessions: StoredDrawingSession[];
   storageError?: string;
 };
 
-export function StartScreen({ onStart, onContinue, canContinue, storageError }: Props) {
+function savedAtLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '保存日時不明';
+  return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+export function StartScreen({ onStart, onContinue, onDelete, savedSessions, storageError }: Props) {
   const [template, setTemplate] = useState<TemplateKind | null>(null);
+
+  const confirmDelete = (session: StoredDrawingSession) => {
+    if (window.confirm(`「${session.name}」を けしても いい？`)) onDelete(session.id);
+  };
 
   if (!template) {
     return (
@@ -29,11 +41,21 @@ export function StartScreen({ onStart, onContinue, canContinue, storageError }: 
           <div className="mascot" aria-hidden="true">🎨</div>
           <h1>なにを かく？</h1>
           <p>すきな かみを えらんでね</p>
-          {canContinue && (
-            <button className="continue-button" onClick={onContinue}>
-              ▶️ つづきから
-              <small>ほぞんした ところから かく</small>
-            </button>
+          {savedSessions.length > 0 && (
+            <section className="saved-work-section" aria-label="保存した作品">
+              <strong className="saved-work-title">▶️ つづきから</strong>
+              <div className="saved-work-list">
+                {savedSessions.map((session) => (
+                  <div className="saved-work-row" key={session.id}>
+                    <button className="saved-work-open" onClick={() => onContinue(session.id)}>
+                      <strong>{session.name}</strong>
+                      <small>{session.history.present.orientation === 'landscape' ? 'よこ' : 'たて'} ・ {savedAtLabel(session.savedAt)}</small>
+                    </button>
+                    <button className="saved-work-delete" onClick={() => confirmDelete(session)} aria-label={`${session.name}を削除`} title="けす">×</button>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
           {storageError && <p className="storage-error" role="alert">⚠️ {storageError}</p>}
           <div className="template-grid">

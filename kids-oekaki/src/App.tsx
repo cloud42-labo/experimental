@@ -7,14 +7,21 @@ import { StartScreen } from './components/StartScreen';
 import { Toolbar } from './components/Toolbar';
 import type { Orientation, TemplateKind, ToolSettings } from './domain/drawing';
 import { useDrawingDocument } from './state/useDrawingDocument';
-import type { DrawingHistory } from './state/useDrawingDocument';
+import { deleteDrawingSession, listDrawingSessions, saveDrawingSession } from './utils/documentStorage';
+import type { StoredDrawingSession } from './utils/documentStorage';
 import { exportPng } from './utils/exportPng';
-import { loadDrawingSession, saveDrawingSession } from './utils/documentStorage';
 import './save-resume.css';
 import './creative-ui.css';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 const RECENT_COLORS_KEY = 'kids-oekaki-recent-colors';
+const DEFAULT_SETTINGS: ToolSettings = {
+  mode: 'brush',
+  brush: 'pen',
+  stampKind: 'heart',
+  color: '#111111',
+  size: 8,
+};
 
 function componentHex(value: number) {
   return Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
@@ -22,7 +29,8 @@ function componentHex(value: number) {
 
 export default function App() {
   const [started, setStarted] = useState(false);
-  const [savedHistory, setSavedHistory] = useState<DrawingHistory | null>(null);
+  const [savedSessions, setSavedSessions] = useState<StoredDrawingSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<string>();
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [recentColors, setRecentColors] = useState<string[]>(() => {
@@ -33,13 +41,7 @@ export default function App() {
       return [];
     }
   });
-  const [settings, setSettings] = useState<ToolSettings>({
-    mode: 'brush',
-    brush: 'pen',
-    stampKind: 'heart',
-    color: '#111111',
-    size: 8,
-  });
+  const [settings, setSettings] = useState<ToolSettings>(DEFAULT_SETTINGS);
   const drawing = useDrawingDocument();
 
   useEffect(() => {
@@ -48,9 +50,9 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    void loadDrawingSession()
-      .then((session) => {
-        if (!cancelled && session) setSavedHistory(session.history);
+    void listDrawingSessions()
+      .then((sessions) => {
+        if (!cancelled) setSavedSessions(sessions);
       })
       .catch((error: unknown) => {
         if (!cancelled) setStorageError(error instanceof Error ? error.message : '保存した作品を読めませんでした');
@@ -59,10 +61,12 @@ export default function App() {
   }, []);
 
   const saveCurrent = async (showProgress = true) => {
+    if (!activeSessionId) return;
     if (showProgress) setSaveState('saving');
     try {
-      const session = await saveDrawingSession(drawing.historySnapshot);
-      setSavedHistory(session.history);
+      const existingName = savedSessions.find((session) => session.id === activeSessionId)?.name;
+      const session = await saveDrawingSession(activeSessionId, drawing.historySnapshot, settings, existingName);
+      setSavedSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
       setStorageError(undefined);
       if (showProgress) setSaveState('saved');
     } catch {
@@ -72,23 +76,39 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!started) return;
+    if (!started || !activeSessionId) return;
     setSaveState((current) => current === 'error' ? current : 'idle');
     const timer = window.setTimeout(() => { void saveCurrent(false); }, 1200);
     return () => window.clearTimeout(timer);
-  }, [started, drawing.historySnapshot]);
+  }, [started, activeSessionId, drawing.historySnapshot, settings]);
 
   const start = (template: TemplateKind, orientation: Orientation) => {
     drawing.reset(template, orientation);
+    setSettings(DEFAULT_SETTINGS);
+    setActiveSessionId(crypto.randomUUID());
     setSaveState('idle');
     setStarted(true);
   };
 
-  const continueSaved = () => {
-    if (!savedHistory) return;
-    drawing.restoreHistory(savedHistory);
+  const continueSaved = (sessionId: string) => {
+    const session = savedSessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    drawing.restoreHistory(session.history);
+    setSettings(session.settings ?? DEFAULT_SETTINGS);
+    setActiveSessionId(session.id);
     setSaveState('saved');
     setStarted(true);
+  };
+
+  const deleteSaved = async (sessionId: string) => {
+    try {
+      await deleteDrawingSession(sessionId);
+      setSavedSessions((current) => current.filter((session) => session.id !== sessionId));
+      if (activeSessionId === sessionId) setActiveSessionId(null);
+      setStorageError(undefined);
+    } catch {
+      setStorageError('作品を削除できませんでした。');
+    }
   };
 
   const applyColor = (color: string) => {
@@ -123,7 +143,8 @@ export default function App() {
       <StartScreen
         onStart={start}
         onContinue={continueSaved}
-        canContinue={Boolean(savedHistory)}
+        onDelete={(sessionId) => void deleteSaved(sessionId)}
+        savedSessions={savedSessions}
         storageError={storageError}
       />
     );
