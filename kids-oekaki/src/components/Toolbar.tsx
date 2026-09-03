@@ -39,7 +39,10 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
   const stampPopoverRef = useRef<HTMLDivElement>(null);
   const [stampPopoverPosition, setStampPopoverPosition] = useState({ top: 76, left: VIEWPORT_MARGIN });
   const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
-  const setStamp = (stampKind: StampKind) => setSettings({ ...settings, mode: 'stamp', stampKind });
+  const setStamp = (stampKind: StampKind) => {
+    setSettings({ ...settings, mode: 'stamp', stampKind });
+    if (stampMenuRef.current) stampMenuRef.current.open = false;
+  };
   const saveLabel = saveState === 'saving' ? '保存中' : saveState === 'saved' ? '保存済' : saveState === 'error' ? '再保存' : '保存';
 
   const positionStampPopover = (details: HTMLDetailsElement) => {
