@@ -160,8 +160,9 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     const rect = frame.getBoundingClientRect();
     const baseWidth = rect.width / viewport.scale;
     const baseHeight = rect.height / viewport.scale;
-    let x = viewport.x + (baseWidth * (viewport.scale - nextScale)) / 2;
-    let y = viewport.y + (baseHeight * (viewport.scale - nextScale)) / 2;
+    const scaleRatio = nextScale / viewport.scale;
+    let x = viewport.x * scaleRatio + (baseWidth * (1 - scaleRatio)) / 2;
+    let y = viewport.y * scaleRatio + (baseHeight * (1 - scaleRatio)) / 2;
     x = clamp(x, -baseWidth * (nextScale - 1), 0);
     y = clamp(y, -baseHeight * (nextScale - 1), 0);
     setViewport({ scale: nextScale, x, y });
