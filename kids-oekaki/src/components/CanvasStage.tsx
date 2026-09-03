@@ -28,7 +28,8 @@ type PinchState = {
 };
 
 const MIN_SCALE = 1;
-const MAX_SCALE = 4;
+const MAX_SCALE = 8;
+const ZOOM_STEP = 1.5;
 const IDENTITY_VIEWPORT: Viewport = { scale: 1, x: 0, y: 0 };
 
 const distance = (a: ScreenPoint, b: ScreenPoint) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -145,6 +146,27 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
   };
 
   const resetViewport = () => setViewport(IDENTITY_VIEWPORT);
+
+  const zoomByButton = (factor: number) => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const nextScale = clamp(viewport.scale * factor, MIN_SCALE, MAX_SCALE);
+    if (Math.abs(nextScale - MIN_SCALE) < 0.001) {
+      resetViewport();
+      return;
+    }
+    if (Math.abs(nextScale - viewport.scale) < 0.001) return;
+
+    const rect = frame.getBoundingClientRect();
+    const baseWidth = rect.width / viewport.scale;
+    const baseHeight = rect.height / viewport.scale;
+    const scaleRatio = nextScale / viewport.scale;
+    let x = viewport.x * scaleRatio + (baseWidth * (1 - scaleRatio)) / 2;
+    let y = viewport.y * scaleRatio + (baseHeight * (1 - scaleRatio)) / 2;
+    x = clamp(x, -baseWidth * (nextScale - 1), 0);
+    y = clamp(y, -baseHeight * (nextScale - 1), 0);
+    setViewport({ scale: nextScale, x, y });
+  };
 
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (activePointerId.current !== null) return;
@@ -276,8 +298,6 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     if (!endTouch(event, false)) stop(event);
   };
 
-  const isZoomed = viewport.scale > 1.001;
-
   return (
     <div className="canvas-area">
       <div
@@ -300,16 +320,35 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
           onContextMenu={(event) => event.preventDefault()}
         />
       </div>
-      {isZoomed && (
+      <div className="zoom-controls" aria-label="ズームそうさ">
+        <button
+          type="button"
+          className="zoom-step"
+          onClick={() => zoomByButton(1 / ZOOM_STEP)}
+          disabled={viewport.scale <= MIN_SCALE + 0.001}
+          aria-label="ちいさくする"
+        >
+          −
+        </button>
         <button
           type="button"
           className="zoom-reset"
           onClick={resetViewport}
+          disabled={viewport.scale <= MIN_SCALE + 0.001}
           aria-label="ひろさを もとに もどす"
         >
-          🔍 {Math.round(viewport.scale * 100)}%
+          {Math.round(viewport.scale * 100)}%
         </button>
-      )}
+        <button
+          type="button"
+          className="zoom-step"
+          onClick={() => zoomByButton(ZOOM_STEP)}
+          disabled={viewport.scale >= MAX_SCALE - 0.001}
+          aria-label="おおきくする"
+        >
+          ＋
+        </button>
+      </div>
     </div>
   );
 }
