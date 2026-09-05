@@ -176,21 +176,26 @@ GTIN確定して既存行と重複したときの統合（`revision_reason = mer
 | 列 | 型 | 備考 |
 |---|---|---|
 | `scan_id` | text (UUID) | 主キー |
-| `product_id` | text (UUID) | 解析成功後に後追いで書く。**このシート唯一の更新対象** |
+| `product_id` | text (UUID) | GTIN確定後に `resolveProductId` で後追いで書く |
 | `gtin_jan` | text | 解析で得た値。プレーンテキスト書式 |
 | `gtin_status` | enum | `confirmed`/`unread`/`absent` |
 | `scanned_at` | datetime | シャッター時刻（表面） |
 | `expiry_date` | date | **個体固有。** パッケージ印字の期限日 |
 | `date_marking_type` | enum | `best_before`/`use_by`。商品側にも持つが、読めた実値をここに残す |
 | `lot_number` | text | 個体固有。プレーンテキスト書式 |
-| `final_status` | enum | `success`/`failed`/`aborted`。試行全体の結末 |
-| `attempt_count` | number | 実行した試行回数（1〜3） |
-| `best_job_id` | text (UUID) | 採用した `AIJobs` の行 |
-| `duration_total_ms` | number | シャッターから結果表示までの総時間 |
+| `final_status` | enum | `pending`/`success`/`failed`/`aborted`。試行全体の結末。行作成時点（シャッター時）では
+  未確定のため `pending` で作り、AI解析の試行が出揃った時点で後追いで確定する |
+| `attempt_count` | number | 実行した試行回数（1〜3）。`final_status` 同様、後追いで書く |
+| `best_job_id` | text (UUID) | 採用した `AIJobs` の行。`final_status` 同様、後追いで書く |
+| `duration_total_ms` | number | シャッターから結果表示までの総時間。`final_status` 同様、後追いで書く |
 | `app_version` | text | 例: `0.4.1`。回帰の切り分け用 |
 | `user_agent` | text | 端末・ブラウザ判別（Android Chrome等） |
 | `user_note` | text | 将来のユーザーメモ欄。MVPでは空 |
 | `created_at` | datetime | |
+
+`product_id` を「行作成後の唯一の更新対象」としていたが、`final_status`・`attempt_count`・
+`best_job_id`・`duration_total_ms` も同様に行作成時点では確定しない値であり、AI解析の試行が
+出揃った時点で後追いする（`apps-script-api.md` の `updateScanHistory`）。
 
 `expiry_date` をここに置いたことで、「同じ商品（Products 1行）を3回買って3回撮った」場合に
 3つの期限日が正しく別々に残る。Products側に置いていたら上書きし合っていた。
