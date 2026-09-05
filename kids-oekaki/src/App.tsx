@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { CanvasStage } from './components/CanvasStage';
 import { ColorPalette } from './components/ColorPalette';
@@ -33,6 +33,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<string>();
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [recentColors, setRecentColors] = useState<string[]>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(RECENT_COLORS_KEY) ?? '[]');
@@ -60,19 +61,32 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  const saveCurrent = async (showProgress = true) => {
-    if (!activeSessionId) return;
+  const saveCurrent = (showProgress = true): Promise<boolean> => {
+    if (!activeSessionId) return Promise.resolve(false);
+
+    const sessionId = activeSessionId;
+    const historySnapshot = drawing.historySnapshot;
+    const settingsSnapshot = settings;
+    const existingName = savedSessions.find((session) => session.id === sessionId)?.name;
     if (showProgress) setSaveState('saving');
-    try {
-      const existingName = savedSessions.find((session) => session.id === activeSessionId)?.name;
-      const session = await saveDrawingSession(activeSessionId, drawing.historySnapshot, settings, existingName);
-      setSavedSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
-      setStorageError(undefined);
-      if (showProgress) setSaveState('saved');
-    } catch {
-      if (showProgress) setSaveState('error');
-      setStorageError('保存できませんでした。いまの作品はそのままです。');
-    }
+
+    const operation = async () => {
+      try {
+        const session = await saveDrawingSession(sessionId, historySnapshot, settingsSnapshot, existingName);
+        setSavedSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
+        setStorageError(undefined);
+        if (showProgress) setSaveState('saved');
+        return true;
+      } catch {
+        if (showProgress) setSaveState('error');
+        setStorageError('保存できませんでした。いまの作品はそのままです。');
+        return false;
+      }
+    };
+
+    const queued = saveQueueRef.current.then(operation, operation);
+    saveQueueRef.current = queued.then(() => undefined, () => undefined);
+    return queued;
   };
 
   useEffect(() => {
@@ -98,6 +112,15 @@ export default function App() {
     setActiveSessionId(session.id);
     setSaveState('saved');
     setStarted(true);
+  };
+
+  const returnToStart = async () => {
+    if (!activeSessionId) {
+      setStarted(false);
+      return;
+    }
+    const saved = await saveCurrent(true);
+    if (saved) setStarted(false);
   };
 
   const deleteSaved = async (sessionId: string) => {
@@ -159,6 +182,7 @@ export default function App() {
         canRedo={drawing.canRedo}
         onUndo={drawing.undo}
         onRedo={drawing.redo}
+        onReturnToStart={() => void returnToStart()}
         onSaveDraft={() => void saveCurrent(true)}
         onExportPng={() => void exportPng(drawing.document)}
         saveState={saveState}
