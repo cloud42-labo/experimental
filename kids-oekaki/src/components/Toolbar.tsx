@@ -28,18 +28,22 @@ type Props = {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onReturnToStart: () => void;
   onSaveDraft: () => void;
   onExportPng: () => void;
   saveState: SaveState;
 };
 
-export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onSaveDraft, onExportPng, saveState }: Props) {
+export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRedo, onReturnToStart, onSaveDraft, onExportPng, saveState }: Props) {
   const toolbarRef = useRef<HTMLElement>(null);
   const stampMenuRef = useRef<HTMLDetailsElement>(null);
   const stampPopoverRef = useRef<HTMLDivElement>(null);
   const [stampPopoverPosition, setStampPopoverPosition] = useState({ top: 76, left: VIEWPORT_MARGIN });
   const setBrush = (brush: BrushKind) => setSettings({ ...settings, mode: 'brush', brush });
-  const setStamp = (stampKind: StampKind) => setSettings({ ...settings, mode: 'stamp', stampKind });
+  const setStamp = (stampKind: StampKind) => {
+    setSettings({ ...settings, mode: 'stamp', stampKind });
+    if (stampMenuRef.current) stampMenuRef.current.open = false;
+  };
   const saveLabel = saveState === 'saving' ? '保存中' : saveState === 'saved' ? '保存済' : saveState === 'error' ? '再保存' : '保存';
 
   const positionStampPopover = (details: HTMLDetailsElement) => {
@@ -121,6 +125,7 @@ export function Toolbar({ settings, setSettings, canUndo, canRedo, onUndo, onRed
       <div className="toolbar-spacer" />
 
       <div className="creative-actions">
+        <button className="text-action" onClick={onReturnToStart} disabled={saveState === 'saving'} aria-label="開始画面へ戻る">⌂ <span>もどる</span></button>
         <button className="icon-action" disabled={!canUndo} onClick={onUndo} aria-label="ひとつ戻る" title="戻る">↶</button>
         <button className="icon-action" disabled={!canRedo} onClick={onRedo} aria-label="やり直す" title="やり直す">↷</button>
         <button className="text-action primary" onClick={onSaveDraft} disabled={saveState === 'saving'}>⌑ <span>{saveLabel}</span></button>
