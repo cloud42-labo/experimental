@@ -61,7 +61,7 @@ export default function App() {
   }, []);
 
   const saveCurrent = async (showProgress = true) => {
-    if (!activeSessionId) return;
+    if (!activeSessionId) return false;
     if (showProgress) setSaveState('saving');
     try {
       const existingName = savedSessions.find((session) => session.id === activeSessionId)?.name;
@@ -69,9 +69,11 @@ export default function App() {
       setSavedSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
       setStorageError(undefined);
       if (showProgress) setSaveState('saved');
+      return true;
     } catch {
       if (showProgress) setSaveState('error');
       setStorageError('保存できませんでした。いまの作品はそのままです。');
+      return false;
     }
   };
 
@@ -98,6 +100,15 @@ export default function App() {
     setActiveSessionId(session.id);
     setSaveState('saved');
     setStarted(true);
+  };
+
+  const returnToStart = async () => {
+    if (!activeSessionId) {
+      setStarted(false);
+      return;
+    }
+    const saved = await saveCurrent(true);
+    if (saved) setStarted(false);
   };
 
   const deleteSaved = async (sessionId: string) => {
@@ -152,6 +163,9 @@ export default function App() {
 
   return (
     <div className="app-shell creative-shell">
+      <div className="creative-home-row">
+        <button className="text-action" onClick={() => void returnToStart()} disabled={saveState === 'saving'} aria-label="開始画面へ戻る">⌂ <span>もどる</span></button>
+      </div>
       <Toolbar
         settings={settings}
         setSettings={setSettings}
