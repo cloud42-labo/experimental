@@ -1,5 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+
+// Must match .hue-wheel's width/height and box-shadow inset spread in
+// creative-ui.css: the wheel is a WHEEL_DIAMETER circle whose center is
+// covered by an inset shadow of RING_WIDTH, leaving only the outer
+// RING_WIDTH-wide band showing the conic-gradient hue ring.
+const WHEEL_DIAMETER = 170;
+const RING_WIDTH = 34;
+const WHEEL_RADIUS = WHEEL_DIAMETER / 2;
+const RING_INNER_RADIUS = WHEEL_RADIUS - RING_WIDTH;
+// Generous hit-test margin so a finger landing just inside/outside the
+// visible ring on a tablet still starts a hue drag.
+const RING_HIT_MARGIN = 12;
 
 const QUICK_COLORS = ['#111111', '#ffffff', '#e03131', '#f08c00', '#f6c90e', '#2f9e44', '#1098ad', '#1971c2', '#7048e8', '#c2255c'];
 const SWATCHES = [
@@ -92,12 +104,64 @@ export function ColorPalette({ color, recentColors, eyedropperActive, onColorCha
   const updateHsv = (next: Partial<HSV>) => onColorChange(rgbToHex(hsvToRgb({ ...hsv, ...next })));
   const updateRgb = (key: keyof RGB, value: number) => onColorChange(rgbToHex({ ...rgb, [key]: value }));
 
-  const pickHue = (event: ReactPointerEvent<HTMLDivElement>) => {
+  // The pointerId currently dragging the hue ring, or null when idle. A
+  // drag only starts when a pointer goes down on the visible ring band
+  // (with a touch-friendly margin) — not anywhere in the wheel's hollow
+  // center — but once started it keeps tracking that same pointer's
+  // moves even if it drifts toward the center, so the drag isn't lost
+  // mid-gesture. Tracking the id (not just a boolean) keeps a second
+  // finger touching the wheel mid-drag from hijacking or ending it.
+  const huePointerId = useRef<number | null>(null);
+
+  // The wheel <div> unmounts when the panel closes or the tab switches
+  // away mid-drag (setOpen(false), tab change), so no pointerup/cancel
+  // ever reaches it to clear huePointerId — leaving every future drag
+  // permanently rejected as "already in progress". Reset it whenever the
+  // wheel stops being shown (covers both cases, plus component unmount).
+  useEffect(() => {
+    if (open && tab === 'wheel') {
+      return () => {
+        huePointerId.current = null;
+      };
+    }
+  }, [open, tab]);
+
+  const applyHueFromPoint = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - (rect.left + rect.width / 2);
     const y = event.clientY - (rect.top + rect.height / 2);
     const degrees = (Math.atan2(y, x) * 180) / Math.PI + 90;
     updateHsv({ h: (degrees + 360) % 360 });
+    return { x, y };
+  };
+
+  const startHueDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - (rect.left + rect.width / 2);
+    const y = event.clientY - (rect.top + rect.height / 2);
+    const distance = Math.hypot(x, y);
+    if (distance < RING_INNER_RADIUS - RING_HIT_MARGIN || distance > WHEEL_RADIUS + RING_HIT_MARGIN) {
+      // Tapped the hollow center or well outside the wheel — ignore, per
+      // "リング内側は色相表示で塗りつぶさず" (the center is not a hue target).
+      return;
+    }
+    if (huePointerId.current !== null) return; // a drag is already in progress with another finger
+    huePointerId.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    applyHueFromPoint(event);
+  };
+
+  const continueHueDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (huePointerId.current !== event.pointerId) return;
+    applyHueFromPoint(event);
+  };
+
+  const endHueDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (huePointerId.current !== event.pointerId) return;
+    huePointerId.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   const pickSaturationValue = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -148,8 +212,14 @@ export function ColorPalette({ color, recentColors, eyedropperActive, onColorCha
 
           {tab === 'wheel' && (
             <div className="wheel-tab">
-              <div className="hue-wheel" onPointerDown={pickHue} onPointerMove={(event) => { if (event.buttons) pickHue(event); }}>
-                <span className="hue-cursor" style={{ transform: `rotate(${hsv.h}deg) translateY(-72px)` }} />
+              <div
+                className="hue-wheel"
+                onPointerDown={startHueDrag}
+                onPointerMove={continueHueDrag}
+                onPointerUp={endHueDrag}
+                onPointerCancel={endHueDrag}
+              >
+                <span className="hue-cursor" style={{ transform: `rotate(${hsv.h}deg) translateY(-${WHEEL_RADIUS - RING_WIDTH / 2}px)` }} />
               </div>
               <div
                 className="sv-field"
