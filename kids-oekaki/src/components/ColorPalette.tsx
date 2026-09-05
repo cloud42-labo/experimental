@@ -104,12 +104,14 @@ export function ColorPalette({ color, recentColors, eyedropperActive, onColorCha
   const updateHsv = (next: Partial<HSV>) => onColorChange(rgbToHex(hsvToRgb({ ...hsv, ...next })));
   const updateRgb = (key: keyof RGB, value: number) => onColorChange(rgbToHex({ ...rgb, [key]: value }));
 
-  // True while a hue drag is in progress. A drag only starts when the
-  // pointer goes down on the visible ring band (with a touch-friendly
-  // margin) — not anywhere in the wheel's hollow center — but once
-  // started it keeps tracking pointer moves even if a finger drifts
-  // toward the center, so the drag isn't lost mid-gesture.
-  const hueDragActive = useRef(false);
+  // The pointerId currently dragging the hue ring, or null when idle. A
+  // drag only starts when a pointer goes down on the visible ring band
+  // (with a touch-friendly margin) — not anywhere in the wheel's hollow
+  // center — but once started it keeps tracking that same pointer's
+  // moves even if it drifts toward the center, so the drag isn't lost
+  // mid-gesture. Tracking the id (not just a boolean) keeps a second
+  // finger touching the wheel mid-drag from hijacking or ending it.
+  const huePointerId = useRef<number | null>(null);
 
   const applyHueFromPoint = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -130,19 +132,20 @@ export function ColorPalette({ color, recentColors, eyedropperActive, onColorCha
       // "リング内側は色相表示で塗りつぶさず" (the center is not a hue target).
       return;
     }
-    hueDragActive.current = true;
+    if (huePointerId.current !== null) return; // a drag is already in progress with another finger
+    huePointerId.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     applyHueFromPoint(event);
   };
 
   const continueHueDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!hueDragActive.current) return;
+    if (huePointerId.current !== event.pointerId) return;
     applyHueFromPoint(event);
   };
 
   const endHueDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!hueDragActive.current) return;
-    hueDragActive.current = false;
+    if (huePointerId.current !== event.pointerId) return;
+    huePointerId.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
