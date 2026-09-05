@@ -113,6 +113,19 @@ export function ColorPalette({ color, recentColors, eyedropperActive, onColorCha
   // finger touching the wheel mid-drag from hijacking or ending it.
   const huePointerId = useRef<number | null>(null);
 
+  // The wheel <div> unmounts when the panel closes or the tab switches
+  // away mid-drag (setOpen(false), tab change), so no pointerup/cancel
+  // ever reaches it to clear huePointerId — leaving every future drag
+  // permanently rejected as "already in progress". Reset it whenever the
+  // wheel stops being shown (covers both cases, plus component unmount).
+  useEffect(() => {
+    if (open && tab === 'wheel') {
+      return () => {
+        huePointerId.current = null;
+      };
+    }
+  }, [open, tab]);
+
   const applyHueFromPoint = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - (rect.left + rect.width / 2);
