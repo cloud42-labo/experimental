@@ -190,24 +190,25 @@
 
 .wheel-tab { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .hue-wheel {
+  /* Keep in sync with WHEEL_DIAMETER/RING_WIDTH in ColorPalette.tsx. */
   width: 170px;
   height: 170px;
   border-radius: 50%;
   background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
   position: relative;
-  box-shadow: inset 0 0 0 28px #f8f9fa, 0 0 0 1px #ced4da;
+  box-shadow: inset 0 0 0 34px #f8f9fa, 0 0 0 1px #ced4da;
   touch-action: none;
 }
 .hue-cursor {
   position: absolute;
-  left: calc(50% - 6px);
-  top: calc(50% - 6px);
-  width: 12px;
-  height: 12px;
+  left: calc(50% - 10px);
+  top: calc(50% - 10px);
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: 3px solid #fff;
   box-shadow: 0 0 0 1px #212529;
-  transform-origin: 6px 6px;
+  transform-origin: 10px 10px;
   pointer-events: none;
 }
 .sv-field {
