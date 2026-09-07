@@ -41,6 +41,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
   const frameRef = useRef<HTMLDivElement>(null);
   const activePointerId = useRef<number | null>(null);
   const [draft, setDraft] = useState<StrokeObject | BlurObject | null>(null);
+  const liveStrokeRef = useRef<StrokeObject | null>(null);
   const lastPenAt = useRef(0);
 
   const [viewport, setViewport] = useState<Viewport>(IDENTITY_VIEWPORT);
@@ -52,6 +53,12 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     () => document.layers.find((layer) => layer.id === document.activeLayerId),
     [document],
   );
+
+  const activeLayerIsTopmostVisible = useMemo(() => {
+    const index = document.layers.findIndex((layer) => layer.id === document.activeLayerId);
+    if (index < 0) return false;
+    return !document.layers.slice(index + 1).some((layer) => layer.visible);
+  }, [document]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -79,6 +86,13 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     return !event.isPrimary;
   };
 
+  const restoreCommittedDocument = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    renderDocument(ctx, document, null);
+  };
+
   const cancelActiveDraw = () => {
     if (activePointerId.current !== null) {
       const canvas = canvasRef.current;
@@ -86,6 +100,10 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
         canvas.releasePointerCapture(activePointerId.current);
       }
       activePointerId.current = null;
+    }
+    if (liveStrokeRef.current) {
+      liveStrokeRef.current = null;
+      restoreCommittedDocument();
     }
     setDraft(null);
   };
@@ -168,6 +186,47 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     setViewport({ scale: nextScale, x, y });
   };
 
+  const canUseLiveStroke = (stroke: StrokeObject) =>
+    activeLayerIsTopmostVisible && (stroke.brush === 'pen' || stroke.brush === 'marker');
+
+  const configureLiveStrokeContext = (ctx: CanvasRenderingContext2D, stroke: StrokeObject) => {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = stroke.size;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = stroke.color;
+    ctx.fillStyle = stroke.color;
+    const layerOpacity = Math.max(0.1, Math.min(1, activeLayer?.opacity ?? 1));
+    ctx.globalAlpha = (stroke.brush === 'marker' ? 0.3 : 1) * layerOpacity;
+  };
+
+  const drawLiveDot = (stroke: StrokeObject, point: Point) => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    configureLiveStrokeContext(ctx, stroke);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, stroke.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawLiveSegments = (stroke: StrokeObject, points: Point[]) => {
+    if (!points.length) return;
+    const ctx = canvasRef.current?.getContext('2d');
+    const previous = stroke.points[stroke.points.length - 1];
+    if (!ctx || !previous) return;
+
+    ctx.save();
+    configureLiveStrokeContext(ctx, stroke);
+    ctx.beginPath();
+    ctx.moveTo(previous.x, previous.y);
+    for (const point of points) ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+    ctx.restore();
+    stroke.points.push(...points);
+  };
+
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (activePointerId.current !== null) return;
     if (settings.mode === 'eyedropper') return;
@@ -207,27 +266,46 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
       return;
     }
 
-    setDraft({
+    const stroke: StrokeObject = {
       id: crypto.randomUUID(),
       type: 'stroke',
       brush: settings.brush,
       color: settings.color,
       size: settings.size,
       points: [point],
-    });
+    };
+
+    if (canUseLiveStroke(stroke)) {
+      liveStrokeRef.current = stroke;
+      drawLiveDot(stroke, point);
+      return;
+    }
+
+    setDraft(stroke);
+  };
+
+  const pointsFromMoveEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const coalesced = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    return coalesced.map((raw) => ({
+      x: ((raw.clientX - rect.left) / rect.width) * document.width,
+      y: ((raw.clientY - rect.top) / rect.height) * document.height,
+      pressure: raw.pressure > 0 ? raw.pressure : 0.5,
+    }));
   };
 
   const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (activePointerId.current !== event.pointerId) return;
     event.preventDefault();
-    const coalesced = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    const points = coalesced.map((raw) => ({
-      x: ((raw.clientX - rect.left) / rect.width) * document.width,
-      y: ((raw.clientY - rect.top) / rect.height) * document.height,
-      pressure: raw.pressure > 0 ? raw.pressure : 0.5,
-    }));
+    const points = pointsFromMoveEvent(event);
+
+    const liveStroke = liveStrokeRef.current;
+    if (liveStroke) {
+      drawLiveSegments(liveStroke, points);
+      return;
+    }
+
     setDraft((current) => current ? { ...current, points: [...current.points, ...points] } : current);
   };
 
@@ -235,6 +313,14 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     if (activePointerId.current !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     activePointerId.current = null;
+
+    const liveStroke = liveStrokeRef.current;
+    if (liveStroke) {
+      liveStrokeRef.current = null;
+      onCommitStroke(liveStroke);
+      return;
+    }
+
     if (draft?.type === 'blur') onCommitBlur(draft);
     else if (draft?.type === 'stroke') onCommitStroke(draft);
     setDraft(null);
