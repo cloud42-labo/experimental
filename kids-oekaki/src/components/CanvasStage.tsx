@@ -267,7 +267,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
   const updateDelegatedInkTrail = (event: React.PointerEvent<HTMLCanvasElement>, stroke: StrokeObject) => {
     const presenter = inkPresenterRef.current;
     const canvas = canvasRef.current;
-    if (!presenter || !canvas || event.pointerType !== 'pen') return;
+    if (!presenter || !canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const diameter = Math.max(1, stroke.size * (rect.width / document.width));
