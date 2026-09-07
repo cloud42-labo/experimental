@@ -187,7 +187,9 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
   };
 
   const canUseLiveStroke = (stroke: StrokeObject) =>
-    activeLayerIsTopmostVisible && (stroke.brush === 'pen' || stroke.brush === 'marker');
+    activeLayerIsTopmostVisible
+    && stroke.brush === 'pen'
+    && Math.abs((activeLayer?.opacity ?? 1) - 1) < 0.001;
 
   const configureLiveStrokeContext = (ctx: CanvasRenderingContext2D, stroke: StrokeObject) => {
     ctx.lineCap = 'round';
@@ -196,8 +198,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = stroke.color;
     ctx.fillStyle = stroke.color;
-    const layerOpacity = Math.max(0.1, Math.min(1, activeLayer?.opacity ?? 1));
-    ctx.globalAlpha = (stroke.brush === 'marker' ? 0.3 : 1) * layerOpacity;
+    ctx.globalAlpha = 1;
   };
 
   const drawLiveDot = (stroke: StrokeObject, point: Point) => {
