@@ -7,7 +7,7 @@ import { StartScreen } from './components/StartScreen';
 import { Toolbar } from './components/Toolbar';
 import type { Orientation, TemplateKind, ToolSettings } from './domain/drawing';
 import { useDrawingDocument } from './state/useDrawingDocument';
-import { deleteDrawingSession, listDrawingSessions, saveDrawingSession } from './utils/documentStorage';
+import { deleteDrawingSession, listDrawingSessions, renameDrawingSession, saveDrawingSession } from './utils/documentStorage';
 import type { StoredDrawingSession } from './utils/documentStorage';
 import { exportPng } from './utils/exportPng';
 import './save-resume.css';
@@ -134,6 +134,17 @@ export default function App() {
     }
   };
 
+  const renameSaved = async (sessionId: string, name: string) => {
+    try {
+      const renamed = await renameDrawingSession(sessionId, name);
+      if (!renamed) return;
+      setSavedSessions((current) => current.map((session) => session.id === sessionId ? renamed : session));
+      setStorageError(undefined);
+    } catch {
+      setStorageError('作品の名前を変更できませんでした。');
+    }
+  };
+
   const applyColor = (color: string) => {
     const next = color.toLowerCase();
     setSettings((current) => ({
@@ -167,6 +178,7 @@ export default function App() {
         onStart={start}
         onContinue={continueSaved}
         onDelete={(sessionId) => void deleteSaved(sessionId)}
+        onRename={(sessionId, name) => void renameSaved(sessionId, name)}
         savedSessions={savedSessions}
         storageError={storageError}
       />
