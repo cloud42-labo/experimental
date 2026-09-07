@@ -1,4 +1,5 @@
 import type { ToolSettings } from '../domain/drawing';
+import { renderDocument } from '../engine/renderer';
 import type { DrawingHistory } from '../state/useDrawingDocument';
 
 const DB_NAME = 'kids-oekaki';
@@ -7,6 +8,8 @@ const STORE_NAME = 'drawing-sessions';
 const LEGACY_CURRENT_KEY = 'current';
 const DRAFT_PREFIX = 'draft:';
 const SCHEMA_VERSION = 2;
+const THUMBNAIL_MAX_WIDTH = 180;
+const THUMBNAIL_MAX_HEIGHT = 128;
 
 export type StoredDrawingSession = {
   schemaVersion: number;
@@ -15,6 +18,7 @@ export type StoredDrawingSession = {
   savedAt: string;
   history: DrawingHistory;
   settings?: ToolSettings;
+  thumbnail?: string;
 };
 
 type LegacyStoredDrawingSession = {
@@ -48,6 +52,33 @@ function defaultName(history: DrawingHistory, savedAt: string) {
     ? ''
     : ` ${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   return `${template}${stamp}`;
+}
+
+function normalizeName(name: string | undefined, history: DrawingHistory, savedAt: string) {
+  const trimmed = name?.trim();
+  return trimmed || defaultName(history, savedAt);
+}
+
+function createThumbnail(history: DrawingHistory): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const drawing = history.present;
+  const scale = Math.min(THUMBNAIL_MAX_WIDTH / drawing.width, THUMBNAIL_MAX_HEIGHT / drawing.height, 1);
+  const width = Math.max(1, Math.round(drawing.width * scale));
+  const height = Math.max(1, Math.round(drawing.height * scale));
+  const source = document.createElement('canvas');
+  source.width = drawing.width;
+  source.height = drawing.height;
+  const sourceCtx = source.getContext('2d');
+  if (!sourceCtx) return undefined;
+  renderDocument(sourceCtx, drawing);
+
+  const preview = document.createElement('canvas');
+  preview.width = width;
+  preview.height = height;
+  const previewCtx = preview.getContext('2d');
+  if (!previewCtx) return undefined;
+  previewCtx.drawImage(source, 0, 0, width, height);
+  return preview.toDataURL('image/webp', 0.72);
 }
 
 async function readValue<T>(db: IDBDatabase, key: IDBValidKey): Promise<T | undefined> {
@@ -108,6 +139,7 @@ function migrateLegacyCurrent(db: IDBDatabase): Promise<StoredDrawingSession | n
         name: defaultName(legacy.history, savedAt),
         savedAt,
         history: legacy.history,
+        thumbnail: createThumbnail(legacy.history),
       };
       store.put(migrated, `${DRAFT_PREFIX}${id}`);
       store.delete(LEGACY_CURRENT_KEY);
@@ -133,13 +165,32 @@ export async function saveDrawingSession(
     const session: StoredDrawingSession = {
       schemaVersion: SCHEMA_VERSION,
       id,
-      name: name ?? existing?.name ?? defaultName(history, savedAt),
+      name: normalizeName(name ?? existing?.name, history, savedAt),
       savedAt,
       history,
       settings,
+      thumbnail: createThumbnail(history),
     };
     await putValue(db, `${DRAFT_PREFIX}${id}`, session);
     return session;
+  } finally {
+    db.close();
+  }
+}
+
+export async function renameDrawingSession(id: string, name: string): Promise<StoredDrawingSession | null> {
+  const db = await openDb();
+  try {
+    const key = `${DRAFT_PREFIX}${id}`;
+    const existing = await readValue<StoredDrawingSession>(db, key);
+    if (!existing) return null;
+    validateHistory(existing.history);
+    const renamed: StoredDrawingSession = {
+      ...existing,
+      name: normalizeName(name, existing.history, existing.savedAt),
+    };
+    await putValue(db, key, renamed);
+    return renamed;
   } finally {
     db.close();
   }
@@ -169,7 +220,11 @@ export async function listDrawingSessions(): Promise<StoredDrawingSession[]> {
         if (value.schemaVersion !== SCHEMA_VERSION) {
           throw new Error('この保存データは新しい形式です。アプリを更新してから開いてください。');
         }
-        return value;
+        return {
+          ...value,
+          name: normalizeName(value.name, value.history, value.savedAt),
+          thumbnail: value.thumbnail ?? createThumbnail(value.history),
+        };
       })
       .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   } finally {
@@ -186,7 +241,11 @@ export async function loadDrawingSession(id: string): Promise<StoredDrawingSessi
       throw new Error('この保存データは新しい形式です。アプリを更新してから開いてください。');
     }
     validateHistory(value.history);
-    return value;
+    return {
+      ...value,
+      name: normalizeName(value.name, value.history, value.savedAt),
+      thumbnail: value.thumbnail ?? createThumbnail(value.history),
+    };
   } finally {
     db.close();
   }
