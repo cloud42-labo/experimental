@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+active_voice.pt
+response.wav
+*.wav
+*.mp3
