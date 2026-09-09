@@ -50,27 +50,40 @@ PROMPTS = {
 """
 }
 
-PROMPT_FILE = "active_voice.pt"
-active_prompt = None
+# 生成物（声クローンプロンプト・応答音声）は常にこのスクリプト自身のディレクトリへ
+# 書き出す。repo rootなど別のcwdから `python ai-family-partner/app.py` で起動されても
+# 相対パスがずれて.gitignore（ai-family-partner/.gitignore、このディレクトリ基準で
+# しかパターンを解決しない）の対象外に出力されないようにするため。
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROMPT_FILE = os.path.join(BASE_DIR, "active_voice.pt")
+RESPONSE_FILE = os.path.join(BASE_DIR, "response.wav")
+
+# 起動時に前回保存された声クローンがあれば、新規セッションの初期値として使う
+# （これは「新しいセッションの出発点」であり、以降の登録・再生はセッションごとに
+# gr.State で分離する — 複数ユーザーが同時にこのUIへアクセスしても、片方が登録した
+# 声で別のユーザーの応答が合成されることはない）。
+initial_prompt = None
 if os.path.exists(PROMPT_FILE):
     try:
-        active_prompt = VoiceClonePrompt.load(PROMPT_FILE)
+        initial_prompt = VoiceClonePrompt.load(PROMPT_FILE)
     except Exception:
         pass
 
 # --- 3. 処理ロジック ---
 def register_voice(audio_path):
-    global active_prompt
     if not audio_path:
-        return "音声ファイルがありません。"
+        return "音声ファイルがありません。", None
     try:
-        active_prompt = model.create_voice_clone_prompt(ref_audio=audio_path)
-        active_prompt.save(PROMPT_FILE)
-        return "✅ 声のクローン登録が完了しました！"
+        prompt = model.create_voice_clone_prompt(ref_audio=audio_path)
+        # ディスクへの保存は「次回起動時の初期値」を更新するためのものであり、
+        # 現在の他セッションの状態には影響しない（他セッションは自分のgr.Stateを
+        # 読み続ける）。
+        prompt.save(PROMPT_FILE)
+        return "✅ 声のクローン登録が完了しました！", prompt
     except Exception as e:
-        return f"登録エラー: {e}"
+        return f"登録エラー: {e}", None
 
-def chat_pipeline(audio_path, mode, history):
+def chat_pipeline(audio_path, mode, history, session_prompt):
     if not audio_path:
         return None, history, "声が聞き取れませんでした。"
 
@@ -88,7 +101,7 @@ def chat_pipeline(audio_path, mode, history):
 
     # ChatGPT応答生成
     history.append({"role": "user", "content": user_text})
-    
+
     if use_openai:
         messages = [{"role": "system", "content": PROMPTS[mode]}]
         for h in history[:-1]:
@@ -110,23 +123,27 @@ def chat_pipeline(audio_path, mode, history):
     # 子どもの場合は通常速度(1.0)、シニア向けは少しゆっくり(0.9)
     speed_val = 0.9 if "シニア" in mode else 1.0
 
-    if active_prompt is not None:
-        audio_out = model.generate(text=bot_text, voice_clone_prompt=active_prompt, num_step=16, speed=speed_val)
+    if session_prompt is not None:
+        audio_out = model.generate(text=bot_text, voice_clone_prompt=session_prompt, num_step=16, speed=speed_val)
     else:
         # デフォルト声（穏やかな声質）
         audio_out = model.generate(text=bot_text, instruct="female, young adult, moderate pitch", num_step=16, speed=speed_val)
 
     # 保存（24kHz）
-    out_wav = "response.wav"
     wav_data = (audio_out[0] * 32767).clip(-32768, 32767).astype(np.int16)
-    sf.write(out_wav, wav_data, 24000)
+    sf.write(RESPONSE_FILE, wav_data, 24000)
 
-    return out_wav, history, f"あなた: {user_text}\nAI: {bot_text}"
+    return RESPONSE_FILE, history, f"あなた: {user_text}\nAI: {bot_text}"
 
 # --- 4. UI画面 ---
 with gr.Blocks(title="AIファミリーパートナー") as demo:
     gr.Markdown("## 🌸 AIファミリーパートナー（ChatGPT × OmniVoice）")
-    
+
+    # ブラウザセッションごとに独立した声クローンプロンプト。モジュールグローバル
+    # ではなくgr.Stateに持たせることで、ある利用者が声を登録しても、同時に
+    # 使っている別の利用者の応答へ勝手に反映されないようにする。
+    voice_state = gr.State(value=initial_prompt)
+
     with gr.Tab("おしゃべり"):
         mode_select = gr.Radio(
             choices=["シニア向け（昔話・傾聴）", "子ども向け（知育・おしゃべり）"],
@@ -141,7 +158,7 @@ with gr.Blocks(title="AIファミリーパートナー") as demo:
 
         mic_in.stop_recording(
             fn=chat_pipeline,
-            inputs=[mic_in, mode_select, chatbot],
+            inputs=[mic_in, mode_select, chatbot, voice_state],
             outputs=[spk_out, chatbot, status]
         )
 
@@ -150,7 +167,10 @@ with gr.Blocks(title="AIファミリーパートナー") as demo:
         ref_in = gr.Audio(sources=["microphone", "upload"], type="filepath", label="サンプル音声")
         reg_btn = gr.Button("この声を登録する", variant="primary")
         reg_stat = gr.Textbox(label="登録状態")
-        reg_btn.click(fn=register_voice, inputs=[ref_in], outputs=[reg_stat])
+        reg_btn.click(fn=register_voice, inputs=[ref_in], outputs=[reg_stat, voice_state])
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
+    # PoC期間中は公開共有リンクを作らない（README「安全設計の前提」の通り）。
+    # 本人同意UI・セッション分離・AI明示等（Notion AFP-01-T01）が完了するまで、
+    # 外部到達可能なGradio share linkは作らない。
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
