@@ -27,21 +27,6 @@ type PinchState = {
   baseHeight: number;
 };
 
-type InkTrailStyleLike = {
-  color: string;
-  diameter: number;
-};
-
-type DelegatedInkTrailPresenterLike = {
-  updateInkTrailStartPoint: (event: PointerEvent, style: InkTrailStyleLike) => void;
-};
-
-type NavigatorWithInk = Navigator & {
-  ink?: {
-    requestPresenter: (options?: { presentationArea?: Element | null }) => Promise<DelegatedInkTrailPresenterLike>;
-  };
-};
-
 const MIN_SCALE = 1;
 const MAX_SCALE = 8;
 const ZOOM_STEP = 1.5;
@@ -57,7 +42,6 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
   const activePointerId = useRef<number | null>(null);
   const [draft, setDraft] = useState<StrokeObject | BlurObject | null>(null);
   const liveStrokeRef = useRef<StrokeObject | null>(null);
-  const inkPresenterRef = useRef<DelegatedInkTrailPresenterLike | null>(null);
   const lastPenAt = useRef(0);
 
   const [viewport, setViewport] = useState<Viewport>(IDENTITY_VIEWPORT);
@@ -82,26 +66,6 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     if (!canvas || !ctx) return;
     renderDocument(ctx, document, draft);
   }, [document, draft]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ink = (navigator as NavigatorWithInk).ink;
-    if (!canvas || !ink) return;
-
-    let cancelled = false;
-    void ink.requestPresenter({ presentationArea: canvas })
-      .then((presenter) => {
-        if (!cancelled) inkPresenterRef.current = presenter;
-      })
-      .catch(() => {
-        // Ink API is an optional low-latency enhancement. pointermove remains the fallback.
-      });
-
-    return () => {
-      cancelled = true;
-      inkPresenterRef.current = null;
-    };
-  }, []);
 
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
     const canvas = canvasRef.current!;
@@ -264,20 +228,6 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     stroke.points.push(...points);
   };
 
-  const updateDelegatedInkTrail = (event: React.PointerEvent<HTMLCanvasElement>, stroke: StrokeObject) => {
-    const presenter = inkPresenterRef.current;
-    const canvas = canvasRef.current;
-    if (!presenter || !canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const diameter = Math.max(1, stroke.size * (rect.width / document.width));
-    try {
-      presenter.updateInkTrailStartPoint(event.nativeEvent, { color: stroke.color, diameter });
-    } catch {
-      // Browsers may expose navigator.ink but reject an individual trail update.
-    }
-  };
-
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (activePointerId.current !== null) return;
     if (settings.mode === 'eyedropper') return;
@@ -353,7 +303,6 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
 
     const liveStroke = liveStrokeRef.current;
     if (liveStroke) {
-      updateDelegatedInkTrail(event, liveStroke);
       drawLiveSegments(liveStroke, points);
       return;
     }
