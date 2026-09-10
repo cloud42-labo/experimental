@@ -1,4 +1,4 @@
-const CACHE = 'kids-oekaki-v1';
+const CACHE = 'kids-oekaki-v2';
 const CACHE_PREFIX = 'kids-oekaki-';
 // self.registration.scopeはこのservice workerが実際に登録されたURL（サブパス配信も含む）を
 // 指すため、これを起点にすることでGitHub Pagesのプロジェクトサイトのようにルート以外の
