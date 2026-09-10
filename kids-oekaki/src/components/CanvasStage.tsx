@@ -38,8 +38,10 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, onCommitStamp }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const inputCanvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const activePointerId = useRef<number | null>(null);
+  const liveStrokeRef = useRef<StrokeObject | null>(null);
   const [draft, setDraft] = useState<StrokeObject | BlurObject | null>(null);
   const lastPenAt = useRef(0);
 
@@ -53,6 +55,12 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     [document],
   );
 
+  const activeLayerIsTopmostVisible = useMemo(() => {
+    const index = document.layers.findIndex((layer) => layer.id === document.activeLayerId);
+    if (index < 0) return false;
+    return !document.layers.slice(index + 1).some((layer) => layer.visible);
+  }, [document]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -60,14 +68,30 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     renderDocument(ctx, document, draft);
   }, [document, draft]);
 
+  const clearInputCanvas = () => {
+    const canvas = inputCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
+    const rect = event.currentTarget.getBoundingClientRect();
     return {
       x: ((event.clientX - rect.left) / rect.width) * document.width,
       y: ((event.clientY - rect.top) / rect.height) * document.height,
       pressure: event.pressure > 0 ? event.pressure : 0.5,
     };
+  };
+
+  const pointsFromMoveEvent = (event: React.PointerEvent<HTMLCanvasElement>): Point[] => {
+    const coalesced = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
+    const rect = event.currentTarget.getBoundingClientRect();
+    return coalesced.map((raw) => ({
+      x: ((raw.clientX - rect.left) / rect.width) * document.width,
+      y: ((raw.clientY - rect.top) / rect.height) * document.height,
+      pressure: raw.pressure > 0 ? raw.pressure : 0.5,
+    }));
   };
 
   const shouldIgnorePointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -81,12 +105,14 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
 
   const cancelActiveDraw = () => {
     if (activePointerId.current !== null) {
-      const canvas = canvasRef.current;
+      const canvas = inputCanvasRef.current;
       if (canvas?.hasPointerCapture(activePointerId.current)) {
         canvas.releasePointerCapture(activePointerId.current);
       }
       activePointerId.current = null;
     }
+    liveStrokeRef.current = null;
+    clearInputCanvas();
     setDraft(null);
   };
 
@@ -168,6 +194,48 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     setViewport({ scale: nextScale, x, y });
   };
 
+  const canUseFastPreview = (stroke: StrokeObject) =>
+    activeLayerIsTopmostVisible
+    && stroke.brush === 'pen'
+    && Math.abs((activeLayer?.opacity ?? 1) - 1) < 0.001;
+
+  const configureFastPreview = (ctx: CanvasRenderingContext2D, stroke: StrokeObject) => {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = stroke.size;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = stroke.color;
+    ctx.fillStyle = stroke.color;
+    ctx.globalAlpha = 1;
+  };
+
+  const drawFastPreviewDot = (stroke: StrokeObject, point: Point) => {
+    const ctx = inputCanvasRef.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    configureFastPreview(ctx, stroke);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, stroke.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawFastPreviewSegments = (stroke: StrokeObject, points: Point[]) => {
+    if (points.length === 0) return;
+    const ctx = inputCanvasRef.current?.getContext('2d');
+    const previous = stroke.points[stroke.points.length - 1];
+    if (!ctx || !previous) return;
+
+    ctx.save();
+    configureFastPreview(ctx, stroke);
+    ctx.beginPath();
+    ctx.moveTo(previous.x, previous.y);
+    for (const point of points) ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+    ctx.restore();
+    stroke.points.push(...points);
+  };
+
   const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (activePointerId.current !== null) return;
     if (settings.mode === 'eyedropper') return;
@@ -207,27 +275,36 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
       return;
     }
 
-    setDraft({
+    const stroke: StrokeObject = {
       id: crypto.randomUUID(),
       type: 'stroke',
       brush: settings.brush,
       color: settings.color,
       size: settings.size,
       points: [point],
-    });
+    };
+
+    if (canUseFastPreview(stroke)) {
+      clearInputCanvas();
+      liveStrokeRef.current = stroke;
+      drawFastPreviewDot(stroke, point);
+      return;
+    }
+
+    setDraft(stroke);
   };
 
   const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (activePointerId.current !== event.pointerId) return;
     event.preventDefault();
-    const coalesced = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    const points = coalesced.map((raw) => ({
-      x: ((raw.clientX - rect.left) / rect.width) * document.width,
-      y: ((raw.clientY - rect.top) / rect.height) * document.height,
-      pressure: raw.pressure > 0 ? raw.pressure : 0.5,
-    }));
+    const points = pointsFromMoveEvent(event);
+
+    const liveStroke = liveStrokeRef.current;
+    if (liveStroke) {
+      drawFastPreviewSegments(liveStroke, points);
+      return;
+    }
+
     setDraft((current) => current ? { ...current, points: [...current.points, ...points] } : current);
   };
 
@@ -235,6 +312,15 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
     if (activePointerId.current !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     activePointerId.current = null;
+
+    const liveStroke = liveStrokeRef.current;
+    if (liveStroke) {
+      liveStrokeRef.current = null;
+      onCommitStroke(liveStroke);
+      requestAnimationFrame(clearInputCanvas);
+      return;
+    }
+
     if (draft?.type === 'blur') onCommitBlur(draft);
     else if (draft?.type === 'stroke') onCommitStroke(draft);
     setDraft(null);
@@ -307,10 +393,17 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
           aspectRatio: `${document.width} / ${document.height}`,
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
           transformOrigin: '0 0',
+          position: 'relative',
         }}
       >
         <canvas
           ref={canvasRef}
+          width={document.width}
+          height={document.height}
+          aria-hidden="true"
+        />
+        <canvas
+          ref={inputCanvasRef}
           width={document.width}
           height={document.height}
           onPointerDown={handlePointerDown}
@@ -318,6 +411,11 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerCancel}
           onContextMenu={(event) => event.preventDefault()}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'transparent',
+          }}
         />
       </div>
       <div className="zoom-controls" aria-label="ズームそうさ">
