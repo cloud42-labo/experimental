@@ -1,5 +1,7 @@
 import os
 import sys
+import tempfile
+import uuid
 import numpy as np
 import soundfile as sf
 import torch
@@ -50,40 +52,64 @@ PROMPTS = {
 """
 }
 
-# 生成物（声クローンプロンプト・応答音声）は常にこのスクリプト自身のディレクトリへ
-# 書き出す。repo rootなど別のcwdから `python ai-family-partner/app.py` で起動されても
-# 相対パスがずれて.gitignore（ai-family-partner/.gitignore、このディレクトリ基準で
-# しかパターンを解決しない）の対象外に出力されないようにするため。
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROMPT_FILE = os.path.join(BASE_DIR, "active_voice.pt")
-RESPONSE_FILE = os.path.join(BASE_DIR, "response.wav")
+# --- セッション分離のための一時ファイル管理 ---
+# 声クローンプロンプト・応答音声のいずれも、プロセス／モジュールグローバルや
+# リポジトリ内の固定パスには一切保存しない（AFP-01-T01）。
+#   - 声クローンプロンプト: 登録のたびにシステム一時ディレクトリへ一意なファイル名で
+#     書き出し、そのファイルパスだけを gr.State（＝ブラウザセッションごとに独立）に
+#     保持する。ディスク上に「次回起動時の初期値」となるような永続ファイルは作らない
+#     （起動時に過去の声を自動ロードしない）。
+#   - 応答音声（response.wav相当）: 生成のたびに一意な一時ファイル名で書き出す。
+#     同一セッション内の連続会話であっても前回のファイルを上書きしない。
+#
+# 新規DB・新規サービスは作らず、Python標準の tempfile のみで完結させる
+# （Approach Decision通り）。
+SESSION_TMP_DIR = os.path.join(tempfile.gettempdir(), "ai-family-partner-sessions")
+os.makedirs(SESSION_TMP_DIR, exist_ok=True)
 
-# 起動時に前回保存された声クローンがあれば、新規セッションの初期値として使う
-# （これは「新しいセッションの出発点」であり、以降の登録・再生はセッションごとに
-# gr.State で分離する — 複数ユーザーが同時にこのUIへアクセスしても、片方が登録した
-# 声で別のユーザーの応答が合成されることはない）。
-initial_prompt = None
-if os.path.exists(PROMPT_FILE):
-    try:
-        initial_prompt = VoiceClonePrompt.load(PROMPT_FILE)
-    except Exception:
-        pass
+AI_DISCLOSURE_TEXT = (
+    "🤖 **これはAIによる合成音声です。** ここで話しているのは本物のご家族本人ではなく、"
+    "登録された声の特徴をもとにAIが生成した音声（ボイスクローン）です。"
+)
+
+
+def _new_temp_path(suffix):
+    """SESSION_TMP_DIR配下に一意なファイルパスを発行する（作成はしない）。"""
+    return os.path.join(SESSION_TMP_DIR, f"{uuid.uuid4().hex}{suffix}")
+
+
+def _safe_remove(path):
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
 
 # --- 3. 処理ロジック ---
-def register_voice(audio_path):
+def register_voice(audio_path, consent, prev_voice_path):
+    if not consent:
+        return "⚠️ 本人（声の権利者）の同意確認にチェックが必要です。", prev_voice_path
     if not audio_path:
-        return "音声ファイルがありません。", None
+        return "音声ファイルがありません。", prev_voice_path
     try:
         prompt = model.create_voice_clone_prompt(ref_audio=audio_path)
-        # ディスクへの保存は「次回起動時の初期値」を更新するためのものであり、
-        # 現在の他セッションの状態には影響しない（他セッションは自分のgr.Stateを
-        # 読み続ける）。
-        prompt.save(PROMPT_FILE)
-        return "✅ 声のクローン登録が完了しました！", prompt
-    except Exception as e:
-        return f"登録エラー: {e}", None
 
-def chat_pipeline(audio_path, mode, history, session_prompt):
+        # このセッション専用の一意なパスへ保存する。プロセスグローバルな固定パス
+        # （旧 active_voice.pt）は使わないため、他セッションや次回起動には一切影響しない。
+        new_path = _new_temp_path(".pt")
+        prompt.save(new_path)
+
+        # 同じセッションで声を登録し直した場合、直前の一時ファイルは残さず片付ける。
+        if prev_voice_path and prev_voice_path != new_path:
+            _safe_remove(prev_voice_path)
+
+        return "✅ 声のクローン登録が完了しました！（このセッションのみで利用されます）", new_path
+    except Exception as e:
+        return f"登録エラー: {e}", prev_voice_path
+
+
+def chat_pipeline(audio_path, mode, history, session_voice_path):
     if not audio_path:
         return None, history, "声が聞き取れませんでした。"
 
@@ -123,28 +149,49 @@ def chat_pipeline(audio_path, mode, history, session_prompt):
     # 子どもの場合は通常速度(1.0)、シニア向けは少しゆっくり(0.9)
     speed_val = 0.9 if "シニア" in mode else 1.0
 
+    session_prompt = None
+    if session_voice_path and os.path.exists(session_voice_path):
+        try:
+            session_prompt = VoiceClonePrompt.load(session_voice_path)
+        except Exception:
+            session_prompt = None
+
     if session_prompt is not None:
         audio_out = model.generate(text=bot_text, voice_clone_prompt=session_prompt, num_step=16, speed=speed_val)
     else:
         # デフォルト声（穏やかな声質）
         audio_out = model.generate(text=bot_text, instruct="female, young adult, moderate pitch", num_step=16, speed=speed_val)
 
-    # 保存（24kHz）
+    # 保存（24kHz）。呼び出しのたびに一意なファイル名で書き出すため、同時に使っている
+    # 他セッションや、同じセッションの過去の応答と衝突・上書きしない。
     wav_data = (audio_out[0] * 32767).clip(-32768, 32767).astype(np.int16)
-    sf.write(RESPONSE_FILE, wav_data, 24000)
+    response_path = _new_temp_path(".wav")
+    sf.write(response_path, wav_data, 24000)
 
-    return RESPONSE_FILE, history, f"あなた: {user_text}\nAI: {bot_text}"
+    return response_path, history, f"あなた: {user_text}\nAI: {bot_text}"
+
+
+def reset_history_on_mode_change():
+    # モードを切り替えたら会話履歴を必ずリセットする。シニア向け／子ども向けの
+    # 会話が同じ履歴に混在してChatGPTへ渡ると、応答のトーンや文脈が意図せず
+    # 混ざるため（AFP-01-T01 Acceptance Criteria）。
+    return [], ""
+
 
 # --- 4. UI画面 ---
 with gr.Blocks(title="AIファミリーパートナー") as demo:
     gr.Markdown("## 🌸 AIファミリーパートナー（ChatGPT × OmniVoice）")
+    gr.Markdown(AI_DISCLOSURE_TEXT)
 
-    # ブラウザセッションごとに独立した声クローンプロンプト。モジュールグローバル
-    # ではなくgr.Stateに持たせることで、ある利用者が声を登録しても、同時に
-    # 使っている別の利用者の応答へ勝手に反映されないようにする。
-    voice_state = gr.State(value=initial_prompt)
+    # ブラウザセッションごとに独立した状態。プロセス／モジュールグローバルではなく
+    # gr.State に持たせることで、ある利用者の声クローン・会話履歴・生成音声が、
+    # 同時に使っている別の利用者へ漏れないようにする。voice_state は
+    # VoiceClonePrompt オブジェクトそのものではなく、一時ファイルのパス文字列のみを
+    # 保持する（Approach Decision通り）。
+    voice_state = gr.State(value=None)
 
     with gr.Tab("おしゃべり"):
+        gr.Markdown(AI_DISCLOSURE_TEXT)
         mode_select = gr.Radio(
             choices=["シニア向け（昔話・傾聴）", "子ども向け（知育・おしゃべり）"],
             value="シニア向け（昔話・傾聴）",
@@ -153,7 +200,7 @@ with gr.Blocks(title="AIファミリーパートナー") as demo:
         chatbot = gr.Chatbot(type="messages", label="対話履歴")
         with gr.Row():
             mic_in = gr.Audio(sources=["microphone"], type="filepath", label="話しかける（マイク）")
-            spk_out = gr.Audio(type="filepath", autoplay=True, label="お返事音声")
+            spk_out = gr.Audio(type="filepath", autoplay=True, label="お返事音声（AI合成音声）")
         status = gr.Textbox(label="会話ログ", interactive=False)
 
         mic_in.stop_recording(
@@ -162,15 +209,35 @@ with gr.Blocks(title="AIファミリーパートナー") as demo:
             outputs=[spk_out, chatbot, status]
         )
 
+        # モード変更時は会話履歴を必ずリセットする（履歴の混在防止）。
+        mode_select.change(
+            fn=reset_history_on_mode_change,
+            inputs=None,
+            outputs=[chatbot, status]
+        )
+
     with gr.Tab("声を登録（家族・自分）"):
         gr.Markdown("家族（親・孫など）の声を3〜5秒吹き込むと、その声で喋るようになります。")
+        gr.Markdown(AI_DISCLOSURE_TEXT)
+        gr.Markdown(
+            "登録した声は、以降このAIが**合成音声として**発話するために使われます。"
+            "本人（声の権利者）以外の声を、本人の同意なく登録しないでください。"
+        )
+        consent_check = gr.Checkbox(
+            label="声の権利者本人の同意を得ています（本人以外の声を無断で登録しません）",
+            value=False,
+        )
         ref_in = gr.Audio(sources=["microphone", "upload"], type="filepath", label="サンプル音声")
         reg_btn = gr.Button("この声を登録する", variant="primary")
         reg_stat = gr.Textbox(label="登録状態")
-        reg_btn.click(fn=register_voice, inputs=[ref_in], outputs=[reg_stat, voice_state])
+        reg_btn.click(
+            fn=register_voice,
+            inputs=[ref_in, consent_check, voice_state],
+            outputs=[reg_stat, voice_state]
+        )
 
 if __name__ == "__main__":
     # PoC期間中は公開共有リンクを作らない（README「安全設計の前提」の通り）。
-    # 本人同意UI・セッション分離・AI明示等（Notion AFP-01-T01）が完了するまで、
-    # 外部到達可能なGradio share linkは作らない。
+    # 本人同意UI・セッション分離・AI明示等（Notion AFP-01-T01）が完了した後も、
+    # 外部到達可能なGradio share linkは意図的に作らない。
     demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
