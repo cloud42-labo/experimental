@@ -1,0 +1,17 @@
+# AI Family Partner — 検証済み依存関係（2026-09-13 JST, AFP-01-T02-A）
+#
+# Python 3.11 の venv で `pip install -r requirements.txt` によりクリーンインストール
+# できることを確認済み（CPU環境。CUDA/MPSがある環境ではtorchが対応ビルドを解決する）。
+#
+# torch は PyPI 標準indexから直接 `pip install torch` でCPU/CUDA両対応ホイールが
+# 取得できた。https://download.pytorch.org/whl/cpu 等の専用indexは、この検証環境の
+# ネットワークポリシーでは到達不可（403 Forbidden）だったため使っていない。
+# 別環境でネットワークポリシーが異なる場合は専用indexの利用も検討してよい。
+
+numpy==2.4.6
+soundfile==0.14.0
+torch==2.14.0
+gradio==6.27.0
+openai==3.13.0
+openai-whisper==20250625
+omnivoice==0.2.1
