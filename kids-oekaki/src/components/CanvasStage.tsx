@@ -35,8 +35,14 @@ const IDENTITY_VIEWPORT: Viewport = { scale: 1, x: 0, y: 0 };
 const distance = (a: ScreenPoint, b: ScreenPoint) => Math.hypot(a.x - b.x, a.y - b.y);
 const midpoint = (a: ScreenPoint, b: ScreenPoint) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const getLowLatency2dContext = (canvas: HTMLCanvasElement | null) =>
-  canvas?.getContext('2d', { desynchronized: true }) ?? null;
+// OEK-04-BUG: `desynchronized: true` はcompositorの二重バッファ同期をスキップして
+// レイテンシを下げるが、その代償として一部端末のGPU/compositorドライバでは
+// 描画中に画面がちらつく（tearing/partial frame）ことが仕様上あり得る
+// （Galaxy Tab S10 Liteでは無ちらつきだったが、HiGraceではペン・指の双方で
+// 再現した）。ペン入力のレイテンシ低減は、この直後にあるrequestAnimationFrame
+// によるフレームバッチ処理（queueLiveSegments/flushLiveSegments）が既に主要な
+// 改善を担っているため、`desynchronized`は使わず標準の同期canvasへ戻す。
+const get2dContext = (canvas: HTMLCanvasElement | null) => canvas?.getContext('2d') ?? null;
 
 export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, onCommitStamp }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,7 +72,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = getLowLatency2dContext(canvas);
+    const ctx = get2dContext(canvas);
     if (!canvas || !ctx) return;
     renderDocument(ctx, document, draft);
   }, [document, draft]);
@@ -96,7 +102,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
 
   const restoreCommittedDocument = () => {
     const canvas = canvasRef.current;
-    const ctx = getLowLatency2dContext(canvas);
+    const ctx = get2dContext(canvas);
     if (!canvas || !ctx) return;
     renderDocument(ctx, document, null);
   };
@@ -217,7 +223,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
   };
 
   const drawLiveDot = (stroke: StrokeObject, point: Point) => {
-    const ctx = getLowLatency2dContext(canvasRef.current);
+    const ctx = get2dContext(canvasRef.current);
     if (!ctx) return;
     ctx.save();
     configureLiveStrokeContext(ctx, stroke);
@@ -229,7 +235,7 @@ export function CanvasStage({ document, settings, onCommitStroke, onCommitBlur, 
 
   const drawLiveSegments = (stroke: StrokeObject, points: Point[]) => {
     if (!points.length) return;
-    const ctx = getLowLatency2dContext(canvasRef.current);
+    const ctx = get2dContext(canvasRef.current);
     const previous = stroke.points[stroke.points.length - 1];
     if (!ctx || !previous) return;
 
