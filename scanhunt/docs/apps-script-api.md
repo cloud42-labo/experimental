@@ -37,6 +37,26 @@ PWAから画像URL・AI解析結果・商品マスターをGoogle Spreadsheetへ
 6. `Code.gs` を更新した場合は「新しいデプロイ」ではなく既存デプロイの「デプロイを管理」→
    鉛筆アイコンで**バージョンを更新**する（URLを変えないため）。
 
+## 内部セルフテストハーネス（`SH-02-S03-T02-A`）
+
+`Code.gs` に `runSelfTest()` を実装済み。7 action（`createScanHistory` /
+`updateScanHistory` / `createProductImage` / `createAIJob` / `findProductByGtin` /
+`upsertProduct` / `resolveProductId`）を実際にバインドされたSpreadsheetへ対して動かし、
+4シートへの反映・べき等性・`attempt_no`自動採番・プレーンテキスト書式（先頭ゼロ保持）を
+検証し、最後に必ずテストデータをcleanupする。
+
+- 実行方法: Apps Scriptエディタで `runSelfTest` を選んで実行し、実行ログで
+  PASS/FAILのsanitized summaryを確認する。
+- `doPost`/`doGet` のaction経由では呼び出せない（HTTP経由の起動経路を作らないことで
+  Script Propertiesの外部露出リスクを増やさない設計）。
+- テストデータは `__selftest__` prefixで識別でき、成功・失敗どちらでも必ずcleanupされる
+  （`gtin_jan`のみプレーンテキスト検証のため純粋な数字文字列にしており、代わりに同じ行の
+  `product_id`のprefixでcleanup対象を特定する）。
+- 出力にScript Propertiesの値（`API_KEY`・`SPREADSHEET_ID`）が混入しないよう
+  `redactSecrets_()` で防御的に置換する。
+- **本Taskの範囲は実装まで。実際のGoogle Apps Script/Spreadsheet環境に対する実行確認
+  そのものは範囲外**（下記「動作確認チェックリスト」でHumanが別途実施する）。
+
 ## 動作確認チェックリスト（`SH-02-S01` 完了・デプロイ後にHumanが実施）
 
 このAPIは実際のSpreadsheet上でしか検証できないため、コードレビューだけでは完了扱いにしない。

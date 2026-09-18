@@ -257,6 +257,314 @@ function resolveProductId_(data) {
   };
 }
 
+// ===== 内部セルフテストハーネス【SH-02-S03-T02-A】 =====
+//
+// 7 action（createScanHistory / updateScanHistory / createProductImage / createAIJob /
+// findProductByGtin / upsertProduct / resolveProductId）を、実際にバインドされている
+// Spreadsheetへ対して動かして検証する。
+//
+// 実行方法: Apps Scriptエディタで本ファイルを開き、関数選択で `runSelfTest` を選び
+// 実行する（実行 > 実行）。結果は「実行ログ」に出力される。
+//
+// 設計上の制約:
+//   - doPost/doGetのactionディスパッチには一切接続しない。Web App経由（HTTP）で
+//     外部から起動できる経路を作らないことで、Script Properties（API_KEY/
+//     SPREADSHEET_ID）が外部に露出する余地を作らない。
+//   - 出力はPASS/FAILのsanitized summaryのみ。redactSecrets_() で、万一メッセージに
+//     Script Propertiesの値そのものが混入してもログ出力前に必ず置換する。
+//   - テストデータは全て SELF_TEST_PREFIX_ を先頭に持つ識別可能なIDを使う
+//     （gtin_janのみ例外。プレーンテキスト書式検証のため純粋な数字文字列にする必要が
+//     あり、代わりに同じ行のproduct_idにprefixを持たせてcleanupの対象にする）。
+//   - 実行前後で cleanupSelfTestData_() を必ず呼び、成功・失敗を問わずテストデータを
+//     残さない（try/finally）。
+//   - 本Taskの範囲は「コードとして完結するセルフテストハーネスの実装」まで。実際の
+//     Spreadsheet/Web App環境に対する実行そのもの（動作確認）は範囲外
+//     （apps-script-api.md の「動作確認チェックリスト」でHumanが別途実施する）。
+
+var SELF_TEST_PREFIX_ = '__selftest__';
+
+function runSelfTest() {
+  var results = [];
+  var ids = makeSelfTestIds_();
+  var cleanup;
+  try {
+    // 前回の実行がエラー等でcleanupまで到達できなかった場合の残骸を先に掃除する。
+    cleanupSelfTestData_();
+    runSelfTestSteps_(results, ids);
+  } catch (err) {
+    results.push(selfTestResult_('unexpected_error', false, sanitizeMessage_(err)));
+  } finally {
+    try {
+      cleanup = cleanupSelfTestData_();
+    } catch (cleanupErr) {
+      cleanup = { error: sanitizeMessage_(cleanupErr) };
+    }
+  }
+  var summary = buildSelfTestSummary_(results, cleanup);
+  Logger.log(JSON.stringify(summary, null, 2));
+  return summary;
+}
+
+function makeSelfTestIds_() {
+  var runId = SELF_TEST_PREFIX_ + Utilities.getUuid();
+  return {
+    scanId: runId + '__scan',
+    imageIdFront: runId + '__img_front',
+    imageIdBack: runId + '__img_back',
+    jobId1: runId + '__job1',
+    jobId2: runId + '__job2',
+    productId: runId + '__product',
+    // gtin_jan列は純粋な数字文字列でなければプレーンテキスト書式（先頭ゼロ保持）の
+    // 検証にならないため、識別可能prefixは付けない（cleanupはproduct_id側で行う）。
+    // 実在GTINと衝突しないよう、末尾に実行毎の乱数を持たせる。
+    gtinJan: '0' + (990000000000 + Math.floor(Math.random() * 9999999))
+  };
+}
+
+function runSelfTestSteps_(results, ids) {
+  var scanHistorySheet = getSheet_(SHEET_NAMES.SCAN_HISTORY);
+  var scanHistoryHeaders = getHeaderMap_(scanHistorySheet);
+
+  // --- createScanHistory: 反映・final_status初期値・プレーンテキスト保持 ---
+  var scannedAt = nowIso_();
+  createScanHistory_({ scan_id: ids.scanId, scanned_at: scannedAt });
+  var scanRowIndex = findRowIndexByColumnValue_(scanHistorySheet, scanHistoryHeaders, 'scan_id', ids.scanId);
+  var createdScan = scanRowIndex ? readRow_(scanHistorySheet, scanHistoryHeaders, scanRowIndex) : null;
+  results.push(selfTestResult_(
+    'createScanHistory: ScanHistoryへ反映され、final_status初期値がpending',
+    !!createdScan && createdScan.final_status === 'pending' && !!createdScan.created_at
+  ));
+
+  var createdAtCell = scanRowIndex ? scanHistorySheet.getRange(scanRowIndex, scanHistoryHeaders['created_at']) : null;
+  results.push(selfTestResult_(
+    'createScanHistory: created_at列（_at終わり）がプレーンテキスト書式',
+    !!createdAtCell && createdAtCell.getNumberFormat() === '@'
+  ));
+
+  // --- createScanHistory: べき等性 ---
+  createScanHistory_({ scan_id: ids.scanId, scanned_at: scannedAt });
+  results.push(selfTestResult_(
+    'createScanHistory: 同一scan_idの再送で行が重複しない（べき等）',
+    countRowsByColumnValue_(scanHistorySheet, scanHistoryHeaders, 'scan_id', ids.scanId) === 1
+  ));
+
+  // --- updateScanHistory: 後追い更新の反映（新規行を作らない） ---
+  updateScanHistory_({ scan_id: ids.scanId, final_status: 'success', attempt_count: 2, best_job_id: ids.jobId2, duration_total_ms: 4321 });
+  var updatedScanRowIndex = findRowIndexByColumnValue_(scanHistorySheet, scanHistoryHeaders, 'scan_id', ids.scanId);
+  var updatedScan = readRow_(scanHistorySheet, scanHistoryHeaders, updatedScanRowIndex);
+  results.push(selfTestResult_(
+    'updateScanHistory: final_status/attempt_count/best_job_idが反映され新規行を作らない',
+    updatedScan.final_status === 'success' &&
+      Number(updatedScan.attempt_count) === 2 &&
+      updatedScan.best_job_id === ids.jobId2 &&
+      countRowsByColumnValue_(scanHistorySheet, scanHistoryHeaders, 'scan_id', ids.scanId) === 1
+  ));
+
+  // --- createProductImage×2: 反映・デフォルト値 ---
+  var imageSheet = getSheet_(SHEET_NAMES.PRODUCT_IMAGES);
+  var imageHeaders = getHeaderMap_(imageSheet);
+  var capturedAt = nowIso_();
+  createProductImage_({
+    image_id: ids.imageIdFront, scan_id: ids.scanId, face: 'front',
+    drive_file_id: ids.imageIdFront + '_drive', storage_path: 'unresolved/' + ids.scanId + '/front.jpg',
+    captured_at: capturedAt, mime_type: 'image/jpeg'
+  });
+  createProductImage_({
+    image_id: ids.imageIdBack, scan_id: ids.scanId, face: 'back',
+    drive_file_id: ids.imageIdBack + '_drive', storage_path: 'unresolved/' + ids.scanId + '/back.jpg',
+    captured_at: capturedAt, mime_type: 'image/jpeg'
+  });
+  var frontRow = readRow_(imageSheet, imageHeaders, findRowIndexByColumnValue_(imageSheet, imageHeaders, 'image_id', ids.imageIdFront));
+  results.push(selfTestResult_(
+    'createProductImage: ProductImagesへ反映され、省略時デフォルト（label_status=ai_only等）が入る',
+    frontRow.label_status === 'ai_only' && String(frontRow.is_training_candidate) === 'TRUE'
+  ));
+
+  // --- createProductImage: べき等性 ---
+  createProductImage_({
+    image_id: ids.imageIdFront, scan_id: ids.scanId, face: 'front',
+    drive_file_id: 'ignored', storage_path: 'ignored', captured_at: capturedAt, mime_type: 'image/jpeg'
+  });
+  results.push(selfTestResult_(
+    'createProductImage: 同一image_idの再送で行が重複しない（べき等）',
+    countRowsByColumnValue_(imageSheet, imageHeaders, 'image_id', ids.imageIdFront) === 1
+  ));
+
+  // --- createAIJob: attempt_noの自動採番（scan_id単位で1, 2） ---
+  var jobSheet = getSheet_(SHEET_NAMES.AI_JOBS);
+  var jobHeaders = getHeaderMap_(jobSheet);
+  var job1 = createAIJob_({
+    job_id: ids.jobId1, scan_id: ids.scanId, job_type: 'initial',
+    input_image_ids: [ids.imageIdFront, ids.imageIdBack], ai_model: 'selftest-model',
+    prompt_version: 'selftest', schema_version: 'selftest', status: 'success', started_at: nowIso_()
+  });
+  var job2 = createAIJob_({
+    job_id: ids.jobId2, scan_id: ids.scanId, job_type: 'retry',
+    input_image_ids: [ids.imageIdFront, ids.imageIdBack], ai_model: 'selftest-model',
+    prompt_version: 'selftest', schema_version: 'selftest', status: 'success', started_at: nowIso_()
+  });
+  results.push(selfTestResult_(
+    'createAIJob: attempt_noがscan_id単位で1, 2と自動採番される',
+    Number(job1.attempt_no) === 1 && Number(job2.attempt_no) === 2
+  ));
+
+  // --- createAIJob: べき等性（再送してもattempt_noを再採番しない） ---
+  var job1Resend = createAIJob_({
+    job_id: ids.jobId1, scan_id: ids.scanId, job_type: 'initial',
+    input_image_ids: [ids.imageIdFront], ai_model: 'selftest-model',
+    prompt_version: 'selftest', schema_version: 'selftest', status: 'success', started_at: nowIso_()
+  });
+  results.push(selfTestResult_(
+    'createAIJob: 同一job_idの再送でattempt_noを再採番せず行も重複しない（べき等）',
+    Number(job1Resend.attempt_no) === 1 &&
+      countRowsByColumnValue_(jobSheet, jobHeaders, 'job_id', ids.jobId1) === 1
+  ));
+
+  // --- findProductByGtin（未登録） ---
+  var notFound = findProductByGtin_({ gtin_jan: ids.gtinJan });
+  results.push(selfTestResult_(
+    'findProductByGtin: 未登録gtin_janに対しfound=falseを返す',
+    notFound.found === false && notFound.product === null
+  ));
+
+  // --- upsertProduct: 新規作成（revision=1） ---
+  var upsertCreate = upsertProduct_({
+    product_id: ids.productId, gtin_status: 'confirmed', gtin_jan: ids.gtinJan,
+    product_name: SELF_TEST_PREFIX_ + ' product'
+  });
+  results.push(selfTestResult_(
+    'upsertProduct: 新規product_idでrevision=1として作成される',
+    upsertCreate.created === true && Number(upsertCreate.revision) === 1
+  ));
+
+  // --- findProductByGtin（登録後） ---
+  var found = findProductByGtin_({ gtin_jan: ids.gtinJan });
+  results.push(selfTestResult_(
+    'findProductByGtin: upsertProduct後はfound=trueで該当product_idを返す',
+    found.found === true && found.product && found.product.product_id === ids.productId
+  ));
+
+  // --- upsertProduct: gtin_janのプレーンテキスト保持（先頭ゼロ） ---
+  var productSheet = getSheet_(SHEET_NAMES.PRODUCTS);
+  var productHeaders = getHeaderMap_(productSheet);
+  var productRowIndex = findRowIndexByColumnValue_(productSheet, productHeaders, 'product_id', ids.productId);
+  var gtinCell = productSheet.getRange(productRowIndex, productHeaders['gtin_jan']);
+  results.push(selfTestResult_(
+    'upsertProduct: gtin_janがプレーンテキスト書式で先頭ゼロを保持する',
+    gtinCell.getNumberFormat() === '@' && String(gtinCell.getValue()) === ids.gtinJan
+  ));
+
+  // --- upsertProduct: 既存行の更新（revision+1） ---
+  var upsertUpdate = upsertProduct_({
+    product_id: ids.productId, gtin_status: 'confirmed', gtin_jan: ids.gtinJan,
+    product_name: SELF_TEST_PREFIX_ + ' product updated'
+  });
+  results.push(selfTestResult_(
+    'upsertProduct: 既存product_idの更新でrevisionが+1される',
+    upsertUpdate.created === false && Number(upsertUpdate.revision) === 2
+  ));
+
+  // --- resolveProductId: ScanHistory/ProductImages(×2)/AIJobs(×2)へ後追い反映 ---
+  resolveProductId_({ scan_id: ids.scanId, product_id: ids.productId });
+  var scanAfter = readRow_(scanHistorySheet, scanHistoryHeaders, findRowIndexByColumnValue_(scanHistorySheet, scanHistoryHeaders, 'scan_id', ids.scanId));
+  var frontAfter = readRow_(imageSheet, imageHeaders, findRowIndexByColumnValue_(imageSheet, imageHeaders, 'image_id', ids.imageIdFront));
+  var backAfter = readRow_(imageSheet, imageHeaders, findRowIndexByColumnValue_(imageSheet, imageHeaders, 'image_id', ids.imageIdBack));
+  var job1After = readRow_(jobSheet, jobHeaders, findRowIndexByColumnValue_(jobSheet, jobHeaders, 'job_id', ids.jobId1));
+  var job2After = readRow_(jobSheet, jobHeaders, findRowIndexByColumnValue_(jobSheet, jobHeaders, 'job_id', ids.jobId2));
+  results.push(selfTestResult_(
+    'resolveProductId: ScanHistory・ProductImages（2行）・AIJobs（2行）全てにproduct_idが反映される',
+    scanAfter.product_id === ids.productId &&
+      frontAfter.product_id === ids.productId &&
+      backAfter.product_id === ids.productId &&
+      job1After.product_id === ids.productId &&
+      job2After.product_id === ids.productId
+  ));
+}
+
+// ===== セルフテスト用ヘルパー =====
+
+function countRowsByColumnValue_(sheet, headerMap, columnName, value) {
+  var col = headerMap[columnName];
+  if (!col) return 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+  var count = 0;
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]) === String(value)) count++;
+  }
+  return count;
+}
+
+// prefix一致する行を末尾から削除する（先頭から消すと行番号がズレるため）。
+function deleteRowsByPrefix_(sheetName, columnName, prefix) {
+  var sheet = getSheet_(sheetName);
+  var headerMap = getHeaderMap_(sheet);
+  var col = headerMap[columnName];
+  if (!col) return 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+  var deleted = 0;
+  for (var i = values.length - 1; i >= 0; i--) {
+    if (String(values[i][0]).indexOf(prefix) === 0) {
+      sheet.deleteRow(i + 2);
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
+function cleanupSelfTestData_() {
+  return {
+    scan_history: deleteRowsByPrefix_(SHEET_NAMES.SCAN_HISTORY, 'scan_id', SELF_TEST_PREFIX_),
+    product_images: deleteRowsByPrefix_(SHEET_NAMES.PRODUCT_IMAGES, 'image_id', SELF_TEST_PREFIX_),
+    ai_jobs: deleteRowsByPrefix_(SHEET_NAMES.AI_JOBS, 'job_id', SELF_TEST_PREFIX_),
+    products: deleteRowsByPrefix_(SHEET_NAMES.PRODUCTS, 'product_id', SELF_TEST_PREFIX_)
+  };
+}
+
+function selfTestResult_(name, pass, detail) {
+  var result = { name: name, pass: !!pass };
+  if (detail) result.detail = sanitizeMessage_(detail);
+  return result;
+}
+
+function buildSelfTestSummary_(results, cleanup) {
+  var passed = results.filter(function (r) { return r.pass; }).length;
+  var failed = results.length - passed;
+  return {
+    overall: (results.length > 0 && failed === 0) ? 'PASS' : 'FAIL',
+    total: results.length,
+    passed: passed,
+    failed: failed,
+    results: results,
+    cleanup: cleanup
+  };
+}
+
+// エラーメッセージにScript Propertiesの値（API_KEY/SPREADSHEET_ID）が万一混入していても
+// ログ出力前に必ず置換する。「出力はsanitized summaryのみ」の担保。
+function sanitizeMessage_(err) {
+  var msg = (err && err.message) ? String(err.message) : String(err);
+  return redactSecrets_(msg);
+}
+
+function redactSecrets_(text) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    ['API_KEY', 'SPREADSHEET_ID'].forEach(function (key) {
+      var val = props.getProperty(key);
+      if (val && text.indexOf(val) !== -1) {
+        text = text.split(val).join('[REDACTED]');
+      }
+    });
+  } catch (e) {
+    // Properties取得自体に失敗しても出力は止めない。
+  }
+  return text;
+}
+
 // ===== ヘッダー名ベースの読み書き =====
 // 列インデックスを直書きせず、1行目のヘッダー名でマッピングする
 // （spreadsheet-columns.md 実装上の必須ルール#2）。
