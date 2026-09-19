@@ -1,0 +1,107 @@
+name: Store Survival Simulator - Generate Area Data
+
+# SS-01-S01-3 (Notion): サンプルエリアデータの生成・ゼロセットアップ起動フローの
+# E2E検証をAI側で自律実行する。Human-onlyの残りはESTAT_APP_ID Secretの設定のみ
+# （brain/projects/store-survival-simulator/README.md参照）。
+#
+# 使い方: このリポジトリの Settings > Secrets and variables > Actions で
+# ESTAT_APP_ID を設定した後、Actionsタブから手動実行(workflow_dispatch)する。
+
+on:
+  workflow_dispatch:
+    inputs:
+      store_location:
+        description: '店舗座標「緯度,経度」'
+        required: true
+        default: '35.681236,139.767125'
+      area_name:
+        description: 'エリア表示名（研修参加者に見える名前）'
+        required: true
+        default: '東京駅周辺（サンプル）'
+      business_id:
+        description: '業種ID（conveni/supermarket/izakaya/drugstore/petsalon/petretail/finance/homecenter）'
+        required: false
+        default: 'conveni'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: store-survival-simulator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check ESTAT_APP_ID secret is configured
+        run: |
+          if [ -z "${ESTAT_APP_ID}" ]; then
+            echo "::error::ESTAT_APP_ID secret is not set. This is the sole remaining Human gate for Notion Task SS-01-S01-3: add it under Settings > Secrets and variables > Actions, then re-run this workflow."
+            exit 1
+          fi
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Offline regression test (no secrets, no real e-Stat/CDN access)
+        run: npm run test:generate-area
+
+      - name: Serve app over local HTTP
+        run: |
+          python3 -m http.server 8080 &
+          echo $! > /tmp/store-survival-http-server.pid
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8080/index.html > /dev/null && break
+            sleep 0.5
+          done
+
+      - name: Generate area data + zero-setup E2E verification
+        run: |
+          node scripts/generate_area_data.mjs \
+            --location "${{ inputs.store_location }}" \
+            --name "${{ inputs.area_name }}" \
+            --business "${{ inputs.business_id }}" \
+            --base-url "http://127.0.0.1:8080/" \
+            --verify-zero-setup
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+
+      - name: Stop local server
+        if: always()
+        run: kill "$(cat /tmp/store-survival-http-server.pid)" 2>/dev/null || true
+
+      - name: Open PR with generated area data
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git status --porcelain data/areas | grep -q .; then
+            BRANCH="ss-01-s01-3/area-data-$(date -u +%Y%m%d%H%M%S)"
+            git checkout -b "$BRANCH"
+            git add data/areas
+            git commit -m "SS-01-S01-3: 自動生成したサンプルエリアデータを追加 (${{ inputs.area_name }})"
+            git push origin "$BRANCH"
+            gh pr create \
+              --title "SS-01-S01-3: サンプルエリアデータ自動生成（${{ inputs.area_name }}）" \
+              --body "Notion Task SS-01-S01-3のHuman gate（ESTAT_APP_ID Secret設定）解除後の自律実行結果です。ゼロセットアップ起動フロー（エリア選択のみ、APIキー不要）は同一ワークフロー内でE2E検証済みです。experimentalリポジトリの自己マージ例外に従い、CI green・mergeable確認後にレビュー担当（Claude/オーナー）が自己マージしてよいものです。"
+          else
+            echo "No changes under data/areas/ to commit (already up to date)."
+          fi

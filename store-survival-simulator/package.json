@@ -1,0 +1,15 @@
+{
+  "name": "store-survival-simulator-scripts",
+  "private": true,
+  "description": "index.html本体はビルド不要の単一HTML。ここはSS-01-S01-3のエリアデータ自動生成・検証スクリプト専用のツール依存関係。",
+  "type": "module",
+  "scripts": {
+    "generate-area": "node scripts/generate_area_data.mjs",
+    "test:generate-area": "node scripts/generate_area_data.test.mjs"
+  },
+  "devDependencies": {
+    "@turf/turf": "6.5.0",
+    "leaflet": "1.9.4",
+    "playwright": "1.56.1"
+  }
+}

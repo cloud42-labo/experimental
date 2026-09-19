@@ -3,3 +3,4 @@ data/cache/
 *.shp.zip
 __pycache__/
 *.pyc
+node_modules/
