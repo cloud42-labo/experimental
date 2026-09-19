@@ -84,7 +84,8 @@ jobs:
         if: always()
         run: kill "$(cat /tmp/store-survival-http-server.pid)" 2>/dev/null || true
 
-      - name: Open PR with generated area data
+      - name: Push generated area data branch
+        id: push_branch
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -99,9 +100,31 @@ jobs:
             git add data/areas
             git commit -m "SS-01-S01-3: 自動生成したサンプルエリアデータを追加 (${{ inputs.area_name }})"
             git push origin "$BRANCH"
-            gh pr create \
-              --title "SS-01-S01-3: サンプルエリアデータ自動生成（${{ inputs.area_name }}）" \
-              --body "Notion Task SS-01-S01-3のHuman gate（ESTAT_APP_ID Secret設定）解除後の自律実行結果です。ゼロセットアップ起動フロー（エリア選択のみ、APIキー不要）は同一ワークフロー内でE2E検証済みです。experimentalリポジトリの自己マージ例外に従い、CI green・mergeable確認後にレビュー担当（Claude/オーナー）が自己マージしてよいものです。"
+            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
           else
             echo "No changes under data/areas/ to commit (already up to date)."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # このリポジトリはActions設定で「Allow GitHub Actions to create and approve
+      # pull requests」が無効なため、既定の GITHUB_TOKEN での gh pr create は
+      # "GitHub Actions is not permitted to create or approve pull requests" で
+      # 失敗する（2026-09-19実機確認）。ジョブ全体を赤くしないためcontinue-on-errorとし、
+      # 失敗時はpushされたブランチ名をログに明示し、次にこのリポジトリを触るAI
+      # セッション（またはオーナー）がそこからPRを作成・マージする前提とする。
+      - name: Open PR with generated area data
+        if: steps.push_branch.outputs.has_changes == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create \
+            --head "${{ steps.push_branch.outputs.branch }}" \
+            --title "SS-01-S01-3: サンプルエリアデータ自動生成（${{ inputs.area_name }}）" \
+            --body "Notion Task SS-01-S01-3のHuman gate（ESTAT_APP_ID Secret設定）解除後の自律実行結果です。ゼロセットアップ起動フロー（エリア選択のみ、APIキー不要）は同一ワークフロー内でE2E検証済みです。experimentalリポジトリの自己マージ例外に従い、CI green・mergeable確認後にレビュー担当（Claude/オーナー）が自己マージしてよいものです。"
+
+      - name: Report branch if PR creation was blocked
+        if: steps.push_branch.outputs.has_changes == 'true'
+        run: |
+          echo "::notice::生成データは branch '${{ steps.push_branch.outputs.branch }}' へpush済み。gh pr createがリポジトリ設定でブロックされた場合は、次にこのリポジトリを触るAIセッションまたはオーナーがこのブランチからPRを作成・マージすること。"
