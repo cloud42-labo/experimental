@@ -80,14 +80,10 @@ Notion管理下のTaskに対応するPRは、**GitHubでマージしただけで
 
 試作が育って継続的に使われるようになったアプリには、セマンティックバージョニング
 （`MAJOR.MINOR.PATCH`、桁数制限なし）を適用する。これも`cloud42-labo/brain`に
-限らず、Claude Codeが関わる全リポジトリ・全アプリに適用する基本ルール
-（詳細: [brain/notes/semver-and-release-deliverables](https://github.com/cloud42-labo/brain/blob/main/notes/semver-and-release-deliverables.md)）。
-
-| 桁 | 上げるタイミング | 例 |
-| :--- | :--- | :--- |
-| MAJOR | 別ゲームレベルの破壊的変更（会計エンジンの全面刷新など） | `0.x.x` → `1.0.0` |
-| MINOR | 機能追加・新画面・新指標の追加 | `0.9.x` → `0.10.0` |
-| PATCH | バグ修正・文言変更・UIの微調整 | `0.9.6` → `0.9.7` |
+限らず、Claude Codeが関わる全リポジトリ・全アプリに適用する基本ルール。桁の
+上げどき（MAJOR/MINOR/PATCH判定基準）は
+[brain/notes/semver-and-release-deliverables](https://github.com/cloud42-labo/brain/blob/main/notes/semver-and-release-deliverables.md)
+を正本とし、ここには複製しない。
 
 - 変更後は各アプリの `index.html` 冒頭の `APP_VERSION` 定数を必ず更新する
 - **正式リリースへの昇格**: プロダクトオーナー（駒場さん）が正式リリースを宣言したタイミングで `v1.0.0` に上げる。それまでの `0.x.x` はすべてプレリリース扱い
