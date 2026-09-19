@@ -45,7 +45,28 @@ data/areas/
 アプリ側の `buildMeshGeoJson()` が行う。**ライブ取得と事前生成データが同じ組み立て処理を通る**
 ので、取得元の違いで診断結果が変わることはない。
 
-## 作り方
+## 作り方（自動・推奨）
+
+SS-01-S01-3（Notion）で追加した、GitHub Actionsワークフローによる自動生成。
+以下の手動手順と同じ「別の場所を診断する」フローをPlaywrightで自動操作し、
+このディレクトリへの反映と、ゼロセットアップ起動フロー（エリア選択のみで
+開始できること）のE2E確認まで一括で行う。**Humanが行うのは、リポジトリの
+Settings > Secrets and variables > Actions に `ESTAT_APP_ID` を1回設定するだけ。**
+
+1. `ESTAT_APP_ID` Secretを設定する（未設定ならワークフローがその時点で明示エラーになる）
+2. Actionsタブから `Store Survival Simulator - Generate Area Data` を手動実行
+   （`store_location`・`area_name`・`business_id` を指定）
+3. 生成結果はPRとして作成される。CI green・mergeable確認後、
+   `experimental`の自己マージ例外に従いレビュー担当がマージする
+
+実装: [`scripts/generate_area_data.mjs`](../../scripts/generate_area_data.mjs)。
+実ネットワークなしで動作確認できるオフライン回帰テストが
+[`scripts/generate_area_data.test.mjs`](../../scripts/generate_area_data.test.mjs)
+にある（`npm install && npm run test:generate-area`）。
+
+## 作り方（手動）
+
+自動化ワークフローを使わず、自分のブラウザで1件だけ作りたい場合の手順。
 
 1. `index.html` を開き、「別の場所を診断する」を開く
 2. 店舗の場所（Google MapsのURL、または「緯度, 経度」）と、自分のe-Stat アプリケーションIDを入れる
