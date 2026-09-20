@@ -2277,14 +2277,24 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
      続けると悪化する」を、新しい判定基準を追加せずに既存のMGMT_DECISIONSの
      disqualify/endorseの結果（verdictForDecision()の返り値）だけを根拠にして実現する。
      ===================================================================== */
-  const CARRYOVER_STEP = 1;  // 1期ごとに動かす量。TIERSが3段階(0/1/2)しかないので±1で十分
+  const CARRYOVER_STEP = 1;      // 「妥当」側(改善)の1期あたりの移動量。TIERSが3段階(0/1/2)しかないので±1で十分
+  // 「筋が悪い」側(悪化)は改善側の2倍で動かす。SS-01-S04-6-E2Eの3パターン通しPlaywright検証で
+  // 実際に検出した不具合の修正: STEPが妥当/筋が悪いで対称(±1)だと、良好(tier2)な業種・エリアの
+  // 場合、期チェックポイント(TURN_CHECKPOINTS=[0,3,6,10]、進行できるのは最大3回)の中で
+  // 「worst===0」に達するのがどんなに悪い判断を選び続けても最速で3回目(最後)のクリックになり、
+  // CRISIS_STREAK_THRESHOLD(2期連続で深刻)に必要な2回連続のcritical判定を作れなかった。
+  // つまり客層・労働力の適性が良好な業種は、撤退を選ばない限り絶対にcrisisへ到達できず、
+  // 「悪い経営判断を続けると経営が悪化する」という設計意図(SS-01-S04-1案5-B/SS-01-S04-5)が
+  // 満たせていなかった。改善側のペース(CARRYOVER_STEP)は変えず、悪化側だけ2倍速くすることで、
+  // どの業種・エリアから始めても「筋が悪い」判断を選び続ければcrisisへ到達できるようにする。
+  const CARRYOVER_STEP_BAD = 2;
   const CARRYOVER_LIMIT = 2; // 持ち越し効果自体の上下限。TIERSの幅(0〜2)を超えて積む意味がないため
 
   /**
    * 直前の期に選んだ経営判断の妥当性(verdict)をもとに、次期以降のcomputeManagementSignals()
    * が参照するstate.carryoverEffectを更新する。
    * - 「妥当」（良い選択）だった期が続くほど custTier/laborTier/finTier を底上げする
-   * - 「筋が悪い」（悪い選択のまま放置）だった期が続くほど引き下げる
+   * - 「筋が悪い」（悪い選択のまま放置）だった期が続くほど引き下げる（改善側より速く）
    * - 「要検討」は良し悪しのどちらでもない中間状態として据え置く（改善も悪化もさせない）
    * 3つのtierを一律に動かすのは、MGMT_DECISIONSの判定粒度が「その期の経営判断1つに対する
    * 妥当性」という単位であり、どの信号がどの施策で動くかの精密な対応表を新たに持つと
@@ -2292,7 +2302,7 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
    */
   function updateCarryoverEffect(verdict) {
     const delta = verdict.label === "妥当" ? CARRYOVER_STEP
-      : (verdict.label === "筋が悪い" ? -CARRYOVER_STEP : 0);
+      : (verdict.label === "筋が悪い" ? -CARRYOVER_STEP_BAD : 0);
     if (delta === 0) return;
     ["custTier", "laborTier", "finTier"].forEach(k => {
       state.carryoverEffect[k] = Math.max(-CARRYOVER_LIMIT, Math.min(CARRYOVER_LIMIT, state.carryoverEffect[k] + delta));
