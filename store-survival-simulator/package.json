@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "generate-area": "node scripts/generate_area_data.mjs",
-    "test:generate-area": "node scripts/generate_area_data.test.mjs"
+    "test:generate-area": "node scripts/generate_area_data.test.mjs",
+    "test:three-period-loop": "node scripts/e2e_three_period_loop.test.mjs"
   },
   "devDependencies": {
     "@turf/turf": "6.5.0",
