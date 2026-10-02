@@ -494,10 +494,14 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js" crossorigin=""></script>
 <script>
-const APP_VERSION = "0.14.0"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
+const APP_VERSION = "0.14.1"; // セマンティックバージョニング。CLAUDE.mdの「バージョニング」参照
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
+// 実際に取得済み(先読み済み)のメッシュコード全体。INAGE_GEOJSON.featuresから逆算しない
+// (buildMeshGeoJson()は人口データが無い非居住メッシュ等を描画対象から除外するため、
+// features数は取得済みメッシュ数より少なくなりうる。Codexレビュー指摘、PR #136)。
+let FETCHED_MESH_CODES = new Set();
 
 /* ---------- live data loading (JIS地域メッシュ統計を e-Stat から取得、全国対応) ----------
    町丁目境界ポリゴンはCORSでライブ取得できない(README/design-doc参照)ため、代わりに
@@ -798,17 +802,23 @@ async function fetchEconRegionData(meshCodes) {
     (byRegion[r] = byRegion[r] || []).push(code);
   });
   const result = {};
+  // この地域は経済センサスを実際に取得できた1次メッシュ地域コードの集合。
+  // ここに入っている地域のメッシュだけが「est_*が無い=集計0件」という正当な値として扱える。
+  // tableIdが見つからない/取得に失敗した地域はここに入れず、呼び出し側(buildMeshGeoJson)で
+  // 「欠測(est_missing)」として区別する(SS-01-BUG01: 欠測を0件として扱ってしまうバグの修正)。
+  const coveredRegions = new Set();
   for (const r of Object.keys(byRegion)) {
     try {
       const tableId = await findEconMeshTableId(r);
-      if (!tableId) continue; // この地域には産業別内訳のある経済センサス表が無い
+      if (!tableId) continue; // この地域には産業別内訳のある経済センサス表が無い(欠測)
       const values = await fetchEconMeshValues(tableId, byRegion[r]);
       Object.assign(result, values);
+      coveredRegions.add(r);
     } catch (e) {
       console.warn("経済センサスデータの取得に失敗しました(M" + r + "): " + e.message);
     }
   }
-  return result;
+  return { values: result, coveredRegions: Array.from(coveredRegions) };
 }
 
 // 店舗座標から、先読みする1kmメッシュの一覧を求める。
@@ -835,24 +845,36 @@ async function fetchMeshDataset(appId, storeLat, storeLng) {
   // 経済センサス(事業所統計)は競合密度の概算表示用の補助データであり、人口データ(本編)を
   // 絶対に道連れにしてはいけないため、取得全体をtry/catchで囲む(fetchEconRegionData自体も
   // 地域ごとに個別防御しているが、ここは万一の想定外エラーに備えた二重の防御)。
-  // 失敗時は空データ扱いにして続行し、各メッシュのest_*は下のprops組み立てで0にフォールバックする。
-  let econData = {};
+  // 失敗時は空データ・欠測扱いにして続行する(est_*は下のprops組み立てでest_missing=1として扱われる)。
+  let econResult = { values: {}, coveredRegions: [] };
   try {
-    econData = await fetchEconRegionData(meshCodes);
+    econResult = await fetchEconRegionData(meshCodes);
   } catch (e) {
-    console.warn("経済センサスデータの取得に失敗しました。競合密度は0として扱います: " + e.message);
-    econData = {};
+    console.warn("経済センサスデータの取得に失敗しました。競合密度は欠測として扱います: " + e.message);
+    econResult = { values: {}, coveredRegions: [] };
   }
 
-  return { meshCodes: meshCodes, data2020: data2020, data2015: data2015, econData: econData };
+  return {
+    meshCodes: meshCodes, data2020: data2020, data2015: data2015,
+    econData: econResult.values, econCoveredRegions: econResult.coveredRegions
+  };
 }
 
 // 素データ → 表示用GeoJSON。ライブ取得でも事前生成データでも必ずここを通る。
 function buildMeshGeoJson(dataset) {
   const meshCodes = (dataset && dataset.meshCodes) || [];
+  // 取得済みメッシュの全体集合はここで記録する(下のfeatures配列は人口データの無い
+  // メッシュを除外するため、取得済み範囲の判定にそのままは使えない。PR #136 Codexレビュー指摘)。
+  FETCHED_MESH_CODES = new Set(meshCodes);
   const data2020 = (dataset && dataset.data2020) || {};
   const data2015 = (dataset && dataset.data2015) || {};
   const econData = (dataset && dataset.econData) || {};
+  // econCoveredRegionsが無いデータセット(このバグ修正より前に書き出されたdata/areas/*.json等)は
+  // 欠測情報を持たないため、後方互換として「全域カバー済み」とみなし既存動作を変えない。
+  // 配列があるときだけ、そこに入っていない1次メッシュ地域を「欠測(est_missing=1)」として扱う。
+  const econCoveredRegions = (dataset && Array.isArray(dataset.econCoveredRegions))
+    ? new Set(dataset.econCoveredRegions)
+    : null;
 
   // メッシュごとの年率 = (2020年値/2015年値)^(1/5) - 1。2015年に対応データがない
   // (非居住・秘匿等の)メッシュは、先読みした範囲内の人口加重平均(フォールバック)で補う。
@@ -886,6 +908,8 @@ function buildMeshGeoJson(dataset) {
     const s2020 = data2020[code];
     if (!s2020) return; // データなし(非居住メッシュ等)はスキップ
     const econ = econData[code] || {}; // この地域の経済センサスが無い/取得失敗ならest_*は全て0
+    // econCoveredRegionsが無い(旧データ)場合はcovered=trueとして扱い、既存動作を変えない。
+    const covered = econCoveredRegions === null || econCoveredRegions.has(region1(code));
     const props = {
       key_code: code,
       name: "メッシュ " + code,
@@ -896,7 +920,10 @@ function buildMeshGeoJson(dataset) {
       est_100: econ.est_100 || 0,
       est_110: econ.est_110 || 0,
       est_140: econ.est_140 || 0,
-      est_150: econ.est_150 || 0
+      est_150: econ.est_150 || 0,
+      // covered=falseのときのest_*=0は「集計0件」ではなく「欠測」。競合密度の判定側(SS-01-BUG01)は
+      // これを見て、欠測メッシュを含む商圏では密度ベースの判定を中立にフォールバックする。
+      est_missing: covered ? 0 : 1
     };
     BRACKETS.forEach(b => {
       props["rate_" + b] = (rates[code] && rates[code][b] !== undefined) ? rates[code][b] : fallbackRate[b];
@@ -1214,6 +1241,9 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
         layer.bindPopup(popupContent(f.properties));
         layer.on("mouseover", () => layer.setStyle({ weight: 2 }));
         layer.on("mouseout", () => layer.setStyle({ weight: 1 }));
+        // メッシュ本体のクリックはポップアップ表示のためのものであり、下のmap.on("click")まで
+        // バブリングさせると、ポップアップ表示のつもりのクリックで店舗位置が動いてしまう(SS-01-BUG01)。
+        layer.on("click", (e) => { L.DomEvent.stopPropagation(e); });
       }
     }).addTo(map);
 
@@ -1245,32 +1275,70 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
 
   map.on("click", (e) => { setStoreLocation(e.latlng.lat, e.latlng.lng, gmapsStatus); });
 
+  // 緯度経度の範囲外の値(例: 90.0, 135.0のような不正な組み合わせ)を通すと、
+  // meshCodesAroundStore()のcos(緯度)が0に近づいて除算結果が極端に大きくなり、
+  // meshCodesInBBox()が実質無限ループしてページがフリーズする(SS-01-BUG01)。
+  // 緯度は±90ちょうど(両極)を除外し、経度は-180〜180の範囲のみ許可する。
+  function isValidLatLng(lat, lng) {
+    return Number.isFinite(lat) && Number.isFinite(lng) &&
+      lat > -90 && lat < 90 && lng >= -180 && lng <= 180;
+  }
+
   function parseLatLngFromText(text) {
     text = text.trim();
+    const toLatLng = (latStr, lngStr) => {
+      const lat = parseFloat(latStr), lng = parseFloat(lngStr);
+      return isValidLatLng(lat, lng) ? { lat: lat, lng: lng } : null;
+    };
     let m = text.match(/[?&#](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
-    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    if (m) { const r = toLatLng(m[1], m[2]); if (r) return r; }
     // Google Mapsの「!3d{lat}!4d{lng}」は実際のピン(場所)の座標。
     // 「@{lat},{lng}」は地図の表示中心でしかなく、ズームアウト後にコピーすると
     // ピンから大きくズレるため、!3d/!4dがあればそちらを優先する。
     m = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    if (m) { const r = toLatLng(m[1], m[2]); if (r) return r; }
     m = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    if (m) { const r = toLatLng(m[1], m[2]); if (r) return r; }
     m = text.match(/^(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
-    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    if (m) { const r = toLatLng(m[1], m[2]); if (r) return r; }
     return null;
   }
 
   let locationFetchInFlight = false;
 
+  // 既に先読み済みのメッシュだけで新しい場所の商圏(先読みバッファMAX_RADIUS_M分)を
+  // 全域カバーできているかを検証する。以前は「新商圏と1件でも交差」するだけで再取得を
+  // スキップしていたため、商圏の大部分が未取得のまま集計される不具合があった(SS-01-BUG01)。
+  function meshCoverageComplete(lat, lng) {
+    if (!INAGE_GEOJSON) return false;
+    // INAGE_GEOJSON.featuresは人口データの無いメッシュ(非居住メッシュ等)を除外しているため
+    // 取得済み範囲の判定には使えない。取得済みメッシュコードの全体集合(FETCHED_MESH_CODES)
+    // と比較する(PR #136 Codexレビュー指摘: 同梱データでも120コード中115featureしか無く、
+    // features基準だと最初の中心点ですらカバレッジ不足と誤判定していた)。
+    const requiredCodes = meshCodesAroundStore(lat, lng);
+    return requiredCodes.length > 0 && requiredCodes.every(code => FETCHED_MESH_CODES.has(code));
+  }
+
   async function setStoreLocation(lat, lng, statusEl) {
+    // 直前の取得が完了していないうちに次の移動を受け付けると、後から着手した方が先に
+    // state.storeLatLngを書き換えてしまい、先に着手した取得の完了時にそれが上書きされて
+    // 「表示されている場所」と「実際に取得・描画されたメッシュデータ」がズレる(SS-01-BUG01)。
+    // そのため状態を書き換える前に、ここで最初に弾く。
+    if (locationFetchInFlight) {
+      if (statusEl) {
+        statusEl.textContent = "前回のデータ取得が完了するまでお待ちください。";
+        statusEl.className = "gmaps-status error";
+      }
+      return;
+    }
+
     const prevLatLng = state.storeLatLng;
     state.storeLatLng = L.latLng(lat, lng);
     if (marker) marker.setLatLng(state.storeLatLng);
     map.panTo(state.storeLatLng);
     rerenderAll();
 
-    if (tradeAreaFeatures().length > 0) {
+    if (meshCoverageComplete(lat, lng)) {
       if (statusEl) {
         statusEl.textContent = `座標を反映しました (${lat.toFixed(5)}, ${lng.toFixed(5)})。商圏内のメッシュ数: ${tradeAreaFeatures().length}`;
         statusEl.className = "gmaps-status ok";
@@ -1288,14 +1356,6 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
       rerenderAll();
       if (statusEl) {
         statusEl.textContent = `この場所 (${lat.toFixed(5)}, ${lng.toFixed(5)}) は同梱データの範囲外です。同梱データはエリア選択時の店舗周辺のみに対応しているため、元の場所に戻しました。別の場所を診断するには、開始画面の「別の場所を診断する」からe-Stat アプリケーションIDを使って開始してください。`;
-        statusEl.className = "gmaps-status error";
-      }
-      return;
-    }
-
-    if (locationFetchInFlight) {
-      if (statusEl) {
-        statusEl.textContent = "前回のデータ取得が完了するまでお待ちください。";
         statusEl.className = "gmaps-status error";
       }
       return;
@@ -1574,10 +1634,14 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
       endorse:    (s) => s.finTier === 2 && s.worst >= 1 && s.laborTier >= 1 && s.compTier >= 1,
       // 業種にeconCodeが無い場合は旧来の定性的な注記にフォールバックする。現状は8業種すべてに
       // econCodeがあるためここに入ることは無いが、業種追加時の安全策として残す。
-      alwaysNote: (sig) => sig.econCode
-        ? `商圏内の${ECON_CATEGORY_LABEL[sig.econCode]}事業所数: ${sig.compCount}件（人口1,000人あたり${sig.compPer1000.toFixed(1)}件）` +
-          "<br>競合の目安は経済センサス平成28年の産業(大分類)別事業所数です。業種は大分類ベースの概算、データは2016年時点のため、実際の競合状況とズレがある可能性があります。"
-        : "競合店舗の実データ(事業所密度等)は連携していないため、参考評価です。"
+      alwaysNote: (sig) => {
+        if (!sig.econCode) return "競合店舗の実データ(事業所密度等)は連携していないため、参考評価です。";
+        const base = `商圏内の${ECON_CATEGORY_LABEL[sig.econCode]}事業所数: ${sig.compCount}件（人口1,000人あたり${sig.compPer1000.toFixed(1)}件）` +
+          "<br>競合の目安は経済センサス平成28年の産業(大分類)別事業所数です。業種は大分類ベースの概算、データは2016年時点のため、実際の競合状況とズレがある可能性があります。";
+        return sig.compFallback
+          ? base + "<br>商圏内に経済センサスの未取得メッシュが含まれるため件数は過小になっている可能性があり、競合密度の判定は中立として扱っています。"
+          : base;
+      }
     },
     {
       id: "withdraw", name: "E. 撤退する", desc: "この店舗を閉じる",
@@ -1852,7 +1916,9 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     const pool10 = laborPoolAt(biz, pop10, state.commands);
     const laborRatio = pool10 / pool0;
     let laborTier = tierFor(laborRatio);
-    if (state.commands.mono_dx) laborTier = TIERS[2];
+    // hint通り「採用のしやすさを1段階改善」(他の施策と同じbumpTier)。常にTIERS[2]固定だと
+    // 深刻→良好のような2段階ジャンプが起きてしまう(SS-01-BUG01)。
+    if (state.commands.mono_dx) laborTier = bumpTier(laborTier);
 
     return { customerTier, laborTier, customerRatio, laborRatio, pop0Target, pop10Target, pool0, pool10, mismatchRisk, count: feats.length };
   }
@@ -2115,12 +2181,18 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
     // ベンチマークではなく、「競合が多いか少ないか」を大まかに示すための簡易な目安。
     // 経済センサスは大分類ベース・2016年時点のデータしか無いため、この粗さは意図的に
     // 許容している(店舗数の多寡くらいの参考情報という位置づけ)。
-    const compTier = compPer1000 >= 15 ? 0 : (compPer1000 >= 5 ? 1 : 2);
+    // 商圏内に経済センサス欠測メッシュ(est_missing)が1つでもあると、compCountは
+    // 実際より少なく出る(欠測分が0件扱いになる)ため、そのまま密度判定すると
+    // 「競合が少ない」という誤った有利判定になりうる(SS-01-BUG01)。
+    // bldFallback/finFallbackと同じ既存の中立フォールバック規約に揃え、
+    // 欠測がある場合はcompTierを中立(level 1)に固定し、密度ベースの判定を避ける。
+    const compFallback = econCode ? feats.some(f => f.properties.est_missing) : false;
+    const compTier = compFallback ? 1 : (compPer1000 >= 15 ? 0 : (compPer1000 >= 5 ? 1 : 2));
 
     return {
       custTier, laborTier, worst, finTier, finFallback, opMargin, finBoosted, bldTier, bldFallback,
       carryover, carryoverApplied,
-      compTier, compCount, compPer1000, econCode,
+      compTier, compFallback, compCount, compPer1000, econCode,
       econLabel: econCode ? ECON_CATEGORY_LABEL[econCode] : null
     };
   }
