@@ -498,6 +498,10 @@ const APP_VERSION = "0.14.1"; // セマンティックバージョニング。CL
 document.querySelectorAll(".app-version-tag").forEach(el => { el.textContent = "v" + APP_VERSION; });
 let INAGE_GEOJSON = null; // ゲーム開始時にe-Statからライブ取得するまではnull
 let ESTAT_APP_ID = null;  // メモリ保持のみ。localStorage等には保存しない
+// 実際に取得済み(先読み済み)のメッシュコード全体。INAGE_GEOJSON.featuresから逆算しない
+// (buildMeshGeoJson()は人口データが無い非居住メッシュ等を描画対象から除外するため、
+// features数は取得済みメッシュ数より少なくなりうる。Codexレビュー指摘、PR #136)。
+let FETCHED_MESH_CODES = new Set();
 
 /* ---------- live data loading (JIS地域メッシュ統計を e-Stat から取得、全国対応) ----------
    町丁目境界ポリゴンはCORSでライブ取得できない(README/design-doc参照)ため、代わりに
@@ -859,6 +863,9 @@ async function fetchMeshDataset(appId, storeLat, storeLng) {
 // 素データ → 表示用GeoJSON。ライブ取得でも事前生成データでも必ずここを通る。
 function buildMeshGeoJson(dataset) {
   const meshCodes = (dataset && dataset.meshCodes) || [];
+  // 取得済みメッシュの全体集合はここで記録する(下のfeatures配列は人口データの無い
+  // メッシュを除外するため、取得済み範囲の判定にそのままは使えない。PR #136 Codexレビュー指摘)。
+  FETCHED_MESH_CODES = new Set(meshCodes);
   const data2020 = (dataset && dataset.data2020) || {};
   const data2015 = (dataset && dataset.data2015) || {};
   const econData = (dataset && dataset.econData) || {};
@@ -1304,9 +1311,12 @@ function downloadAreaPack(name, storeLat, storeLng, dataset) {
   // スキップしていたため、商圏の大部分が未取得のまま集計される不具合があった(SS-01-BUG01)。
   function meshCoverageComplete(lat, lng) {
     if (!INAGE_GEOJSON) return false;
-    const existingCodes = new Set(INAGE_GEOJSON.features.map(f => f.properties.key_code));
+    // INAGE_GEOJSON.featuresは人口データの無いメッシュ(非居住メッシュ等)を除外しているため
+    // 取得済み範囲の判定には使えない。取得済みメッシュコードの全体集合(FETCHED_MESH_CODES)
+    // と比較する(PR #136 Codexレビュー指摘: 同梱データでも120コード中115featureしか無く、
+    // features基準だと最初の中心点ですらカバレッジ不足と誤判定していた)。
     const requiredCodes = meshCodesAroundStore(lat, lng);
-    return requiredCodes.length > 0 && requiredCodes.every(code => existingCodes.has(code));
+    return requiredCodes.length > 0 && requiredCodes.every(code => FETCHED_MESH_CODES.has(code));
   }
 
   async function setStoreLocation(lat, lng, statusEl) {
