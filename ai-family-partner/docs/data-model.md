@@ -21,6 +21,25 @@ OpenAI APIキーを端末に置かない接続方式は `AFP-02-T03` のスコ�
 > - https://developers.google.com/workspace/drive/api/guides/about-files
 > - https://developers.google.com/workspace/drive/api/guides/api-specific-auth
 
+### 前提: 単一アクティブデバイス運用
+
+本設計は、ある`user_id`（家族メンバー）について**同時にアクティブな端末は1台のみ**
+という前提で保存方式を決める。アプリ再インストールや機種変更で別端末へ移る「順次の
+引き継ぎ」は想定するが、同一`user_id`を複数端末で**同時並行**に使うこと（例: 2台の
+端末が同じ日のconversationログへ同時に書き込む）は本Taskのスコープ外とし、サポート
+しない（Codexレビュー指摘により、複数端末間の並行書き込み競合・鍵不整合が設計上
+未解決だったため、ここで明示する）。
+
+- 新端末での復元・声の再登録は「この端末が今後のアクティブデバイスになる」という
+  明示的な切り替え操作として扱う。旧端末に戻って使い続けることは想定しない
+  （戻った場合、`voice`は旧端末の鍵と不整合になり得るが、これは想定外の運用として
+  許容する。実装時に旧端末側で「別端末で再登録されたため声データが更新されました」
+  等の検知・警告を出すかどうかは`AFP-02-T04`の実装判断とする）。
+- 複数端末の同時使用を将来サポートする場合は、単一ライター制御・競合検知と再マージ・
+  端末別/レコード別ファイル分割のいずれかを別Taskとして設計する（新規のバックエンドや
+  同期基盤が必要になる可能性があり、`Minimum Solution`の範囲を超えるため、本Taskでは
+  踏み込まない）。
+
 ## 1. My Drive専用フォルダとappDataFolderの責務分離
 
 | | My Drive専用フォルダ | appDataFolder |
@@ -52,6 +71,13 @@ My Drive/
 1台のアプリ内で複数の家族メンバーを区別するための値）。`AFP-01-T01` で導入した
 「利用者ごとの分離」の方針をAndroid版でもフォルダ単位で引き継ぐ。
 
+My Drive専用フォルダ（`AI Family Partner`）を作成する際は、`files.create`で
+`appProperties: {"app": "ai-family-partner", "role": "root-folder"}` を必ず設定する。
+§1の表にある通りこのフォルダはユーザーがDrive UI上で自由に移動・改名できるため、
+固定の表示名（`"AI Family Partner"`）やルート直下という位置に依存した検索は、
+移動・改名後に正本を発見できなくなる。`appProperties`はユーザーの移動・改名の影響を
+受けないため、§4の復元処理はこれを一次の検索条件とする（Codexレビュー指摘により追加）。
+
 ### appDataFolder側の内容
 
 ```
@@ -63,7 +89,7 @@ appDataFolder/
 
 `index.json` はMy Drive側ファイルのfile IDをキャッシュする目的のみ。信頼できる唯一の
 情報源（SoT）は常にMy Drive側であり、`index.json` が失われた場合はMy Drive専用フォルダを
-名前で再検索して再構築できる設計とする（§4参照）。
+`appProperties`で再検索して再構築できる設計とする（§4参照）。
 
 ## 2. 保存形式
 
@@ -91,7 +117,9 @@ Drive APIにはバイト単位の追記APIが無く、`files.update`のメディ
    別端末での復元後にその日の会話を追加するケースでも、既存ターンを欠落させずに
    マージできる（read-modify-writeの「read」を省略しない）。
 2. 以降、同一アプリセッション内で新規ターンが発生するたびにバッファへ追記する
-   （Drive側への読み込みは最初の1回のみでよい）。
+   （Drive側への読み込みは最初の1回のみでよい。「前提: 単一アクティブデバイス運用」
+   により、このセッション中に他端末が同じ当日分ファイルへ書き込むことは想定しない
+   ため、再読み込みなしで安全にバッファを信頼できる）。
 3. 各ターン終了時、またはアプリがバックグラウンドに回るタイミングで、バッファ全体を
    `files.update`（既存ファイルがあれば）または `files.create`（当日分が未作成なら）で
    丸ごとアップロードする（read-modify-writeであり、真のバイト追記ではない）。
@@ -144,12 +172,13 @@ Drive APIにはバイト単位の追記APIが無く、`files.update`のメディ
 1. My Drive専用フォルダ（`AI Family Partner`）を `files.update` で `trashed: true` に
    設定し、Google Driveの標準のゴミ箱へ移動する（`files.delete`は対象を即時・恒久的に
    削除しゴミ箱の猶予期間を経由しないため使わない。`trashed: true`なら配下の子ファイルも
-   まとめてゴミ箱表示上は非表示になり、ユーザーがDrive UIから任意の保持期間内に取り消せる）。
+   まとめてゴミ箱表示上は非表示になり、ユーザーがDrive UIから30日間の猶予期間内に
+   取り消せる）。
 2. `appDataFolder` 配下の `index.json` は `files.delete` で即時・恒久的に削除する。
    Google Drive APIの仕様上、`appDataFolder`配下のファイルは`trashed: true`を
    設定できず（`notSupportedForAppDataFolderFiles`エラーになる）、ゴミ箱を経由できない。
    `index.json`はユーザー非表示のキャッシュで復元の価値も無いため、恒久削除で問題ない
-   （My Drive側さえ残っていれば§4「復元」の名前検索から再構築できる）。
+   （My Drive側さえ残っていれば§4「復元」の`appProperties`検索から再構築できる）。
 3. Android Keystore側の鍵は**この時点では破棄しない**。My Drive専用フォルダがゴミ箱に
    ある間（＝ユーザーがDrive UIから取り消せる間）に鍵を破棄すると、取り消して復元した
    `voice/{user_id}.enc`が永久に復号不能になり、本節が前提とする「猶予期間中は取り消せる」
@@ -160,8 +189,10 @@ Drive APIにはバイト単位の追記APIが無く、`files.update`のメディ
    ゴミ箱にある間は未削除のため、鍵が不要な期間に残ること自体はセキュリティ上の新たな
    露出を生まない（鍵はKeystore外へは一切出ない。§3「鍵の非持ち出し方針」参照）。
 
-Drive側の「ゴミ箱からの完全削除までの猶予期間」はGoogle Driveの標準動作（ユーザー設定の
-ゴミ箱保持期間）に従い、アプリ側で追加の猶予処理は実装しない。ゴミ箱を経由しない
+Drive側の「ゴミ箱からの完全削除までの猶予期間」は、Google Drive APIの固定仕様である
+**30日間**（ゴミ箱へ移動してから30日後に自動的に完全削除される。ユーザー設定で変更
+できる値ではない。Codexレビュー指摘により訂正）に従い、アプリ側で追加の猶予処理は
+実装しない。UI上で「取り消し期限」を案内する場合も30日を前提に表示する。ゴミ箱を経由しない
 即時・恒久的な削除が必要になった場合（例: ユーザーが「完全に消去する」ことを明示的に
 求めた場合）は、ゴミ箱へ移動した上でユーザーに猶予期間中の取り消し手段があることを
 明示してから、別途`files.delete`による恒久削除とAndroid Keystore鍵の破棄を行う設計とする
@@ -172,8 +203,11 @@ Drive側の「ゴミ箱からの完全削除までの猶予期間」はGoogle Dr
 1. Googleアカウント認証後、まず `appDataFolder` の `index.json` を読み出す。
 2. `index.json` が取得できた場合はそこに記録されたfile IDをそのまま使う。
 3. `index.json` が無い/読めない場合（＝appDataFolder側だけ失われた、または初回復元）は、
-   `files.list` で `name = 'AI Family Partner' and 'root' in parents and trashed = false`
-   を条件にMy Drive専用フォルダを名前検索し、見つかればそのfile IDから再度
+   `files.list` で
+   `appProperties has { key='app' and value='ai-family-partner' } and trashed = false`
+   を条件にMy Drive専用フォルダを検索する（§1で作成時に設定した`appProperties`を
+   手がかりにするため、ユーザーがフォルダを移動・改名していても発見できる。固定の
+   表示名や`root`配下という前提には依存しない）。見つかればそのfile IDから再度
    `conversation` / `profile` / `summary` / `voice` の各サブフォルダ・ファイルを辿って
    `index.json` を再構築する。
 4. `conversation` / `profile` / `summary` はそのまま復元できる。
@@ -181,16 +215,21 @@ Drive側の「ゴミ箱からの完全削除までの猶予期間」はGoogle Dr
    アプリ再インストール後の新しいKeystoreエントリ）では復号できない。この場合はUI上で
    「声の再登録が必要です」と明示し、`voice/{user_id}.enc` を新しい鍵で上書きする
    声登録フローへ誘導する（`AFP-01-T01`で確立した本人同意フローを踏襲する）。
+   「前提: 単一アクティブデバイス運用」により、この新端末が以後のアクティブデバイスと
+   なり、旧端末は`voice`を復号できなくなる（旧端末へ戻ることは想定しない運用）。
 
 ### 復元テスト手順（`AFP-02-T04`実装時に実機で確認する）
 
 1. アプリをアンインストールする。
 2. アプリを再インストールし、同じGoogleアカウントで認証する。
-3. `appDataFolder` の `index.json` を消した状態（初回復元の想定）でも、名前検索で
-   `AI Family Partner` フォルダが見つかり、`conversation` / `profile` / `summary` が
-   復元され会話が継続できることを確認する。
+3. `appDataFolder` の `index.json` を消した状態（初回復元の想定）でも、`appProperties`
+   検索で `AI Family Partner` フォルダが見つかり、`conversation` / `profile` /
+   `summary` が復元され会話が継続できることを確認する。
 4. `voice` は復号できず、再登録を促すUIが表示されることを確認する。
 5. 再登録後、新しい `voice/{user_id}.enc` がMy Drive側で上書きされることを確認する。
+6. アンインストール前にユーザーがDrive UIでMy Drive専用フォルダを改名・別フォルダへ
+   移動していた場合でも、手順3の`appProperties`検索で発見できることを確認する
+   （固定の表示名・ルート直下に依存していないことの回帰テスト）。
 
 ## まとめ（Acceptance Criteriaとの対応）
 
